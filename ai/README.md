@@ -15,7 +15,8 @@ ai/
 │   ├── dataset.py   # custom dataset & dataLoader logic
 │   ├── model.py     # PyTorch network architectures
 │   ├── train.py     # training loops & validation
-│   └── evaluate.py  # metrics, confusion matrices, evaluation
+│   ├── evaluate.py  # metrics, confusion matrices, evaluation
+│   └── check_env.py # sanity check that dependencies are installed correctly
 ├── checkpoints/     # saved model weights
 ├── outputs/         # generated artifacts (figures, logs, metrics, etc.)
 ├── environment.yml  # conda environment config
@@ -43,9 +44,11 @@ From there, just activate the environment
 conda activate CHM4930
 ```
 
-And that's it, you're good to start doing stuff! When you're done, deactivate
-the environment by running
+To make sure everything installed correctly, run the enviroment check
 
 ```
-conda deactivate
+python src/check_env.py
 ```
+
+It imports each dependency and prints its version, so if something's missing or
+broken, you'll know
