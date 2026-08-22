@@ -1,0 +1,30 @@
+# ai/ data and model artifacts - keep the folders, ignore their contents
+ai/data/*
+!ai/data/.gitkeep
+ai/checkpoints/*
+!ai/checkpoints/.gitkeep
+
+# model or weight files anywhere under ai dir
+ai/**/*.pt
+ai/**/*.pth
+ai/**/*.ckpt
+ai/**/*.h5
+ai/**/*.onnx
+ai/**/*.safetensors
+ai/**/*.npy
+ai/**/*.npz
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# conda / env
+.conda/
+*.egg-info/
+
+# OS / editor
+.DS_Store
+.vscode
+.zed
