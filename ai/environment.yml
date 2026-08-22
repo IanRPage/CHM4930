@@ -1,0 +1,16 @@
+name: CHM4930
+channels:
+  - pytorch
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.11
+  - numpy<2.0.0
+  - pandas
+  - matplotlib
+  - seaborn
+  - rdkit
+  - pytorch
+  - pip
+  - pip:
+      - torch_geometric
