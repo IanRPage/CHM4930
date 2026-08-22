@@ -26,7 +26,9 @@ ai/
 
 We chose to use Conda as it's the simplest for setting up an environment while
 still be cross compatible with different OSes and different hardware
-configurations. Make sure you have `conda` installed on your system.
+configurations. Make sure you have
+[`conda`](https://www.anaconda.com/docs/getting-started/installation) installed
+on your system.
 
 To build the environment everything will be run in, make sure you're in the root
 of this directory and run
