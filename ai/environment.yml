@@ -10,6 +10,7 @@ dependencies:
   - matplotlib
   - seaborn
   - rdkit
+  - jupyter
   - pytorch
   - pip
   - pip:
