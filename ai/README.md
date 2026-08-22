@@ -7,15 +7,9 @@ along with any datasets or checkpoints for saved model weights.
 
 ```
 ai/
-├── data/            # local data storage (might store this way?)
-│   ├── raw/
-│   └── processed/
+├── data/            # local data storage
 ├── notebooks/       # exploration / scratchpads
-├── src/             # Main code
-│   ├── dataset.py   # custom dataset & dataLoader logic
-│   ├── model.py     # PyTorch network architectures
-│   ├── train.py     # training loops & validation
-│   ├── evaluate.py  # metrics, confusion matrices, evaluation
+├── src/             # main code
 │   └── check_env.py # sanity check that dependencies are installed correctly
 ├── checkpoints/     # saved model weights
 ├── outputs/         # generated artifacts (figures, logs, metrics, etc.)
