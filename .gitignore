@@ -3,6 +3,8 @@ ai/data/*
 !ai/data/.gitkeep
 ai/checkpoints/*
 !ai/checkpoints/.gitkeep
+ai/outputs/*
+!ai/outputs/.gitkeep
 
 # model or weight files anywhere under ai dir
 ai/**/*.pt
