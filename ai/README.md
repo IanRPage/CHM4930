@@ -26,23 +26,38 @@ configurations. Make sure you have
 on your system.
 
 To build the environment everything will be run in, make sure you're in the root
-of this directory and run
+of this directory and run:
 
 ```
 conda env create -f environment.yml
 ```
 
-From there, just activate the environment
+From there, just activate the environment.
 
 ```
 conda activate CHM4930
 ```
 
-To make sure everything installed correctly, run the enviroment check
+Then register the `nbstripout` git filter so notebook output and execution
+metadata never gets committed.
+
+```
+nbstripout --install
+```
+
+Next, register the jupyter kernel for this environment so everyone's notebooks
+reference the same kernel. Run:
+
+```
+python -m ipykernel install --sys-prefix --name=CHM4930 --display-name="Python (CHM4930)"
+```
+
+Now when you open a notebook, select "Python (CHM4930)" as the kernel. To make
+sure everything installed correctly, run:
 
 ```
 python src/check_env.py
 ```
 
 It imports each dependency and prints its version, so if something's missing or
-broken, you'll know
+broken, you'll know.
