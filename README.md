@@ -11,12 +11,12 @@ properties of existing chemicals, and hopefully novel ones too. Members:
 
 ## Repo Structure
 
-```
-.
+```text
+CHM4930
 ├── ai/          # model training code, datasets, checkpoints (see ai/README.md)
 ├── backend/     # API / server (TODO)
 ├── frontend/    # UI           (TODO)
-├── LICENSE
+⋮
 └── README.md
 ```
 
