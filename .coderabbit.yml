@@ -1,8 +1,6 @@
 language: "en"
 reviews:
   profile: "chill"
-  request_review_trigger: "pull_request"
   auto_review:
     enabled: true
     drafts: false
-
