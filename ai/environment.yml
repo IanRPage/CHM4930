@@ -16,3 +16,4 @@ dependencies:
   - pip
   - pip:
       - torch_geometric
+      - chembl_webresource_client
