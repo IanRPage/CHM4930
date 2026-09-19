@@ -1,0 +1,21 @@
+name: Add Jira Links
+
+on:
+  pull_request:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  add-jira-links:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inject Jira Link to PR Body
+        uses: codenamegrant/jira-pr-link-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          jira-base-url: "https://chm4930.atlassian.net"
+          jira-link-mode: "body-start"
+          issue-pattern: "(SCRUM-[0-9]+)"
