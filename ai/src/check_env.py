@@ -31,6 +31,7 @@ nbstripout_registered = (
     subprocess.run(
         ["git", "config", "--get", "filter.nbstripout.clean"],
         capture_output=True,
+        check=False,
     ).returncode
     == 0
 )
