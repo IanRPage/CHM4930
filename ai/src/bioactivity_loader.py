@@ -39,6 +39,29 @@ _LARGEST_FRAGMENT = rdMolStandardize.LargestFragmentChooser()
 _UNCHARGER = rdMolStandardize.Uncharger()
 
 
+# validate one ChEMBL activity page, returns (records, next path, total count)
+def _parse_page(payload: dict) -> tuple[list[dict], str | None, int]:
+    activities = payload.get("activities")
+    page_meta = payload.get("page_meta")
+    if not isinstance(activities, list) or not isinstance(page_meta, dict):
+        raise TypeError("unexpected ChEMBL response: missing activities or page_meta")
+
+    total_count = page_meta.get("total_count")
+    next_path = page_meta.get("next")
+    if not isinstance(total_count, int):
+        raise TypeError("unexpected ChEMBL response: page_meta has no total_count")
+    if next_path is not None and not (
+        isinstance(next_path, str) and next_path.startswith("/")
+    ):
+        raise RuntimeError(f"unexpected ChEMBL response: bad next link {next_path!r}")
+
+    for record in activities:
+        missing = [field for field in API_FIELDS if field not in record]
+        if missing:
+            raise RuntimeError(f"ChEMBL record is missing fields {missing}")
+    return activities, next_path, total_count
+
+
 def fetch_activities() -> pd.DataFrame:
     params = {
         "target_chembl_id": BACE1_TARGET_ID,
@@ -48,19 +71,26 @@ def fetch_activities() -> pd.DataFrame:
     url = f"{ACTIVITY_URL}?{urlencode(params)}"
 
     rows = []
+    total_count = None
     while url:
         with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT_S) as response:
             payload = json.load(response)
+        activities, next_path, page_total = _parse_page(payload)
+        if total_count is None:
+            total_count = page_total
         rows.extend(
-            {field: record.get(field) for field in API_FIELDS}
-            for record in payload.get("activities", [])
+            {field: record[field] for field in API_FIELDS} for record in activities
         )
         log.info("retrieved %d records", len(rows))
-        next_path = payload.get("page_meta", {}).get("next")
         url = f"{CHEMBL_HOST}{next_path}" if next_path else None
 
     if not rows:
         raise RuntimeError(f"ChEMBL returned no IC50 rows for {BACE1_TARGET_ID}")
+    if len(rows) != total_count:
+        raise RuntimeError(
+            f"ChEMBL reported {total_count} IC50 rows for {BACE1_TARGET_ID} "
+            f"but only {len(rows)} were retrieved"
+        )
     return pd.DataFrame.from_records(rows)
 
 

@@ -1,5 +1,6 @@
 import io
 import json
+import re
 import sys
 import urllib.request
 
@@ -35,7 +36,7 @@ PAGE_1 = {
         rec("C3", "CC(=O)[O-].[Na+]", "6.5"),  # sodium acetate
         rec("C4", "CCN", "6.0", standard_relation=">"),  # censored, dropped
     ],
-    "page_meta": {"next": "/chembl/api/data/activity.json?page=2"},
+    "page_meta": {"next": "/chembl/api/data/activity.json?page=2", "total_count": 9},
 }
 PAGE_2 = {
     "activities": [
@@ -44,7 +45,7 @@ PAGE_2 = {
         rec("C7", "not_a_smiles", "6.0"),  # RDKit can't parse, dropped
         rec("C8", "CCCC", None),  # no pChEMBL, dropped
     ],
-    "page_meta": {"next": None},
+    "page_meta": {"next": None, "total_count": 9},
 }
 
 
@@ -185,7 +186,7 @@ def test_fetch_requests_bace1_ic50(fake_chembl):
 def test_fetch_keeps_only_the_needed_fields(monkeypatch):
     page = {
         "activities": [rec() | {"some_other_field": "x"}],
-        "page_meta": {"next": None},
+        "page_meta": {"next": None, "total_count": 1},
     }
     monkeypatch.setattr(
         urllib.request,
@@ -193,6 +194,58 @@ def test_fetch_keeps_only_the_needed_fields(monkeypatch):
         lambda url, timeout=None: io.BytesIO(json.dumps(page).encode()),
     )
     assert list(bl.fetch_activities().columns) == bl.API_FIELDS
+
+
+def serve(monkeypatch, *pages):
+    """Serve the given payloads in order in place of ChEMBL."""
+    it = iter(pages)
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda url, timeout=None: io.BytesIO(json.dumps(next(it)).encode()),
+    )
+
+
+def test_fetch_rejects_a_truncated_download(monkeypatch):
+    # `next` is None after 5 of the 9 rows ChEMBL reported (partial download)
+    page = PAGE_1 | {"page_meta": {"next": None, "total_count": 9}}
+    serve(monkeypatch, page)
+    with pytest.raises(RuntimeError, match="reported 9"):
+        bl.fetch_activities()
+
+
+@pytest.mark.parametrize(
+    "bad_page",
+    [
+        {"page_meta": {"next": None, "total_count": 1}},  # no activities
+        {"activities": None, "page_meta": {"next": None, "total_count": 1}},
+        {"activities": [rec()]},  # no page_meta
+        {"activities": [rec()], "page_meta": {"next": None}},  # no total_count
+    ],
+)
+def test_fetch_rejects_pages_with_the_wrong_shape(monkeypatch, bad_page):
+    serve(monkeypatch, bad_page)
+    with pytest.raises(TypeError, match="unexpected ChEMBL response"):
+        bl.fetch_activities()
+
+
+@pytest.mark.parametrize("bad_next", [5, "elsewhere"])
+def test_fetch_rejects_a_bad_next_link(monkeypatch, bad_next):
+    page = {"activities": [rec()], "page_meta": {"next": bad_next, "total_count": 1}}
+    serve(monkeypatch, page)
+    with pytest.raises(RuntimeError, match="bad next link"):
+        bl.fetch_activities()
+
+
+def test_fetch_rejects_records_missing_a_field(monkeypatch):
+    record = rec()
+    del record["pchembl_value"]
+    serve(
+        monkeypatch,
+        {"activities": [record], "page_meta": {"next": None, "total_count": 1}},
+    )
+    with pytest.raises(RuntimeError, match="pchembl_value"):
+        bl.fetch_activities()
 
 
 def test_load_downloads_when_csv_is_missing(fake_chembl, tmp_path):
@@ -323,7 +376,8 @@ def test_main_forwards_flags_and_prints_a_summary(monkeypatch, capsys):
     assert seen == {"threshold": 6.5, "refresh": True}
     out = capsys.readouterr().out
     assert "2 molecules" in out
-    assert "50.0%" in out
+    # pandas labels the median row "50%"; the two fake pIC50s (5.0, 7.0) give 6.0
+    assert re.search(r"50%\s+6\.000", out)
 
 
 def test_main_defaults(monkeypatch):
