@@ -1,7 +1,3 @@
-"""
-SMILES representation for the sequence encoder (SCRUM-21)
-"""
-
 from rdkit import Chem
 
 
