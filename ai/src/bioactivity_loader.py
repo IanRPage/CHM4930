@@ -1,4 +1,14 @@
-"""Download, clean and load bioactivity data from ChEMBL."""
+"""Download, clean, and load bioactivity data from ChEMBL.
+
+How to use as CLI tool (from `ai/`):
+
+    python src/bioactivity_loader.py                  # use cached CSV, download if missing
+    python src/bioactivity_loader.py --refresh        # re-download from ChEMBL
+    python src/bioactivity_loader.py --threshold 7.0  # pIC50 cutoff for "active" (default 6.0)
+
+Prints the molecule count and a pIC50 summary. From a python script, use
+`load_bace1()`.
+"""
 
 import argparse
 import json
