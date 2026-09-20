@@ -33,7 +33,7 @@ PAGE_1 = {
         rec("C1", "CCO", "7.0"),
         rec("C1", "CCO", "8.0"),  # repeat measurement of C1
         rec("C2", "c1ccccc1CC(=O)O", "5.0"),
-        rec("C3", "CC(=O)[O-].[Na+]", "6.5"),  # sodium acetate
+        rec("C3", "CCN.Cl", "6.5"),  # ethylamine hydrochloride
         rec("C4", "CCN", "6.0", standard_relation=">"),  # censored, dropped
     ],
     "page_meta": {"next": "/chembl/api/data/activity.json?page=2", "total_count": 9},
@@ -41,7 +41,7 @@ PAGE_1 = {
 PAGE_2 = {
     "activities": [
         rec("C5", "c1ccccc1CC(=O)O", "5.4"),  # same structure as C2
-        rec("C6", "CC(=O)O", "6.0"),  # acetic acid: same parent as C3's salt
+        rec("C6", "CCN", "6.0"),  # ethylamine: same parent as C3's salt
         rec("C7", "not_a_smiles", "6.0"),  # RDKit can't parse, dropped
         rec("C8", "CCCC", None),  # no pChEMBL, dropped
     ],
@@ -74,7 +74,7 @@ def no_network(monkeypatch):
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("CC(=O)[O-].[Na+]", "CC(=O)O"),  # strips counterion and neutralizes
+        ("CC(=O)[O-].[Na+]", "CC(=O)[O-]"),  # strips counterion, keeps the charge
         ("Cl.CCN", "CCN"),  # strips HCl salt
         ("[Na+].[Cl-].c1ccccc1CC(=O)O", "O=C(O)Cc1ccccc1"),  # keeps the big fragment
         ("C[C@H](N)C(=O)O", "C[C@H](N)C(=O)O"),  # stereo preserved
@@ -142,11 +142,11 @@ def test_clean_single_measurement_has_zero_spread():
 
 def test_clean_merges_salt_and_parent_under_different_chembl_ids():
     out = clean(
-        rec("FREE_ACID", "CC(=O)O", "6.0"),
-        rec("SODIUM_SALT", "CC(=O)[O-].[Na+]", "6.5"),
+        rec("FREE_BASE", "CCN", "6.0"),
+        rec("HCL_SALT", "CCN.Cl", "6.5"),
     )
     assert len(out) == 1
-    assert out.loc[0, "smiles"] == "CC(=O)O"
+    assert out.loc[0, "smiles"] == "CCN"
     assert out.loc[0, "n_meas"] == 2
     assert out.loc[0, "pIC50"] == pytest.approx(6.25)
 
@@ -254,12 +254,12 @@ def test_load_downloads_when_csv_is_missing(fake_chembl, tmp_path):
 
     assert csv.exists()
     assert len(fake_chembl) == 2
-    # C1 x2 -> CCO; C2 + C5 -> phenylacetic acid; C3 salt + C6 -> acetic acid
-    assert sorted(df["smiles"]) == sorted(["CCO", "O=C(O)Cc1ccccc1", "CC(=O)O"])
+    # C1 x2 -> CCO; C2 + C5 -> phenylacetic acid; C3 salt + C6 -> ethylamine
+    assert sorted(df["smiles"]) == sorted(["CCO", "O=C(O)Cc1ccccc1", "CCN"])
     by_smiles = df.set_index("smiles")
     assert by_smiles.loc["CCO", "pIC50"] == 7.5
     assert by_smiles.loc["O=C(O)Cc1ccccc1", "pIC50"] == pytest.approx(5.2)
-    assert by_smiles.loc["CC(=O)O", "pIC50"] == pytest.approx(6.25)
+    assert by_smiles.loc["CCN", "pIC50"] == pytest.approx(6.25)
 
 
 def test_load_uses_the_cached_csv_without_network(fake_chembl, tmp_path):

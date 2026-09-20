@@ -46,7 +46,6 @@ PIC50_ACTIVE_THRESHOLD = 6.0
 CSV_COLUMNS = ["molecule_chembl_id", "smiles", "pIC50", "n_meas", "pIC50_spread"]
 
 _LARGEST_FRAGMENT = rdMolStandardize.LargestFragmentChooser()
-_UNCHARGER = rdMolStandardize.Uncharger()
 
 
 # validate one ChEMBL activity page, returns (records, next path, total count)
@@ -104,12 +103,12 @@ def fetch_activities() -> pd.DataFrame:
     return pd.DataFrame.from_records(rows)
 
 
-# keeps largest fragment and neutralize charges (stereo preserved)
+# strips salts/counterions by keeping the largest fragment (charges and stereo preserved)
 def standardize_smiles(smiles: str) -> str | None:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return None
-    mol = _UNCHARGER.uncharge(_LARGEST_FRAGMENT.choose(mol))
+    mol = _LARGEST_FRAGMENT.choose(mol)
     return Chem.MolToSmiles(mol)
 
 
