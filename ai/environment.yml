@@ -14,5 +14,6 @@ dependencies:
   - nbstripout
   - pytorch
   - pip
+  - deepchem
   - pip:
       - torch_geometric
