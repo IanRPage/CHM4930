@@ -1,0 +1,35 @@
+name: lint
+
+on:
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+
+      - name: Install pre-commit
+        run: pip install pre-commit
+
+      - name: Run hooks (ruff, gitleaks, actionlint)
+        run: |
+          SKIP=prettier,gitleaks pre-commit run --all-files --show-diff-on-failure
+          pre-commit run gitleaks-history --all-files --hook-stage manual
