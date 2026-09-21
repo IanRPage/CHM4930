@@ -4,9 +4,10 @@ import re
 import sys
 import urllib.request
 
-import bioactivity_loader as bl
 import pandas as pd
 import pytest
+
+import bioactivity_loader as bl
 
 
 def rec(cid="CHEMBL1", smiles="CCO", pchembl="7.0", **overrides):
