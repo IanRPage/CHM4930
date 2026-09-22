@@ -11,9 +11,11 @@ ai/
 ├── notebooks/       # exploration / scratchpads
 ├── src/             # main code
 │   └── check_env.py # sanity check that dependencies are installed correctly
+├── tests/           # pytest suite
 ├── checkpoints/     # saved model weights
 ├── outputs/         # generated artifacts (figures, logs, metrics, etc.)
 ├── environment.yml  # conda environment config
+├── pytest.ini       # pytest config (test paths, import path, markers)
 └── README.md
 ```
 
@@ -61,3 +63,22 @@ python src/check_env.py
 
 It imports each dependency and prints its version, so if something's missing or
 broken, you'll know.
+
+## Testing
+
+Tests use [`pytest`](https://docs.pytest.org). From anywhere inside this
+directory, run:
+
+```
+pytest
+```
+
+`pytest.ini` points pytest at `tests/` and adds `src/` to the import path, so
+tests can `import` modules from `src` directly.
+
+Tests marked `network` call external services (e.g. the ChEMBL API), so they're
+skipped by default. To run `network` tests, do:
+
+```
+pytest -m network
+```

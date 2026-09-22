@@ -12,6 +12,7 @@ dependencies:
   - rdkit
   - jupyter
   - nbstripout
+  - pytest
   - pytorch
   - pip
   - pip:
