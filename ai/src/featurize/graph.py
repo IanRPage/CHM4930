@@ -2,6 +2,7 @@ import torch
 from rdkit import Chem
 from torch_geometric.data import Data
 
+# standard orgo-chem subsets
 ATOM_TYPES = ["C", "N", "O", "F", "P", "S", "Cl", "Br", "I"]
 FORMAL_CHARGES = [-2, -1, 0, 1, 2]
 HYBRIDIZATIONS = [
@@ -31,6 +32,7 @@ STEREO_TYPES = [
     Chem.BondStereo.STEREOTRANS,
 ]
 
+# corresps to number of atom features (one-hot encoded)
 NODE_FEATURE_DIM = (
     len(ATOM_TYPES)
     + 1
@@ -44,15 +46,19 @@ NODE_FEATURE_DIM = (
     + 1
     + 1  # aromaticity bool
 )
+# corresps to number of bond features (one-hot encoded)
 EDGE_FEATURE_DIM = len(BOND_TYPES) + 1 + len(STEREO_TYPES) + 1
 
 
+# one-hot encoding helper
 def _one_hot(value, choices: list) -> list[float]:
+    # floats b/c encodings feed into matrix mult later
     vec = [0.0] * (len(choices) + 1)
     vec[choices.index(value) if value in choices else len(choices)] = 1.0
     return vec
 
 
+# one-hot encodes an atom's features
 def _atom_features(atom: Chem.Atom) -> list[float]:
     return (
         _one_hot(atom.GetSymbol(), ATOM_TYPES)
@@ -64,6 +70,7 @@ def _atom_features(atom: Chem.Atom) -> list[float]:
     )
 
 
+# one-hot encodes a bond's features
 def _bond_features(bond: Chem.Bond) -> list[float]:
     return _one_hot(bond.GetBondType(), BOND_TYPES) + _one_hot(
         bond.GetStereo(), STEREO_TYPES
