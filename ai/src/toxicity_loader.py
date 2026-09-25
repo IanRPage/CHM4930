@@ -80,7 +80,7 @@ def clean_dataset(toxicity_data, duplicate_mode):
     toxicity_data_filtered = toxicity_data.select(valid_indices)
 
     toxicity_data_filtered = NumpyDataset(
-        X=toxicity_data_filtered.X,
+        X=standardized_smiles,
         y=toxicity_data_filtered.y,
         w=toxicity_data_filtered.w,
         ids=standardized_smiles,
@@ -107,16 +107,26 @@ def cache_dataset(dataset, cache_path):
     log.info("wrote %d molecules to %s", len(dataset), cache_path)
 
 
-def load_toxicity_data(dataset_name: str) -> DiskDataset:
+def load_toxicity_data(dataset_name: str):
     cache_path = Path(DATA_DIR / f"MolNet-{dataset_name}")
     if not cache_path.exists():
         # pull data without splitting, set molecular representation to SMILES
         if dataset_name == "clintox":
-            dataset = load_clintox(splitter=None, featurizer=RawFeaturizer(smiles=True))
+            dataset = load_clintox(
+                splitter=None,
+                featurizer=RawFeaturizer(smiles=True),
+                transformers=[],
+                reload=False,
+            )
             dataset_clean = clean_dataset(dataset[1][0], "remove_all")
             print(f"\n{len(dataset_clean)} molecules from clintox")
         elif dataset_name == "tox21":
-            dataset = load_tox21(splitter=None, featurizer=RawFeaturizer(smiles=True))
+            dataset = load_tox21(
+                splitter=None,
+                featurizer=RawFeaturizer(smiles=True),
+                transformers=[],
+                reload=False,
+            )
             dataset_clean = clean_dataset(dataset[1][0], "keep_first")
             print(f"\n{len(dataset_clean)} molecules from tox21")
 
