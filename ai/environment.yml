@@ -18,3 +18,4 @@ dependencies:
   - pip
   - pip:
       - torch_geometric
+      - deepchem
