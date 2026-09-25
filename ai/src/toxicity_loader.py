@@ -2,7 +2,6 @@ import json
 import logging
 from pathlib import Path
 
-import pandas as pd
 from deepchem.data import NumpyDataset
 from deepchem.data.datasets import DiskDataset
 from deepchem.feat import RawFeaturizer
@@ -87,24 +86,6 @@ def clean_dataset(toxicity_data, duplicate_mode):
     )
 
     return toxicity_data_filtered
-
-
-def cache_dataset(dataset, cache_path):
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-
-    df = pd.DataFrame(
-        {
-            "smiles": dataset.ids,
-        }
-    )
-
-    for i in range(dataset.x.shape[1]):
-        df[f"x_{i}"] = dataset.x[:, i]
-        df[f"y_{i}"] = dataset.y[:, i]
-        df[f"w_{i}"] = dataset.w[:, i]
-
-    df.to_csv(cache_path, index=False)
-    log.info("wrote %d molecules to %s", len(dataset), cache_path)
 
 
 def load_toxicity_data(dataset_name: str):
