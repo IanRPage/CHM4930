@@ -4,7 +4,7 @@ from sklearn.metrics import mean_squared_error, r2_score, roc_auc_score
 
 def evaluation_metrics(y_true, y_score, task_type, mask=None):
     """Compute evaluation metrics for regression and classification tasks."""
-    
+
     if task_type not in {"regression", "classification", "multitask"}:
         raise ValueError(
             "task_type must be 'regression', 'classification', or 'multitask'"
