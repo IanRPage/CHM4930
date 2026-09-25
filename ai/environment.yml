@@ -10,7 +10,6 @@ dependencies:
   - scikit-learn
   - matplotlib
   - seaborn
-  - scikit-learn
   - rdkit
   - jupyter
   - nbstripout
