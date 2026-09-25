@@ -19,9 +19,7 @@ def evaluation_metrics(y_true, y_score, task_type, mask=None):
     expected_ndim = 2 if task_type == "multitask" else 1
 
     if y_true.ndim != expected_ndim:
-        raise ValueError(
-            f"{task_type} requires {expected_ndim}D arrays"
-        )
+        raise ValueError(f"{task_type} requires {expected_ndim}D arrays")
 
     if mask is None:
         mask = np.ones(y_true.shape, dtype=bool)
@@ -43,21 +41,14 @@ def evaluation_metrics(y_true, y_score, task_type, mask=None):
             if np.unique(task_true).size < 2:
                 task_scores.append(float("nan"))
             else:
-                task_scores.append(
-                    float(roc_auc_score(task_true, task_pred))
-                )
+                task_scores.append(float(roc_auc_score(task_true, task_pred)))
 
-        valid_scores = [
-            score for score in task_scores
-            if not np.isnan(score)
-        ]
+        valid_scores = [score for score in task_scores if not np.isnan(score)]
 
         return {
             "per_task_roc_auc": task_scores,
             "mean_roc_auc": (
-                float(np.mean(valid_scores))
-                if valid_scores
-                else float("nan")
+                float(np.mean(valid_scores)) if valid_scores else float("nan")
             ),
         }
 
@@ -74,9 +65,7 @@ def evaluation_metrics(y_true, y_score, task_type, mask=None):
                 else float("nan")
             ),
             "r2": (
-                float(r2_score(y_true, y_score))
-                if y_true.size >= 2
-                else float("nan")
+                float(r2_score(y_true, y_score)) if y_true.size >= 2 else float("nan")
             ),
         }
 
