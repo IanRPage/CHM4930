@@ -7,7 +7,7 @@ import urllib.request
 import pandas as pd
 import pytest
 
-import bioactivity_loader as bl
+from pipeline import bioactivity_loader as bl
 
 
 def rec(cid="CHEMBL1", smiles="CCO", pchembl="7.0", **overrides):
@@ -370,7 +370,7 @@ def test_main_forwards_flags_and_prints_a_summary(monkeypatch, capsys):
 
     monkeypatch.setattr(bl, "load_bace1", fake_load)
     monkeypatch.setattr(
-        sys, "argv", ["bioactivity_loader.py", "--refresh", "--threshold", "6.5"]
+        sys, "argv", ["pipeline.bioactivity_loader", "--refresh", "--threshold", "6.5"]
     )
     bl.main()
 
@@ -389,7 +389,7 @@ def test_main_defaults(monkeypatch):
         return pd.DataFrame({"pIC50": [6.0], "active": [1]})
 
     monkeypatch.setattr(bl, "load_bace1", fake_load)
-    monkeypatch.setattr(sys, "argv", ["bioactivity_loader.py"])
+    monkeypatch.setattr(sys, "argv", ["pipeline.bioactivity_loader"])
     bl.main()
     assert seen == {"threshold": bl.PIC50_ACTIVE_THRESHOLD, "refresh": False}
 

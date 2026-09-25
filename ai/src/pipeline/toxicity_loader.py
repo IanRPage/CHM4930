@@ -8,8 +8,9 @@ from deepchem.feat import RawFeaturizer
 from deepchem.molnet.load_function.clintox_datasets import load_clintox
 from deepchem.molnet.load_function.tox21_datasets import load_tox21
 from deepchem.utils.data_utils import load_from_disk, save_to_disk
-from rdkit import Chem, RDLogger
-from rdkit.Chem.MolStandardize import rdMolStandardize
+from rdkit import RDLogger
+
+from pipeline.preprocess import standardize_smiles
 
 """
 load_clintox/load_tox21 output: Tuple[List[str], Tuple[Dataset, ...], List[dc.trans Transformer]
@@ -27,25 +28,11 @@ transformers: list of TransformerGenerators or strings
         the Transformers to apply to the data.  Each one is specified by a
         TransformerGenerator or, as a shortcut, one of the names from
         dc.molnet.transformers.
-
 """
 
 log = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parents[1] / "data"
-
-_LARGEST_FRAGMENT = rdMolStandardize.LargestFragmentChooser()
-
-
-def standardize_smiles(smiles: str) -> str | None:
-    mol = Chem.MolFromSmiles(smiles)
-
-    if mol is None:
-        return None
-
-    mol = _LARGEST_FRAGMENT.choose(mol)
-
-    return Chem.MolToSmiles(mol)
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 
 def clean_dataset(toxicity_data, duplicate_mode):

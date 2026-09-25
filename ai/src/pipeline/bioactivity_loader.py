@@ -1,10 +1,11 @@
-"""Download, clean, and load bioactivity data from ChEMBL.
+"""
+Download, clean, and load bioactivity data from ChEMBL.
 
-How to use as CLI tool (from `ai/`):
+How to use as CLI tool (from `ai/`, with `PYTHONPATH=src`):
 
-    python src/bioactivity_loader.py                  # use cached CSV, download if missing
-    python src/bioactivity_loader.py --refresh        # re-download from ChEMBL
-    python src/bioactivity_loader.py --threshold 7.0  # pIC50 cutoff for "active" (default 6.0)
+    python -m pipeline.bioactivity_loader                  # use cached CSV, download if missing
+    python -m pipeline.bioactivity_loader --refresh        # re-download from ChEMBL
+    python -m pipeline.bioactivity_loader --threshold 7.0  # pIC50 cutoff for "active" (default 6.0)
 
 Prints the molecule count and a pIC50 summary. From a python script, use
 `load_bace1()`.
@@ -18,12 +19,12 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import pandas as pd
-from rdkit import Chem
-from rdkit.Chem.MolStandardize import rdMolStandardize
+
+from pipeline.preprocess import standardize_smiles
 
 log = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 CHEMBL_HOST = "https://www.ebi.ac.uk"
 ACTIVITY_URL = f"{CHEMBL_HOST}/chembl/api/data/activity.json"
 PAGE_SIZE = 1000
@@ -44,8 +45,6 @@ BACE1_TARGET_ID = "CHEMBL4822"
 BACE1_CSV_PATH = DATA_DIR / "chembl-bace-1.csv"
 PIC50_ACTIVE_THRESHOLD = 6.0
 CSV_COLUMNS = ["molecule_chembl_id", "smiles", "pIC50", "n_meas", "pIC50_spread"]
-
-_LARGEST_FRAGMENT = rdMolStandardize.LargestFragmentChooser()
 
 
 # validate one ChEMBL activity page, returns (records, next path, total count)
@@ -101,15 +100,6 @@ def fetch_activities() -> pd.DataFrame:
             f"but only {len(rows)} were retrieved"
         )
     return pd.DataFrame.from_records(rows)
-
-
-# strips salts/counterions by keeping the largest fragment (charges and stereo preserved)
-def standardize_smiles(smiles: str) -> str | None:
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        return None
-    mol = _LARGEST_FRAGMENT.choose(mol)
-    return Chem.MolToSmiles(mol)
 
 
 # filters to exact binding measurements, then collapses to one row per molecule
