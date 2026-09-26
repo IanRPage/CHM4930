@@ -20,11 +20,11 @@ from urllib.parse import urlencode
 
 import pandas as pd
 
+from pipeline.cache import DATA_DIR, load_csv, write_csv
 from pipeline.preprocess import standardize_smiles_column, summarize_labels
 
 log = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 CHEMBL_HOST = "https://www.ebi.ac.uk"
 ACTIVITY_URL = f"{CHEMBL_HOST}/chembl/api/data/activity.json"
 PAGE_SIZE = 1000
@@ -143,12 +143,7 @@ def clean_activities(raw: pd.DataFrame) -> pd.DataFrame:
 
 
 def download_bace1(csv_path: Path = BACE1_CSV_PATH) -> None:
-    cleaned = clean_activities(fetch_activities())
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = csv_path.with_name(csv_path.name + ".tmp")
-    cleaned.to_csv(tmp_path, index=False)
-    tmp_path.replace(csv_path)
-    log.info("wrote %d molecules to %s", len(cleaned), csv_path)
+    write_csv(clean_activities(fetch_activities()), csv_path)
 
 
 def add_active_label(
@@ -164,19 +159,7 @@ def load_bace1(
     csv_path: Path = BACE1_CSV_PATH,
     refresh: bool = False,
 ) -> pd.DataFrame:
-    if refresh or not csv_path.exists():
-        log.info("downloading BACE-1 data to %s", csv_path)
-        download_bace1(csv_path)
-    else:
-        log.info("using cached %s", csv_path)
-
-    df = pd.read_csv(csv_path)
-    missing = set(CSV_COLUMNS) - set(df.columns)
-    if missing:
-        raise ValueError(
-            f"{csv_path} is missing columns {sorted(missing)}; "
-            "delete it or re-run with refresh=True / --refresh"
-        )
+    df = load_csv(csv_path, download_bace1, CSV_COLUMNS, refresh)
     return add_active_label(df, threshold)
 
 

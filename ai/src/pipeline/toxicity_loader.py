@@ -17,16 +17,17 @@ per task. Labels are 0/1, and NaN where the compound wasn't measured.
 import argparse
 import logging
 import urllib.request
+from functools import partial
 from pathlib import Path
 
 import pandas as pd
 from rdkit import RDLogger
 
+from pipeline.cache import DATA_DIR, load_csv, write_csv
 from pipeline.preprocess import standardize_smiles_column, summarize_labels
 
 log = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 MOLECULENET_URL = (
     "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/{name}.csv.gz"
 )
@@ -82,12 +83,7 @@ def download_toxicity_data(dataset_name: str, csv_path: Path):
     raw = fetch_dataset(dataset_name)
     cleaned = clean_dataset(raw, TASKS[dataset_name], DUPLICATE_MODES[dataset_name])
     log.info("cleaned %s: %d raw -> %d molecules", dataset_name, len(raw), len(cleaned))
-
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = csv_path.with_name(csv_path.name + ".tmp")
-    cleaned.to_csv(tmp_path, index=False)
-    tmp_path.replace(csv_path)
-    log.info("wrote %d molecules to %s", len(cleaned), csv_path)
+    write_csv(cleaned, csv_path)
 
 
 def load_toxicity_data(
@@ -99,21 +95,8 @@ def load_toxicity_data(
         )
 
     csv_path = data_dir / f"MolNet-{dataset_name}.csv"
-    if refresh or not csv_path.exists():
-        log.info("downloading %s data to %s", dataset_name, csv_path)
-        download_toxicity_data(dataset_name, csv_path)
-    else:
-        log.info("using cached %s", csv_path)
-
-    df = pd.read_csv(csv_path)
-    expected = ["smiles", *TASKS[dataset_name]]
-    if list(df.columns) != expected:
-        raise ValueError(
-            f"{csv_path} has columns {list(df.columns)}, expected {expected}; "
-            "delete it or re-run with refresh=True as an arg OR add --refresh "
-            "flag if using CLI"
-        )
-    return df
+    download = partial(download_toxicity_data, dataset_name)
+    return load_csv(csv_path, download, ["smiles", *TASKS[dataset_name]], refresh)
 
 
 def main() -> None:
