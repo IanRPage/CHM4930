@@ -88,6 +88,8 @@ def featurize(structure: str | Chem.Mol, n_bits: int = 2048) -> Data:
 def featurize_many(
     structures: pd.Series | Iterable[str | Chem.Mol], n_bits: int = 2048
 ) -> tuple[list[Data], list]:
+    if n_bits not in ALLOWED_N_BITS:
+        raise ValueError(f"n_bits must be one of {ALLOWED_N_BITS}, got {n_bits}")
     items = (
         structures.items()
         if isinstance(structures, pd.Series)
@@ -98,7 +100,7 @@ def featurize_many(
         try:
             featurized.append(featurize(structure, n_bits))
         except ValueError as e:
-            log.debug("skipping structure %d: %s", i, e)
+            log.debug("skipping structure %s: %s", i, e)
             failed.append(i)
 
     if failed:
