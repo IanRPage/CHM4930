@@ -22,7 +22,7 @@ def write_csv(df: pd.DataFrame, csv_path: Path) -> None:
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise
-    log.info("wrote %d molecules to %s", len(df), csv_path)
+    log.info("wrote %d rows to %s", len(df), csv_path)
 
 
 def load_csv(
