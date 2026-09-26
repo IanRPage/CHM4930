@@ -355,9 +355,9 @@ def test_downloaded_csv_has_only_the_cleaned_columns(fake_chembl, tmp_path):
     assert list(pd.read_csv(csv).columns) == bl.CSV_COLUMNS
 
 
-def test_preprocess_does_not_mutate_its_input():
+def test_add_active_label_does_not_mutate_its_input():
     df = pd.DataFrame({"pIC50": [5.0, 7.0]})
-    bl.preprocess(df, 6.0)
+    bl.add_active_label(df, 6.0)
     assert list(df.columns) == ["pIC50"]
 
 

@@ -155,7 +155,7 @@ def download_bace1(csv_path: Path = BACE1_CSV_PATH) -> None:
     log.info("wrote %d molecules to %s", len(cleaned), csv_path)
 
 
-def preprocess(
+def add_active_label(
     df: pd.DataFrame, threshold: float = PIC50_ACTIVE_THRESHOLD
 ) -> pd.DataFrame:
     out = df.copy()
@@ -181,7 +181,7 @@ def load_bace1(
             f"{csv_path} is missing columns {sorted(missing)}; "
             "delete it or re-run with refresh=True / --refresh"
         )
-    return preprocess(df, threshold)
+    return add_active_label(df, threshold)
 
 
 def main() -> None:
