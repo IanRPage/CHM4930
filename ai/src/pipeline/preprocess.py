@@ -58,6 +58,15 @@ def standardize_smiles(smiles: str) -> str | None:
         return None
 
 
+def standardize_smiles_column(df: pd.DataFrame, column: str = "smiles") -> pd.DataFrame:
+    df = df.assign(smiles=df[column].map(standardize_smiles))
+    n_unparsed = int(df["smiles"].isna().sum())
+    if n_unparsed:
+        log.warning("dropping %d rows whose SMILES RDKit couldn't parse", n_unparsed)
+        df = df.dropna(subset=["smiles"])
+    return df
+
+
 def featurize(structure: str | Chem.Mol, n_bits: int = 2048) -> Data:
     if n_bits not in ALLOWED_N_BITS:
         raise ValueError(f"n_bits must be one of {ALLOWED_N_BITS}, got {n_bits}")

@@ -10,6 +10,7 @@ from pipeline.preprocess import (
     featurize,
     featurize_many,
     standardize_smiles,
+    standardize_smiles_column,
     summarize_labels,
     to_mol,
 )
@@ -105,8 +106,29 @@ def test_to_mol_keeps_largest_fragment():
     assert to_mol("Cl.CCN").GetNumAtoms() == 3
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("CC(=O)[O-].[Na+]", "CC(=O)[O-]"),  # strips counterion, keeps the charge
+        ("Cl.CCN", "CCN"),  # strips HCl salt
+        ("[Na+].[Cl-].c1ccccc1CC(=O)O", "O=C(O)Cc1ccccc1"),  # keeps the big fragment
+        ("C[C@H](N)C(=O)O", "C[C@H](N)C(=O)O"),  # stereo preserved
+    ],
+)
+def test_standardize_smiles(raw, expected):
+    assert standardize_smiles(raw) == expected
+
+
 def test_standardize_smiles_none_when_unparseable():
     assert standardize_smiles("not_a_smiles") is None
+
+
+def test_standardize_smiles_column_drops_unparseable(caplog):
+    df = pd.DataFrame({"raw": ["Cl.CCN", "not_a_smiles"], "label": [1, 0]})
+    out = standardize_smiles_column(df, column="raw")
+    assert out["smiles"].tolist() == ["CCN"]
+    assert out["label"].tolist() == [1]
+    assert "dropping 1 rows" in caplog.text
 
 
 def test_summarize_labels_counts_missing_and_positives():

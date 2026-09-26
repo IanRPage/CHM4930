@@ -22,7 +22,7 @@ from pathlib import Path
 import pandas as pd
 from rdkit import RDLogger
 
-from pipeline.preprocess import standardize_smiles, summarize_labels
+from pipeline.preprocess import standardize_smiles_column, summarize_labels
 
 log = logging.getLogger(__name__)
 
@@ -65,11 +65,7 @@ def fetch_dataset(dataset_name: str) -> pd.DataFrame:
 
 
 def clean_dataset(raw: pd.DataFrame, tasks: list[str], duplicate_mode: str):
-    df = raw.assign(smiles=raw["smiles"].map(standardize_smiles))
-    n_unparsed = int(df["smiles"].isna().sum())
-    if n_unparsed:
-        log.warning("dropping %d rows whose SMILES RDKit couldn't parse", n_unparsed)
-        df = df.dropna(subset=["smiles"])
+    df = standardize_smiles_column(raw)
 
     # keep first dup instance for tox21, remove all dups for clintox
     if duplicate_mode == "keep_first":

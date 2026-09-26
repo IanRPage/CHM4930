@@ -72,23 +72,6 @@ def no_network(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", boom)
 
 
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("CC(=O)[O-].[Na+]", "CC(=O)[O-]"),  # strips counterion, keeps the charge
-        ("Cl.CCN", "CCN"),  # strips HCl salt
-        ("[Na+].[Cl-].c1ccccc1CC(=O)O", "O=C(O)Cc1ccccc1"),  # keeps the big fragment
-        ("C[C@H](N)C(=O)O", "C[C@H](N)C(=O)O"),  # stereo preserved
-    ],
-)
-def test_standardize_smiles(raw, expected):
-    assert bl.standardize_smiles(raw) == expected
-
-
-def test_standardize_smiles_returns_none_when_unparseable():
-    assert bl.standardize_smiles("not_a_smiles") is None
-
-
 def test_clean_keeps_a_good_row():
     out = clean(rec())
     assert len(out) == 1

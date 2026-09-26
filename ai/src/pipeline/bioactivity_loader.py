@@ -20,7 +20,7 @@ from urllib.parse import urlencode
 
 import pandas as pd
 
-from pipeline.preprocess import standardize_smiles, summarize_labels
+from pipeline.preprocess import standardize_smiles_column, summarize_labels
 
 log = logging.getLogger(__name__)
 
@@ -123,13 +123,9 @@ def clean_activities(raw: pd.DataFrame) -> pd.DataFrame:
         df = df[keep(df)]
         log.info("%-40s %6d rows", f"after {label}", len(df))
 
-    df = df.rename(columns={"pchembl_value": "pIC50"}).assign(
-        smiles=lambda d: d["canonical_smiles"].map(standardize_smiles)
+    df = standardize_smiles_column(
+        df.rename(columns={"pchembl_value": "pIC50"}), column="canonical_smiles"
     )
-    n_unparsed = int(df["smiles"].isna().sum())
-    if n_unparsed:
-        log.warning("dropping %d rows whose SMILES RDKit couldn't parse", n_unparsed)
-        df = df.dropna(subset=["smiles"])
 
     molecules = df.groupby("smiles", as_index=False).agg(
         molecule_chembl_id=("molecule_chembl_id", "min"),
