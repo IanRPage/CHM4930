@@ -1,11 +1,18 @@
 import numpy as np
+import pandas as pd
 import pytest
 import torch
 from rdkit import Chem, DataStructs
 from torch_geometric.data import Batch
 
 from featurize.graph import NODE_FEATURE_DIM
-from pipeline.preprocess import featurize, featurize_many, standardize_smiles, to_mol
+from pipeline.preprocess import (
+    featurize,
+    featurize_many,
+    standardize_smiles,
+    summarize_labels,
+    to_mol,
+)
 
 ASPIRIN = "CC(=O)Oc1ccccc1C(=O)O"
 
@@ -100,3 +107,12 @@ def test_to_mol_keeps_largest_fragment():
 
 def test_standardize_smiles_none_when_unparseable():
     assert standardize_smiles("not_a_smiles") is None
+
+
+def test_summarize_labels_counts_missing_and_positives():
+    df = pd.DataFrame({"T1": [1, 0, 1], "T2": [np.nan] * 3})
+    summary = summarize_labels(df, ["T1", "T2"])
+    assert summary.loc["T1"].tolist() == pytest.approx([3, 0, 2 / 3])
+    assert summary.loc["T2", "labeled"] == 0
+    assert summary.loc["T2", "missing"] == 3
+    assert np.isnan(summary.loc["T2", "positive_rate"])

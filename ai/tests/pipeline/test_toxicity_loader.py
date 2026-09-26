@@ -134,15 +134,6 @@ def test_failed_write_leaves_no_cache(fake_fetch, tmp_path, monkeypatch):
     assert list(tmp_path.iterdir()) == []
 
 
-def test_summarize_counts_missing_and_positives():
-    df = raw_dataset(["C", "CC", "CCC"], [[1, np.nan], [0, np.nan], [1, np.nan]])
-    summary = tl.summarize(df, TASKS)
-    assert summary.loc["T1"].tolist() == pytest.approx([3, 0, 2 / 3])
-    assert summary.loc["T2", "labeled"] == 0
-    assert summary.loc["T2", "missing"] == 3
-    assert np.isnan(summary.loc["T2", "positive_rate"])
-
-
 def test_main_forwards_flags_and_prints_a_summary(monkeypatch, capsys):
     seen = []
 

@@ -76,12 +76,9 @@ PYTHONPATH=src python -m pipeline.bioactivity_loader   # download/load ChEMBL BA
 PYTHONPATH=src python -m pipeline.toxicity_loader      # download/load Tox21 + ClinTox
 ```
 
-Each loader's CLI documentation is in its file docstring. They cache cleaned
-data as CSVs in `data/` and return a Pandas `DataFrame` with a standardized
-`smiles` column plus labels.
-
-- in toxicity CSVs, an empty label means the compound wasn't measured for that
-  task
+Each loader's documentation is in its file docstring. They cache cleaned data as
+CSVs in `data/` and return a Pandas `DataFrame` with a standardized `smiles`
+column plus labels.
 
 `pipeline.preprocess.featurize()` takes a SMILES string or RDKit `Mol` and
 returns a PyG `Data` object with all three model inputs:

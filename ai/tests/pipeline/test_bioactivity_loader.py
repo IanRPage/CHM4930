@@ -376,7 +376,8 @@ def test_main_forwards_flags_and_prints_a_summary(monkeypatch, capsys):
 
     assert seen == {"threshold": 6.5, "refresh": True}
     out = capsys.readouterr().out
-    assert "2 molecules" in out
+    assert "bace1: 2 molecules" in out
+    assert re.search(r"active\s+2\s+0\s+0\.5", out)
     # pandas labels the median row "50%"; the two fake pIC50s (5.0, 7.0) give 6.0
     assert re.search(r"50%\s+6\.000", out)
 

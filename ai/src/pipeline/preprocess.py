@@ -8,6 +8,7 @@ inference time, that way modalities are never missing."""
 import logging
 from collections.abc import Iterable
 
+import pandas as pd
 import torch
 from rdkit import Chem
 from rdkit.Chem.MolStandardize import rdMolStandardize
@@ -82,3 +83,14 @@ def featurize_many(
     if failed:
         log.warning("dropped %d structures RDKit couldn't featurize", len(failed))
     return featurized, failed
+
+
+def summarize_labels(df: pd.DataFrame, tasks: list[str]) -> pd.DataFrame:
+    labels = df[tasks]
+    return pd.DataFrame(
+        {
+            "labeled": labels.notna().sum(),
+            "missing": labels.isna().sum(),
+            "positive_rate": labels.mean(),
+        }
+    ).rename_axis("task")

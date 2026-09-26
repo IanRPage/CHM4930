@@ -20,7 +20,7 @@ from urllib.parse import urlencode
 
 import pandas as pd
 
-from pipeline.preprocess import standardize_smiles
+from pipeline.preprocess import standardize_smiles, summarize_labels
 
 log = logging.getLogger(__name__)
 
@@ -199,7 +199,8 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     df = load_bace1(threshold=args.threshold, refresh=args.refresh)
-    print(f"\n{len(df)} molecules")
+    print(f"\nbace1: {len(df)} molecules")
+    print(summarize_labels(df, ["active"]).round(3), end="\n\n")
     print(df["pIC50"].describe().round(3))
 
 

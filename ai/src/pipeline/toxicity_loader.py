@@ -22,7 +22,7 @@ from pathlib import Path
 import pandas as pd
 from rdkit import RDLogger
 
-from pipeline.preprocess import standardize_smiles
+from pipeline.preprocess import standardize_smiles, summarize_labels
 
 log = logging.getLogger(__name__)
 
@@ -120,17 +120,6 @@ def load_toxicity_data(
     return df
 
 
-def summarize(df: pd.DataFrame, tasks: list[str]) -> pd.DataFrame:
-    labels = df[tasks]
-    return pd.DataFrame(
-        {
-            "labeled": labels.notna().sum(),
-            "missing": labels.isna().sum(),
-            "positive_rate": labels.mean(),
-        }
-    ).rename_axis("task")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument(
@@ -150,7 +139,7 @@ def main() -> None:
     for name in names:
         df = load_toxicity_data(name, refresh=args.refresh)
         print(f"\n{name}: {len(df)} molecules")
-        print(summarize(df, TASKS[name]).round(3), end="\n\n")
+        print(summarize_labels(df, TASKS[name]).round(3), end="\n\n")
 
 
 if __name__ == "__main__":
