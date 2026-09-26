@@ -21,7 +21,6 @@ from functools import partial
 from pathlib import Path
 
 import pandas as pd
-from rdkit import RDLogger
 
 from pipeline.cache import DATA_DIR, load_csv, write_csv
 from pipeline.preprocess import standardize_smiles_column, summarize_labels
@@ -33,25 +32,26 @@ MOLECULENET_URL = (
 )
 REQUEST_TIMEOUT_S = 60
 
-TASKS = {
-    "tox21": [
-        "NR-AR",
-        "NR-AR-LBD",
-        "NR-AhR",
-        "NR-Aromatase",
-        "NR-ER",
-        "NR-ER-LBD",
-        "NR-PPAR-gamma",
-        "SR-ARE",
-        "SR-ATAD5",
-        "SR-HSE",
-        "SR-MMP",
-        "SR-p53",
-    ],
-    "clintox": ["FDA_APPROVED", "CT_TOX"],
+DATASETS = {
+    "tox21": {
+        "tasks": [
+            "NR-AR",
+            "NR-AR-LBD",
+            "NR-AhR",
+            "NR-Aromatase",
+            "NR-ER",
+            "NR-ER-LBD",
+            "NR-PPAR-gamma",
+            "SR-ARE",
+            "SR-ATAD5",
+            "SR-HSE",
+            "SR-MMP",
+            "SR-p53",
+        ],
+        "keep": "first",
+    },
+    "clintox": {"tasks": ["FDA_APPROVED", "CT_TOX"], "keep": False},
 }
-DUPLICATE_MODES = {"tox21": "keep_first", "clintox": "remove_all"}
-DATASETS = list(TASKS)
 
 
 def fetch_dataset(dataset_name: str) -> pd.DataFrame:
@@ -59,29 +59,20 @@ def fetch_dataset(dataset_name: str) -> pd.DataFrame:
     with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT_S) as response:
         raw = pd.read_csv(response, compression="gzip")
 
-    missing = {"smiles", *TASKS[dataset_name]} - set(raw.columns)
+    missing = {"smiles", *DATASETS[dataset_name]["tasks"]} - set(raw.columns)
     if missing:
         raise RuntimeError(f"{url} is missing columns {sorted(missing)}")
     return raw
 
 
-def clean_dataset(raw: pd.DataFrame, tasks: list[str], duplicate_mode: str):
-    df = standardize_smiles_column(raw)
-
-    # keep first dup instance for tox21, remove all dups for clintox
-    if duplicate_mode == "keep_first":
-        df = df.drop_duplicates(subset="smiles", keep="first")
-    elif duplicate_mode == "remove_all":
-        df = df.drop_duplicates(subset="smiles", keep=False)
-    else:
-        raise ValueError(f"unknown duplicate_mode {duplicate_mode!r}")
-
+def clean_dataset(raw: pd.DataFrame, tasks: list[str], keep: str | bool):
+    df = standardize_smiles_column(raw).drop_duplicates(subset="smiles", keep=keep)
     return df[["smiles", *tasks]].reset_index(drop=True)
 
 
 def download_toxicity_data(dataset_name: str, csv_path: Path):
     raw = fetch_dataset(dataset_name)
-    cleaned = clean_dataset(raw, TASKS[dataset_name], DUPLICATE_MODES[dataset_name])
+    cleaned = clean_dataset(raw, **DATASETS[dataset_name])
     log.info("cleaned %s: %d raw -> %d molecules", dataset_name, len(raw), len(cleaned))
     write_csv(cleaned, csv_path)
 
@@ -89,14 +80,16 @@ def download_toxicity_data(dataset_name: str, csv_path: Path):
 def load_toxicity_data(
     dataset_name: str, refresh: bool = False, data_dir: Path = DATA_DIR
 ) -> pd.DataFrame:
-    if dataset_name not in TASKS:
+    if dataset_name not in DATASETS:
         raise ValueError(
-            f"unknown dataset {dataset_name!r}, expected one of {DATASETS}"
+            f"unknown dataset {dataset_name!r}, expected one of {list(DATASETS)}"
         )
 
     csv_path = data_dir / f"MolNet-{dataset_name}.csv"
     download = partial(download_toxicity_data, dataset_name)
-    return load_csv(csv_path, download, ["smiles", *TASKS[dataset_name]], refresh)
+    return load_csv(
+        csv_path, download, ["smiles", *DATASETS[dataset_name]["tasks"]], refresh
+    )
 
 
 def main() -> None:
@@ -112,13 +105,12 @@ def main() -> None:
     )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    RDLogger.DisableLog("rdApp.*")
 
-    names = DATASETS if args.dataset == "all" else [args.dataset]
+    names = list(DATASETS) if args.dataset == "all" else [args.dataset]
     for name in names:
         df = load_toxicity_data(name, refresh=args.refresh)
         print(f"\n{name}: {len(df)} molecules")
-        print(summarize_labels(df, TASKS[name]).round(3), end="\n\n")
+        print(summarize_labels(df, DATASETS[name]["tasks"]).round(3), end="\n\n")
 
 
 if __name__ == "__main__":

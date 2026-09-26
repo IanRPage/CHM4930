@@ -11,7 +11,7 @@ from collections.abc import Iterable
 
 import pandas as pd
 import torch
-from rdkit import Chem
+from rdkit import Chem, rdBase
 from rdkit.Chem.MolStandardize import rdMolStandardize
 from torch_geometric.data import Data
 
@@ -30,31 +30,38 @@ def to_mol(structure: str | Chem.Mol) -> Chem.Mol:
     if isinstance(structure, str):
         if not structure.strip():
             raise ValueError("SMILES string is empty")
-        mol = Chem.MolFromSmiles(structure)
-        if mol is None:
-            raise ValueError(f"RDKit couldn't parse SMILES {structure!r}")
+        label = repr(structure)
     elif isinstance(structure, Chem.Mol):
-        mol = Chem.Mol(structure)
-        try:
-            Chem.SanitizeMol(mol)
-            mol = Chem.RemoveHs(mol)
-        except Exception as e:
-            raise ValueError(f"RDKit couldn't sanitize Mol: {e}") from e
+        label = "Mol"
     else:
         raise TypeError(
             f"expected a SMILES string or RDKit Mol, got {type(structure).__name__}; "
             "fingerprints can't be used as input since ECFP is a lossy hash"
         )
 
-    if mol.GetNumAtoms() == 0:
-        raise ValueError("mol has no atoms")
-    return _LARGEST_FRAGMENT.choose(mol)
+    with rdBase.BlockLogs():
+        if isinstance(structure, str):
+            mol = Chem.MolFromSmiles(structure, sanitize=False)
+            if mol is None:
+                raise ValueError(f"RDKit couldn't parse SMILES {label}")
+        else:
+            mol = Chem.Mol(structure)
+        try:
+            Chem.SanitizeMol(mol)
+            mol = Chem.RemoveHs(mol)
+        except Exception as e:
+            raise ValueError(f"RDKit couldn't sanitize {label}: {e}") from e
+
+        if mol.GetNumAtoms() == 0:
+            raise ValueError("mol has no atoms")
+        return _LARGEST_FRAGMENT.choose(mol)
 
 
 def standardize_smiles(smiles: str) -> str | None:
     try:
         return mol_to_smiles(to_mol(smiles))
-    except ValueError:
+    except ValueError as e:
+        log.debug("couldn't standardize: %s", e)
         return None
 
 
@@ -73,7 +80,7 @@ def featurize(structure: str | Chem.Mol, n_bits: int = 2048) -> Data:
 
     mol = to_mol(structure)
     data = mol_to_graph(mol)
-    data.fp = torch.from_numpy(mol_to_ecfp4(mol, n_bits)).float().unsqueeze(0)
+    data.fp = torch.from_numpy(mol_to_ecfp4(mol, n_bits)).unsqueeze(0)
     data.smiles = mol_to_smiles(mol)
     return data
 

@@ -57,6 +57,16 @@ def test_unusable_structure_raises(bad):
         featurize(bad)
 
 
+def test_sanitize_error_names_input():
+    with pytest.raises(ValueError, match=r"'c1cccc1'.*kekulize"):
+        to_mol("c1cccc1")
+
+
+def test_rdkit_errors_not_printed(capfd):
+    featurize_many(["c1cccc1", "C1CC", "CC(=O)[O-].[Na+]"])
+    assert capfd.readouterr().err == ""
+
+
 def test_unsupported_n_bits_raises():
     with pytest.raises(ValueError):
         featurize("CCO", n_bits=512)
@@ -66,7 +76,7 @@ def test_unsupported_n_bits_raises():
 def test_shapes(n_bits):
     data = featurize(ASPIRIN, n_bits=n_bits)
     assert data.fp.shape == (1, n_bits)
-    assert data.fp.dtype == torch.float
+    assert data.fp.dtype == torch.uint8
     assert data.x.shape == (13, NODE_FEATURE_DIM)
 
 
