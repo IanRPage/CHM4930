@@ -1,7 +1,7 @@
 """
 Download, clean, and load Tox21 and ClinTox toxicity data from MoleculeNet.
 
-How to use as CLI tool (from `ai/`):
+How to use as CLI tool (from `ai/`, with `PYTHONPATH=src`):
 
     python -m pipeline.toxicity_loader                     # use cached data, download if missing
     python -m pipeline.toxicity_loader --refresh           # re-download from MoleculeNet

@@ -7,7 +7,7 @@ How to use as CLI tool (from `ai/`, with `PYTHONPATH=src`):
     python -m pipeline.bioactivity_loader --refresh        # re-download from ChEMBL
     python -m pipeline.bioactivity_loader --threshold 7.0  # pIC50 cutoff for "active" (default 6.0)
 
-Prints the molecule count and a pIC50 summary. From a python script, use
+Prints the molecule count, an active label summary, and a pIC50 summary. From a python script, use
 `load_bace1()`.
 """
 

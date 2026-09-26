@@ -16,8 +16,12 @@ DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 def write_csv(df: pd.DataFrame, csv_path: Path) -> None:
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = csv_path.with_name(csv_path.name + ".tmp")
-    df.to_csv(tmp_path, index=False)
-    tmp_path.replace(csv_path)
+    try:
+        df.to_csv(tmp_path, index=False)
+        tmp_path.replace(csv_path)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
     log.info("wrote %d molecules to %s", len(df), csv_path)
 
 
