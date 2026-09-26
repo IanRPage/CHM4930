@@ -1,7 +1,28 @@
+"""
+Download, clean, and load Tox21 and ClinTox toxicity data from MoleculeNet.
+
+How to use as CLI tool (from `ai/`, with `PYTHONPATH=src`):
+
+    python -m pipeline.toxicity_loader                     # use cached data, download if missing
+    python -m pipeline.toxicity_loader --refresh           # re-download from MoleculeNet
+    python -m pipeline.toxicity_loader --dataset clintox   # only one dataset (default: all)
+
+Prints the molecule count and per-task label summary for each dataset. From a
+python script, use `load_toxicity_data()`.
+
+`load_toxicity_data()` mirrors deepchem's `load_tox21`/`load_clintox` output:
+`(tasks, (DiskDataset,), transformers)`. The data is pulled unsplit with SMILES
+as the representation and no transformers. Missing labels have weight `w == 0`.
+"""
+
+import argparse
 import json
 import logging
+import shutil
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 from deepchem.data import NumpyDataset
 from deepchem.data.datasets import DiskDataset
 from deepchem.feat import RawFeaturizer
@@ -12,27 +33,15 @@ from rdkit import RDLogger
 
 from pipeline.preprocess import standardize_smiles
 
-"""
-load_clintox/load_tox21 output: Tuple[List[str], Tuple[Dataset, ...], List[dc.trans Transformer]
-   - Dataset type is deepchem.data.datasets.DiskDataset
-
-load_clintox/load_tox21 parameters to note:
-
-splitter: Splitter or str
-        the splitter to use for splitting the data into training, validation, and
-        test sets.  Alternatively you can pass one of the names from
-        dc.molnet.splitters as a shortcut.  If this is None, all the data
-        will be included in a single dataset.
-
-transformers: list of TransformerGenerators or strings
-        the Transformers to apply to the data.  Each one is specified by a
-        TransformerGenerator or, as a shortcut, one of the names from
-        dc.molnet.transformers.
-"""
-
 log = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+
+DUPLICATE_MODES = {"tox21": "keep_first", "clintox": "remove_all"}
+DATASETS = list(DUPLICATE_MODES)
+
+_TASKS_FILE = "tasks.json"
+_TRANSFORMERS_FILE = "transformers.joblib"
 
 
 def clean_dataset(toxicity_data, duplicate_mode):
@@ -75,68 +84,114 @@ def clean_dataset(toxicity_data, duplicate_mode):
     return toxicity_data_filtered
 
 
-def load_toxicity_data(dataset_name: str):
-    cache_path = Path(DATA_DIR / f"MolNet-{dataset_name}")
-    if not cache_path.exists():
-        # pull data without splitting, set molecular representation to SMILES
-        if dataset_name == "clintox":
-            dataset = load_clintox(
-                splitter=None,
-                featurizer=RawFeaturizer(smiles=True),
-                transformers=[],
-                reload=False,
-            )
-            dataset_clean = clean_dataset(dataset[1][0], "remove_all")
-            print(f"\n{len(dataset_clean)} molecules from clintox")
-        elif dataset_name == "tox21":
-            dataset = load_tox21(
-                splitter=None,
-                featurizer=RawFeaturizer(smiles=True),
-                transformers=[],
-                reload=False,
-            )
-            dataset_clean = clean_dataset(dataset[1][0], "keep_first")
-            print(f"\n{len(dataset_clean)} molecules from tox21")
+def _fetch(dataset_name: str):
+    load = load_tox21 if dataset_name == "tox21" else load_clintox
+    return load(
+        splitter=None,
+        featurizer=RawFeaturizer(smiles=True),
+        transformers=[],
+        reload=False,
+    )
 
-        tasks = dataset[0]
-        transformers = dataset[2]
 
-        # save cleaned dataset
-        dataset = DiskDataset.from_numpy(
-            X=dataset_clean.X,
-            y=dataset_clean.y,
-            w=dataset_clean.w,
-            ids=dataset_clean.ids,
+def _is_complete(cache_path: Path) -> bool:
+    return (cache_path / _TASKS_FILE).exists() and (
+        cache_path / _TRANSFORMERS_FILE
+    ).exists()
+
+
+def download_toxicity_data(dataset_name: str, cache_path: Path):
+    tasks, (raw,), transformers = _fetch(dataset_name)
+    cleaned = clean_dataset(raw, DUPLICATE_MODES[dataset_name])
+    log.info("cleaned %s: %d raw -> %d molecules", dataset_name, len(raw), len(cleaned))
+
+    tmp_path = cache_path.with_name(cache_path.name + ".tmp")
+    shutil.rmtree(tmp_path, ignore_errors=True)
+    try:
+        DiskDataset.from_numpy(
+            X=cleaned.X,
+            y=cleaned.y,
+            w=cleaned.w,
+            ids=cleaned.ids,
             tasks=tasks,
-            data_dir=str(cache_path),
+            data_dir=str(tmp_path),
+        )
+        with open(tmp_path / _TASKS_FILE, "w") as f:
+            json.dump(list(tasks), f)
+        save_to_disk(transformers, str(tmp_path / _TRANSFORMERS_FILE))
+
+        shutil.rmtree(cache_path, ignore_errors=True)
+        tmp_path.rename(cache_path)
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
+    log.info("wrote %d molecules to %s", len(cleaned), cache_path)
+
+
+def load_toxicity_data(
+    dataset_name: str, refresh: bool = False, data_dir: Path = DATA_DIR
+):
+    if dataset_name not in DUPLICATE_MODES:
+        raise ValueError(
+            f"unknown dataset {dataset_name!r}, expected one of {DATASETS}"
         )
 
-        # save task names
-        with open(cache_path / "tasks.json", "w") as f:
-            json.dump(tasks, f)
-
-        # save tranformers
-        save_to_disk(transformers, str(cache_path / "transformers.joblib"))
-
-        return (tasks, (dataset,), transformers)
+    cache_path = data_dir / f"MolNet-{dataset_name}"
+    if refresh or not _is_complete(cache_path):
+        if cache_path.exists() and not refresh:
+            log.warning("cache %s is incomplete, re-downloading", cache_path)
+        log.info("downloading %s data to %s", dataset_name, cache_path)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        download_toxicity_data(dataset_name, cache_path)
     else:
         log.info("using cached %s", cache_path)
-        with open(cache_path / "tasks.json") as f:
-            tasks = json.load(f)
 
-        dataset = DiskDataset(str(cache_path))
+    with open(cache_path / _TASKS_FILE) as f:
+        tasks = json.load(f)
+    dataset = DiskDataset(str(cache_path))
+    transformers = load_from_disk(str(cache_path / _TRANSFORMERS_FILE))
+    return (tasks, (dataset,), transformers)
 
-        transformers = load_from_disk(str(cache_path / "transformers.joblib"))
 
-        return (tasks, (dataset,), transformers)
+def summarize(tasks: list[str], dataset) -> pd.DataFrame:
+    labeled = dataset.w != 0
+    positives = (dataset.y == 1) & labeled
+    n_labeled = labeled.sum(axis=0)
+    return pd.DataFrame(
+        {
+            "labeled": n_labeled,
+            "missing": (~labeled).sum(axis=0),
+            "positive_rate": np.divide(
+                positives.sum(axis=0),
+                n_labeled,
+                out=np.full(len(tasks), np.nan),
+                where=n_labeled > 0,
+            ),
+        },
+        index=pd.Index(tasks, name="task"),
+    )
 
 
 def main() -> None:
-    RDLogger.DisableLog("rdApp.info")
-    clintox_clean = load_toxicity_data("clintox")
-    print(clintox_clean)
-    tox21_clean = load_toxicity_data("tox21")
-    print(tox21_clean)
+    parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
+    parser.add_argument(
+        "--refresh", action="store_true", help="re-download even if cached"
+    )
+    parser.add_argument(
+        "--dataset",
+        choices=[*DATASETS, "all"],
+        default="all",
+        help="which dataset to load (default: %(default)s)",
+    )
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    RDLogger.DisableLog("rdApp.*")
+    logging.getLogger("deepchem").setLevel(logging.ERROR)
+
+    names = DATASETS if args.dataset == "all" else [args.dataset]
+    for name in names:
+        tasks, (dataset,), _ = load_toxicity_data(name, refresh=args.refresh)
+        print(f"\n{name}: {len(dataset)} molecules")
+        print(summarize(tasks, dataset).round(3))
 
 
 if __name__ == "__main__":
