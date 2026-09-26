@@ -1,7 +1,7 @@
 """
 Download, clean, and load Tox21 and ClinTox toxicity data from MoleculeNet.
 
-How to use as CLI tool (from `ai/`, with `PYTHONPATH=src`):
+How to use as CLI tool (from `ai/`):
 
     python -m pipeline.toxicity_loader                     # use cached data, download if missing
     python -m pipeline.toxicity_loader --refresh           # re-download from MoleculeNet
@@ -10,25 +10,16 @@ How to use as CLI tool (from `ai/`, with `PYTHONPATH=src`):
 Prints the molecule count and per-task label summary for each dataset. From a
 python script, use `load_toxicity_data()`.
 
-`load_toxicity_data()` mirrors deepchem's `load_tox21`/`load_clintox` output:
-`(tasks, (DiskDataset,), transformers)`. The data is pulled unsplit with SMILES
-as the representation and no transformers. Missing labels have weight `w == 0`.
+Each dataset is cached as a CSV with a `smiles` column followed by one column
+per task. Labels are 0/1, and NaN where the compound wasn't measured.
 """
 
 import argparse
-import json
 import logging
-import shutil
+import urllib.request
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-from deepchem.data import NumpyDataset
-from deepchem.data.datasets import DiskDataset
-from deepchem.feat import RawFeaturizer
-from deepchem.molnet.load_function.clintox_datasets import load_clintox
-from deepchem.molnet.load_function.tox21_datasets import load_tox21
-from deepchem.utils.data_utils import load_from_disk, save_to_disk
 from rdkit import RDLogger
 
 from pipeline.preprocess import standardize_smiles
@@ -36,139 +27,108 @@ from pipeline.preprocess import standardize_smiles
 log = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+MOLECULENET_URL = (
+    "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/{name}.csv.gz"
+)
+REQUEST_TIMEOUT_S = 60
 
+TASKS = {
+    "tox21": [
+        "NR-AR",
+        "NR-AR-LBD",
+        "NR-AhR",
+        "NR-Aromatase",
+        "NR-ER",
+        "NR-ER-LBD",
+        "NR-PPAR-gamma",
+        "SR-ARE",
+        "SR-ATAD5",
+        "SR-HSE",
+        "SR-MMP",
+        "SR-p53",
+    ],
+    "clintox": ["FDA_APPROVED", "CT_TOX"],
+}
 DUPLICATE_MODES = {"tox21": "keep_first", "clintox": "remove_all"}
-DATASETS = list(DUPLICATE_MODES)
-
-_TASKS_FILE = "tasks.json"
-_TRANSFORMERS_FILE = "transformers.joblib"
+DATASETS = list(TASKS)
 
 
-def clean_dataset(toxicity_data, duplicate_mode):
-    valid_indices = []
-    standardized_smiles = []
+def fetch_dataset(dataset_name: str) -> pd.DataFrame:
+    url = MOLECULENET_URL.format(name=dataset_name)
+    with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT_S) as response:
+        raw = pd.read_csv(response, compression="gzip")
 
-    # maps standardized SMILES -> list of original dataset indices
-    smiles_to_indices = {}
-
-    for i, smiles in enumerate(toxicity_data.ids):
-        standardized = standardize_smiles(smiles)
-
-        if standardized is None:
-            continue
-
-        if standardized not in smiles_to_indices:
-            smiles_to_indices[standardized] = []
-
-        smiles_to_indices[standardized].append(i)
-
-    for standardized, indices in smiles_to_indices.items():
-        # keeping first duplicate instance for tox21
-        if len(indices) == 1 or duplicate_mode == "keep_first":
-            valid_indices.append(indices[0])
-            standardized_smiles.append(standardized)
-
-        # remove all duplicated for clintox
-        elif duplicate_mode == "remove_all":
-            continue
-
-    toxicity_data_filtered = toxicity_data.select(valid_indices)
-
-    toxicity_data_filtered = NumpyDataset(
-        X=standardized_smiles,
-        y=toxicity_data_filtered.y,
-        w=toxicity_data_filtered.w,
-        ids=standardized_smiles,
-    )
-
-    return toxicity_data_filtered
+    missing = {"smiles", *TASKS[dataset_name]} - set(raw.columns)
+    if missing:
+        raise RuntimeError(f"{url} is missing columns {sorted(missing)}")
+    return raw
 
 
-def _fetch(dataset_name: str):
-    load = load_tox21 if dataset_name == "tox21" else load_clintox
-    return load(
-        splitter=None,
-        featurizer=RawFeaturizer(smiles=True),
-        transformers=[],
-        reload=False,
-    )
+def clean_dataset(raw: pd.DataFrame, tasks: list[str], duplicate_mode: str):
+    df = raw.assign(smiles=raw["smiles"].map(standardize_smiles))
+    n_unparsed = int(df["smiles"].isna().sum())
+    if n_unparsed:
+        log.warning("dropping %d rows whose SMILES RDKit couldn't parse", n_unparsed)
+        df = df.dropna(subset=["smiles"])
+
+    # keep first dup instance for tox21, remove all dups for clintox
+    if duplicate_mode == "keep_first":
+        df = df.drop_duplicates(subset="smiles", keep="first")
+    elif duplicate_mode == "remove_all":
+        df = df.drop_duplicates(subset="smiles", keep=False)
+    else:
+        raise ValueError(f"unknown duplicate_mode {duplicate_mode!r}")
+
+    return df[["smiles", *tasks]].reset_index(drop=True)
 
 
-def _is_complete(cache_path: Path) -> bool:
-    return (cache_path / _TASKS_FILE).exists() and (
-        cache_path / _TRANSFORMERS_FILE
-    ).exists()
-
-
-def download_toxicity_data(dataset_name: str, cache_path: Path):
-    tasks, (raw,), transformers = _fetch(dataset_name)
-    cleaned = clean_dataset(raw, DUPLICATE_MODES[dataset_name])
+def download_toxicity_data(dataset_name: str, csv_path: Path):
+    raw = fetch_dataset(dataset_name)
+    cleaned = clean_dataset(raw, TASKS[dataset_name], DUPLICATE_MODES[dataset_name])
     log.info("cleaned %s: %d raw -> %d molecules", dataset_name, len(raw), len(cleaned))
 
-    tmp_path = cache_path.with_name(cache_path.name + ".tmp")
-    shutil.rmtree(tmp_path, ignore_errors=True)
-    try:
-        DiskDataset.from_numpy(
-            X=cleaned.X,
-            y=cleaned.y,
-            w=cleaned.w,
-            ids=cleaned.ids,
-            tasks=tasks,
-            data_dir=str(tmp_path),
-        )
-        with open(tmp_path / _TASKS_FILE, "w") as f:
-            json.dump(list(tasks), f)
-        save_to_disk(transformers, str(tmp_path / _TRANSFORMERS_FILE))
-
-        shutil.rmtree(cache_path, ignore_errors=True)
-        tmp_path.rename(cache_path)
-    finally:
-        shutil.rmtree(tmp_path, ignore_errors=True)
-    log.info("wrote %d molecules to %s", len(cleaned), cache_path)
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = csv_path.with_name(csv_path.name + ".tmp")
+    cleaned.to_csv(tmp_path, index=False)
+    tmp_path.replace(csv_path)
+    log.info("wrote %d molecules to %s", len(cleaned), csv_path)
 
 
 def load_toxicity_data(
     dataset_name: str, refresh: bool = False, data_dir: Path = DATA_DIR
-):
-    if dataset_name not in DUPLICATE_MODES:
+) -> pd.DataFrame:
+    if dataset_name not in TASKS:
         raise ValueError(
             f"unknown dataset {dataset_name!r}, expected one of {DATASETS}"
         )
 
-    cache_path = data_dir / f"MolNet-{dataset_name}"
-    if refresh or not _is_complete(cache_path):
-        if cache_path.exists() and not refresh:
-            log.warning("cache %s is incomplete, re-downloading", cache_path)
-        log.info("downloading %s data to %s", dataset_name, cache_path)
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        download_toxicity_data(dataset_name, cache_path)
+    csv_path = data_dir / f"MolNet-{dataset_name}.csv"
+    if refresh or not csv_path.exists():
+        log.info("downloading %s data to %s", dataset_name, csv_path)
+        download_toxicity_data(dataset_name, csv_path)
     else:
-        log.info("using cached %s", cache_path)
+        log.info("using cached %s", csv_path)
 
-    with open(cache_path / _TASKS_FILE) as f:
-        tasks = json.load(f)
-    dataset = DiskDataset(str(cache_path))
-    transformers = load_from_disk(str(cache_path / _TRANSFORMERS_FILE))
-    return (tasks, (dataset,), transformers)
+    df = pd.read_csv(csv_path)
+    expected = ["smiles", *TASKS[dataset_name]]
+    if list(df.columns) != expected:
+        raise ValueError(
+            f"{csv_path} has columns {list(df.columns)}, expected {expected}; "
+            "delete it or re-run with refresh=True as an arg OR add --refresh "
+            "flag if using CLI"
+        )
+    return df
 
 
-def summarize(tasks: list[str], dataset) -> pd.DataFrame:
-    labeled = dataset.w != 0
-    positives = (dataset.y == 1) & labeled
-    n_labeled = labeled.sum(axis=0)
+def summarize(df: pd.DataFrame, tasks: list[str]) -> pd.DataFrame:
+    labels = df[tasks]
     return pd.DataFrame(
         {
-            "labeled": n_labeled,
-            "missing": (~labeled).sum(axis=0),
-            "positive_rate": np.divide(
-                positives.sum(axis=0),
-                n_labeled,
-                out=np.full(len(tasks), np.nan),
-                where=n_labeled > 0,
-            ),
-        },
-        index=pd.Index(tasks, name="task"),
-    )
+            "labeled": labels.notna().sum(),
+            "missing": labels.isna().sum(),
+            "positive_rate": labels.mean(),
+        }
+    ).rename_axis("task")
 
 
 def main() -> None:
@@ -185,13 +145,12 @@ def main() -> None:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     RDLogger.DisableLog("rdApp.*")
-    logging.getLogger("deepchem").setLevel(logging.ERROR)
 
     names = DATASETS if args.dataset == "all" else [args.dataset]
     for name in names:
-        tasks, (dataset,), _ = load_toxicity_data(name, refresh=args.refresh)
-        print(f"\n{name}: {len(dataset)} molecules")
-        print(summarize(tasks, dataset).round(3))
+        df = load_toxicity_data(name, refresh=args.refresh)
+        print(f"\n{name}: {len(df)} molecules")
+        print(summarize(df, TASKS[name]).round(3), end="\n\n")
 
 
 if __name__ == "__main__":

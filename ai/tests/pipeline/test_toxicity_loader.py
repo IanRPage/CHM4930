@@ -1,51 +1,96 @@
+import gzip
+import io
 import sys
+import urllib.request
 
 import numpy as np
+import pandas as pd
 import pytest
-from deepchem.data import NumpyDataset
 
 from pipeline import toxicity_loader as tl
 
 TASKS = ["T1", "T2"]
 
 
-def raw_dataset(smiles, y=None, w=None):
-    """A stand-in for what deepchem's load_tox21/load_clintox return, unsplit."""
-    n = len(smiles)
-    y = np.zeros((n, len(TASKS))) if y is None else np.asarray(y, dtype=float)
-    w = np.ones((n, len(TASKS))) if w is None else np.asarray(w, dtype=float)
-    return NumpyDataset(X=np.array(smiles), y=y, w=w, ids=np.array(smiles))
+def raw_dataset(smiles, labels=None):
+    labels = [[0, 0]] * len(smiles) if labels is None else labels
+    return pd.DataFrame(labels, columns=TASKS).assign(smiles=smiles)
 
 
 @pytest.fixture
 def fake_fetch(monkeypatch):
-    """Replaces the MoleculeNet download and records which datasets were fetched."""
     calls = []
 
     def fetch(name):
         calls.append(name)
-        return TASKS, (raw_dataset(["CCO", "c1ccccc1", "not_a_smiles"]),), []
+        return raw_dataset(["CCO", "c1ccccc1", "not_a_smiles"], [[1, np.nan]] * 3)
 
-    monkeypatch.setattr(tl, "_fetch", fetch)
+    monkeypatch.setattr(tl, "fetch_dataset", fetch)
+    monkeypatch.setitem(tl.TASKS, "tox21", TASKS)
+    monkeypatch.setitem(tl.TASKS, "clintox", TASKS)
     return calls
 
 
+def gzipped_csv(df):
+    return io.BytesIO(gzip.compress(df.to_csv(index=False).encode()))
+
+
+def test_fetch_dataset_reads_gzipped_csv(monkeypatch):
+    urls = []
+
+    def fake_urlopen(url, timeout=None):
+        urls.append(url)
+        return gzipped_csv(raw_dataset(["CCO"], [[1, np.nan]]))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setitem(tl.TASKS, "tox21", TASKS)
+    raw = tl.fetch_dataset("tox21")
+
+    assert urls == [tl.MOLECULENET_URL.format(name="tox21")]
+    assert raw["smiles"].tolist() == ["CCO"]
+    assert np.isnan(raw.loc[0, "T2"])
+
+
+def test_fetch_dataset_rejects_missing_columns(monkeypatch):
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda url, timeout=None: gzipped_csv(pd.DataFrame({"smiles": ["CCO"]})),
+    )
+    monkeypatch.setitem(tl.TASKS, "tox21", TASKS)
+    with pytest.raises(RuntimeError, match="missing columns"):
+        tl.fetch_dataset("tox21")
+
+
 def test_clean_dataset_keep_first_keeps_first_duplicate():
-    raw = raw_dataset(["CCO", "OCC.Cl", "c1ccccc1"], y=[[1, 0], [0, 1], [0, 0]])
-    cleaned = tl.clean_dataset(raw, "keep_first")
-    assert list(cleaned.ids) == ["CCO", "c1ccccc1"]
-    assert cleaned.y[0].tolist() == [1, 0]
+    raw = raw_dataset(["CCO", "OCC.Cl", "c1ccccc1"], [[1, 0], [0, 1], [0, 0]])
+    cleaned = tl.clean_dataset(raw, TASKS, "keep_first")
+    assert cleaned["smiles"].tolist() == ["CCO", "c1ccccc1"]
+    assert cleaned.loc[0, TASKS].tolist() == [1, 0]
 
 
 def test_clean_dataset_remove_all_drops_every_duplicate():
     raw = raw_dataset(["CCO", "OCC.Cl", "c1ccccc1"])
-    cleaned = tl.clean_dataset(raw, "remove_all")
-    assert list(cleaned.ids) == ["c1ccccc1"]
+    cleaned = tl.clean_dataset(raw, TASKS, "remove_all")
+    assert cleaned["smiles"].tolist() == ["c1ccccc1"]
 
 
-def test_clean_dataset_drops_unparseable():
-    cleaned = tl.clean_dataset(raw_dataset(["CCO", "not_a_smiles"]), "keep_first")
-    assert list(cleaned.ids) == ["CCO"]
+def test_clean_dataset_drops_unparseable_and_extra_columns():
+    raw = raw_dataset(["CCO", "not_a_smiles"]).assign(mol_id=["TOX1", "TOX2"])
+    cleaned = tl.clean_dataset(raw, TASKS, "keep_first")
+    assert cleaned["smiles"].tolist() == ["CCO"]
+    assert list(cleaned.columns) == ["smiles", *TASKS]
+
+
+def test_clean_dataset_keeps_missing_labels_as_nan():
+    cleaned = tl.clean_dataset(raw_dataset(["CCO"], [[1, np.nan]]), TASKS, "keep_first")
+    assert cleaned.loc[0, "T1"] == 1
+    assert np.isnan(cleaned.loc[0, "T2"])
+
+
+def test_clean_dataset_rejects_unknown_mode():
+    with pytest.raises(ValueError, match="duplicate_mode"):
+        tl.clean_dataset(raw_dataset(["CCO"]), TASKS, "keep_last")
 
 
 def test_unknown_dataset_raises_before_downloading(fake_fetch, tmp_path):
@@ -55,15 +100,15 @@ def test_unknown_dataset_raises_before_downloading(fake_fetch, tmp_path):
 
 
 def test_downloads_then_uses_cache(fake_fetch, tmp_path):
-    tasks, (dataset,), transformers = tl.load_toxicity_data("tox21", data_dir=tmp_path)
-    assert tasks == TASKS
-    assert list(dataset.ids) == ["CCO", "c1ccccc1"]
-    assert transformers == []
+    df = tl.load_toxicity_data("tox21", data_dir=tmp_path)
+    assert df["smiles"].tolist() == ["CCO", "c1ccccc1"]
+    assert df["T1"].tolist() == [1, 1]
+    assert df["T2"].isna().all()
 
-    tasks, (dataset,), _ = tl.load_toxicity_data("tox21", data_dir=tmp_path)
+    cached = tl.load_toxicity_data("tox21", data_dir=tmp_path)
     assert fake_fetch == ["tox21"]
-    assert list(dataset.ids) == ["CCO", "c1ccccc1"]
-    assert not (tmp_path / "MolNet-tox21.tmp").exists()
+    pd.testing.assert_frame_equal(cached, df)
+    assert [p.name for p in tmp_path.iterdir()] == ["MolNet-tox21.csv"]
 
 
 def test_refresh_redownloads(fake_fetch, tmp_path):
@@ -72,32 +117,26 @@ def test_refresh_redownloads(fake_fetch, tmp_path):
     assert fake_fetch == ["clintox", "clintox"]
 
 
-def test_incomplete_cache_is_rebuilt(fake_fetch, tmp_path):
-    tl.load_toxicity_data("tox21", data_dir=tmp_path)
-    (tmp_path / "MolNet-tox21" / "tasks.json").unlink()
-
-    _, (dataset,), _ = tl.load_toxicity_data("tox21", data_dir=tmp_path)
-    assert fake_fetch == ["tox21", "tox21"]
-    assert len(dataset) == 2
+def test_stale_cache_columns_raise(fake_fetch, tmp_path):
+    pd.DataFrame({"smiles": ["CCO"]}).to_csv(tmp_path / "MolNet-tox21.csv", index=False)
+    with pytest.raises(ValueError, match="--refresh"):
+        tl.load_toxicity_data("tox21", data_dir=tmp_path)
+    assert fake_fetch == []
 
 
 def test_failed_write_leaves_no_cache(fake_fetch, tmp_path, monkeypatch):
     def boom(*args, **kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr(tl, "save_to_disk", boom)
+    monkeypatch.setattr(pd.DataFrame, "to_csv", boom)
     with pytest.raises(OSError):
         tl.load_toxicity_data("tox21", data_dir=tmp_path)
     assert list(tmp_path.iterdir()) == []
 
 
 def test_summarize_counts_missing_and_positives():
-    dataset = raw_dataset(
-        ["C", "CC", "CCC"],
-        y=[[1, 0], [0, 0], [1, 0]],
-        w=[[1, 0], [1, 0], [1, 0]],
-    )
-    summary = tl.summarize(TASKS, dataset)
+    df = raw_dataset(["C", "CC", "CCC"], [[1, np.nan], [0, np.nan], [1, np.nan]])
+    summary = tl.summarize(df, TASKS)
     assert summary.loc["T1"].tolist() == pytest.approx([3, 0, 2 / 3])
     assert summary.loc["T2", "labeled"] == 0
     assert summary.loc["T2", "missing"] == 3
@@ -109,9 +148,10 @@ def test_main_forwards_flags_and_prints_a_summary(monkeypatch, capsys):
 
     def fake_load(name, refresh):
         seen.append((name, refresh))
-        return TASKS, (raw_dataset(["CCO"], y=[[1, 0]]),), []
+        return raw_dataset(["CCO"], [[1, 0]])
 
     monkeypatch.setattr(tl, "load_toxicity_data", fake_load)
+    monkeypatch.setitem(tl.TASKS, "clintox", TASKS)
     monkeypatch.setattr(
         sys, "argv", ["pipeline.toxicity_loader", "--refresh", "--dataset", "clintox"]
     )
@@ -128,9 +168,11 @@ def test_main_defaults_to_all_datasets(monkeypatch):
 
     def fake_load(name, refresh):
         seen.append((name, refresh))
-        return TASKS, (raw_dataset(["CCO"]),), []
+        return raw_dataset(["CCO"])
 
     monkeypatch.setattr(tl, "load_toxicity_data", fake_load)
+    monkeypatch.setitem(tl.TASKS, "tox21", TASKS)
+    monkeypatch.setitem(tl.TASKS, "clintox", TASKS)
     monkeypatch.setattr(sys, "argv", ["pipeline.toxicity_loader"])
     tl.main()
     assert seen == [("tox21", False), ("clintox", False)]
@@ -139,8 +181,10 @@ def test_main_defaults_to_all_datasets(monkeypatch):
 @pytest.mark.network
 def test_real_moleculenet_download(tmp_path):
     for name, n_tasks in [("tox21", 12), ("clintox", 2)]:
-        tasks, (dataset,), _ = tl.load_toxicity_data(name, data_dir=tmp_path)
-        assert len(tasks) == n_tasks
-        assert dataset.y.shape == (len(dataset), n_tasks)
-        assert len(set(dataset.ids)) == len(dataset)
-        assert "." not in "".join(dataset.ids)  # no multi-fragment structures left
+        df = tl.load_toxicity_data(name, data_dir=tmp_path)
+        assert list(df.columns) == ["smiles", *tl.TASKS[name]]
+        assert len(tl.TASKS[name]) == n_tasks
+        assert df["smiles"].is_unique
+        assert "." not in "".join(df["smiles"])
+        labels = df[tl.TASKS[name]]
+        assert (labels.isin([0, 1]) | labels.isna()).all().all()
