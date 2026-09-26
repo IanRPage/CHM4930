@@ -90,6 +90,13 @@ returns a PyG `Data` object with all three model inputs:
 Note that fingerprints are rejected as input since ECFP is a lossy hash. To
 featurize a whole dataset, pass its `smiles` column to `featurize_many()`.
 
+> NOTE: While any valid input structure is accepted, predictions for inorganic
+> compounds are basically extrapolations. The training data is almost entirely
+> organic, and anything outside what the graph explicitly one-hot encodes is
+> treated as "other". Salts are reduced to their largest organic fragment when
+> there is one, so inorganic salts that share an ion standardize to the same
+> SMILES.
+
 ## Testing
 
 Tests use [`pytest`](https://docs.pytest.org). From anywhere inside this

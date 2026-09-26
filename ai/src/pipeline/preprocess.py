@@ -3,7 +3,8 @@ Turn a standard structure into MuFu's three model inputs.
 
 A structure (SMILES string or RDKit `Mol`) is cleaned. Then RDKit derives its
 SMILES, ECFP4 fingerprint, and molecular graph. This path runs at train and
-inference time, that way modalities are never missing."""
+inference time, that way modalities are never missing.
+"""
 
 import logging
 from collections.abc import Iterable
@@ -22,7 +23,7 @@ log = logging.getLogger(__name__)
 
 ALLOWED_N_BITS = (1024, 2048)
 
-_LARGEST_FRAGMENT = rdMolStandardize.LargestFragmentChooser()
+_LARGEST_FRAGMENT = rdMolStandardize.LargestFragmentChooser(preferOrganic=True)
 
 
 def to_mol(structure: str | Chem.Mol) -> Chem.Mol:
@@ -33,10 +34,10 @@ def to_mol(structure: str | Chem.Mol) -> Chem.Mol:
         if mol is None:
             raise ValueError(f"RDKit couldn't parse SMILES {structure!r}")
     elif isinstance(structure, Chem.Mol):
-        # copy so caller's Mol isn't mutated by sanitization
         mol = Chem.Mol(structure)
         try:
             Chem.SanitizeMol(mol)
+            mol = Chem.RemoveHs(mol)
         except Exception as e:
             raise ValueError(f"RDKit couldn't sanitize Mol: {e}") from e
     else:
@@ -50,7 +51,6 @@ def to_mol(structure: str | Chem.Mol) -> Chem.Mol:
     return _LARGEST_FRAGMENT.choose(mol)
 
 
-# SMILES of cleaned structure, None if parsing fails
 def standardize_smiles(smiles: str) -> str | None:
     try:
         return mol_to_smiles(to_mol(smiles))
@@ -79,10 +79,15 @@ def featurize(structure: str | Chem.Mol, n_bits: int = 2048) -> Data:
 
 
 def featurize_many(
-    structures: Iterable[str | Chem.Mol], n_bits: int = 2048
-) -> tuple[list[Data], list[int]]:
+    structures: pd.Series | Iterable[str | Chem.Mol], n_bits: int = 2048
+) -> tuple[list[Data], list]:
+    items = (
+        structures.items()
+        if isinstance(structures, pd.Series)
+        else enumerate(structures)
+    )
     featurized, failed = [], []
-    for i, structure in enumerate(structures):
+    for i, structure in items:
         try:
             featurized.append(featurize(structure, n_bits))
         except ValueError as e:

@@ -84,9 +84,29 @@ def test_featurize_many_reports_failures():
     assert failed == [1]
 
 
+def test_featurize_many_reports_series_index_labels():
+    smiles = pd.Series(["CCO", "not_a_smiles", "c1ccccc1"], index=[0, 4, 7])
+    featurized, failed = featurize_many(smiles)
+    assert len(featurized) == 2
+    assert failed == [4]
+
+
 def test_featurize_many_propagates_fingerprint_input():
     with pytest.raises(TypeError):
         featurize_many(["CCO", np.zeros(2048, dtype=np.uint8)])
+
+
+def test_mol_with_explicit_hs_matches_smiles():
+    from_smiles = featurize(ASPIRIN)
+    from_mol = featurize(Chem.AddHs(Chem.MolFromSmiles(ASPIRIN)))
+    assert from_mol.smiles == from_smiles.smiles
+    assert torch.equal(from_mol.x, from_smiles.x)
+    assert torch.equal(from_mol.fp, from_smiles.fp)
+
+
+def test_largest_fragment_prefers_organic():
+    # PF6- has more atoms than acetonitrile but no carbon
+    assert standardize_smiles("CC#N.F[P-](F)(F)(F)(F)F") == "CC#N"
 
 
 def test_input_mol_not_mutated():
