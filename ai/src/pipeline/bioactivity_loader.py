@@ -7,8 +7,8 @@ How to use as CLI tool (from `ai/`, with `PYTHONPATH=src`):
     python -m pipeline.bioactivity_loader --refresh        # re-download from ChEMBL
     python -m pipeline.bioactivity_loader --threshold 7.0  # pIC50 cutoff for "active" (default 6.0)
 
-Prints the molecule count, an active label summary, and a pIC50 summary. From a python script, use
-`load_bace1()`.
+Prints the BACE-1 molecule count, active label summary, and pIC50 summary. From Python,
+use `load_bace1()` for BACE-1 or `load_egfr()` for EGFR pIC50 and active labels.
 """
 
 import argparse
@@ -40,9 +40,11 @@ API_FIELDS = [
     "data_validity_comment",
 ]
 
-# BACE-1 specific constants
+# Target IDs and cache paths
 BACE1_TARGET_ID = "CHEMBL4822"
 BACE1_CSV_PATH = DATA_DIR / "chembl-bace-1.csv"
+EGFR_TARGET_ID = "CHEMBL203"
+EGFR_CSV_PATH = DATA_DIR / "chembl-egfr.csv"
 PIC50_ACTIVE_THRESHOLD = 6.0
 CSV_COLUMNS = ["molecule_chembl_id", "smiles", "pIC50", "n_meas", "pIC50_spread"]
 
@@ -70,9 +72,9 @@ def _parse_page(payload: dict) -> tuple[list[dict], str | None, int]:
     return activities, next_path, total_count
 
 
-def fetch_activities() -> pd.DataFrame:
+def fetch_activities(target_id: str = BACE1_TARGET_ID) -> pd.DataFrame:
     params = {
-        "target_chembl_id": BACE1_TARGET_ID,
+        "target_chembl_id": target_id,
         "standard_type": "IC50",
         "limit": PAGE_SIZE,
     }
@@ -93,10 +95,10 @@ def fetch_activities() -> pd.DataFrame:
         url = f"{CHEMBL_HOST}{next_path}" if next_path else None
 
     if not rows:
-        raise RuntimeError(f"ChEMBL returned no IC50 rows for {BACE1_TARGET_ID}")
+        raise RuntimeError(f"ChEMBL returned no IC50 rows for {target_id}")
     if len(rows) != total_count:
         raise RuntimeError(
-            f"ChEMBL reported {total_count} IC50 rows for {BACE1_TARGET_ID} "
+            f"ChEMBL reported {total_count} IC50 rows for {target_id} "
             f"but only {len(rows)} were retrieved"
         )
     return pd.DataFrame.from_records(rows)
@@ -146,6 +148,10 @@ def download_bace1(csv_path: Path = BACE1_CSV_PATH) -> None:
     write_csv(clean_activities(fetch_activities()), csv_path)
 
 
+def download_egfr(csv_path: Path = EGFR_CSV_PATH) -> None:
+    write_csv(clean_activities(fetch_activities(EGFR_TARGET_ID)), csv_path)
+
+
 def add_active_label(
     df: pd.DataFrame, threshold: float = PIC50_ACTIVE_THRESHOLD
 ) -> pd.DataFrame:
@@ -160,6 +166,16 @@ def load_bace1(
     refresh: bool = False,
 ) -> pd.DataFrame:
     df = load_csv(csv_path, download_bace1, CSV_COLUMNS, refresh)
+    return add_active_label(df, threshold)
+
+
+def load_egfr(
+    threshold: float = PIC50_ACTIVE_THRESHOLD,
+    csv_path: Path = EGFR_CSV_PATH,
+    refresh: bool = False,
+) -> pd.DataFrame:
+    """Load EGFR pIC50 and derive an active label at the chosen cutoff."""
+    df = load_csv(csv_path, download_egfr, CSV_COLUMNS, refresh)
     return add_active_label(df, threshold)
 
 
