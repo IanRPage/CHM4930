@@ -8,15 +8,15 @@ by mean val_RMSE across seeds (test only for reporting).
 notebooks/ECFP4-encoder-sweep-results.ipynb plots the CSVs generated from this
 script
 
-    python scripts/ECFP4-encoder-sweep.py  # every stage, in order
-    python scripts/ECFP4-encoder-sweep.py 3 4  # just these, by number or full name
+    python scripts/ECFP4_encoder_sweep.py  # every stage, in order
+    python scripts/ECFP4_encoder_sweep.py 3 4  # just these, by number or full name
 
 One run can't fill the GPU, and stages are independent, so we can speed each
 stage's run using NVIDIA MPS (about ~2.5x faster):
 
     nvidia-cuda-mps-control -d
     for s in 1 2 3 4 5 6 7; do
-        python scripts/ECFP4-encoder-sweep.py $s &
+        python scripts/ECFP4_encoder_sweep.py $s &
     done; wait
     echo quit | nvidia-cuda-mps-control
 """
@@ -67,6 +67,10 @@ for idx in sorted(
         val += idx.tolist()
     else:
         test += idx.tolist()
+if not val or not test:
+    raise ValueError(
+        f"scaffold split left val ({len(val)}) or test ({len(test)}) empty"
+    )
 
 
 def fingerprints(n_bits):
