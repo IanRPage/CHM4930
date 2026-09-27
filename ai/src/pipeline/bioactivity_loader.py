@@ -1,12 +1,13 @@
-"""Download, clean, and load bioactivity data from ChEMBL.
+"""
+Download, clean, and load bioactivity data from ChEMBL.
 
-How to use as CLI tool (from `ai/`):
+How to use as CLI tool (from `ai/`, with `PYTHONPATH=src`):
 
-    python src/bioactivity_loader.py                  # use cached CSV, download if missing
-    python src/bioactivity_loader.py --refresh        # re-download from ChEMBL
-    python src/bioactivity_loader.py --threshold 7.0  # pIC50 cutoff for "active" (default 6.0)
+    python -m pipeline.bioactivity_loader                  # use cached CSV, download if missing
+    python -m pipeline.bioactivity_loader --refresh        # re-download from ChEMBL
+    python -m pipeline.bioactivity_loader --threshold 7.0  # pIC50 cutoff for "active" (default 6.0)
 
-Prints the molecule count and a pIC50 summary. From a python script, use
+Prints the molecule count, an active label summary, and a pIC50 summary. From a python script, use
 `load_bace1()`.
 """
 
@@ -18,12 +19,12 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import pandas as pd
-from rdkit import Chem
-from rdkit.Chem.MolStandardize import rdMolStandardize
+
+from pipeline.cache import DATA_DIR, load_csv, write_csv
+from pipeline.preprocess import standardize_smiles_column, summarize_labels
 
 log = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 CHEMBL_HOST = "https://www.ebi.ac.uk"
 ACTIVITY_URL = f"{CHEMBL_HOST}/chembl/api/data/activity.json"
 PAGE_SIZE = 1000
@@ -44,8 +45,6 @@ BACE1_TARGET_ID = "CHEMBL4822"
 BACE1_CSV_PATH = DATA_DIR / "chembl-bace-1.csv"
 PIC50_ACTIVE_THRESHOLD = 6.0
 CSV_COLUMNS = ["molecule_chembl_id", "smiles", "pIC50", "n_meas", "pIC50_spread"]
-
-_LARGEST_FRAGMENT = rdMolStandardize.LargestFragmentChooser()
 
 
 # validate one ChEMBL activity page, returns (records, next path, total count)
@@ -103,15 +102,6 @@ def fetch_activities() -> pd.DataFrame:
     return pd.DataFrame.from_records(rows)
 
 
-# strips salts/counterions by keeping the largest fragment (charges and stereo preserved)
-def standardize_smiles(smiles: str) -> str | None:
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        return None
-    mol = _LARGEST_FRAGMENT.choose(mol)
-    return Chem.MolToSmiles(mol)
-
-
 # filters to exact binding measurements, then collapses to one row per molecule
 def clean_activities(raw: pd.DataFrame) -> pd.DataFrame:
     df = raw.assign(pchembl_value=pd.to_numeric(raw["pchembl_value"], errors="coerce"))
@@ -133,13 +123,9 @@ def clean_activities(raw: pd.DataFrame) -> pd.DataFrame:
         df = df[keep(df)]
         log.info("%-40s %6d rows", f"after {label}", len(df))
 
-    df = df.rename(columns={"pchembl_value": "pIC50"}).assign(
-        smiles=lambda d: d["canonical_smiles"].map(standardize_smiles)
+    df = standardize_smiles_column(
+        df.rename(columns={"pchembl_value": "pIC50"}), column="canonical_smiles"
     )
-    n_unparsed = int(df["smiles"].isna().sum())
-    if n_unparsed:
-        log.warning("dropping %d rows whose SMILES RDKit couldn't parse", n_unparsed)
-        df = df.dropna(subset=["smiles"])
 
     molecules = df.groupby("smiles", as_index=False).agg(
         molecule_chembl_id=("molecule_chembl_id", "min"),
@@ -157,15 +143,10 @@ def clean_activities(raw: pd.DataFrame) -> pd.DataFrame:
 
 
 def download_bace1(csv_path: Path = BACE1_CSV_PATH) -> None:
-    cleaned = clean_activities(fetch_activities())
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = csv_path.with_name(csv_path.name + ".tmp")
-    cleaned.to_csv(tmp_path, index=False)
-    tmp_path.replace(csv_path)
-    log.info("wrote %d molecules to %s", len(cleaned), csv_path)
+    write_csv(clean_activities(fetch_activities()), csv_path)
 
 
-def preprocess(
+def add_active_label(
     df: pd.DataFrame, threshold: float = PIC50_ACTIVE_THRESHOLD
 ) -> pd.DataFrame:
     out = df.copy()
@@ -178,20 +159,8 @@ def load_bace1(
     csv_path: Path = BACE1_CSV_PATH,
     refresh: bool = False,
 ) -> pd.DataFrame:
-    if refresh or not csv_path.exists():
-        log.info("downloading BACE-1 data to %s", csv_path)
-        download_bace1(csv_path)
-    else:
-        log.info("using cached %s", csv_path)
-
-    df = pd.read_csv(csv_path)
-    missing = set(CSV_COLUMNS) - set(df.columns)
-    if missing:
-        raise ValueError(
-            f"{csv_path} is missing columns {sorted(missing)}; "
-            "delete it or re-run with refresh=True / --refresh"
-        )
-    return preprocess(df, threshold)
+    df = load_csv(csv_path, download_bace1, CSV_COLUMNS, refresh)
+    return add_active_label(df, threshold)
 
 
 def main() -> None:
@@ -209,7 +178,8 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     df = load_bace1(threshold=args.threshold, refresh=args.refresh)
-    print(f"\n{len(df)} molecules")
+    print(f"\nbace1: {len(df)} molecules")
+    print(summarize_labels(df, ["active"]).round(3), end="\n\n")
     print(df["pIC50"].describe().round(3))
 
 
