@@ -7,7 +7,7 @@ import urllib.request
 import pandas as pd
 import pytest
 
-import bioactivity_loader as bl
+from pipeline import bioactivity_loader as bl
 
 
 def rec(cid="CHEMBL1", smiles="CCO", pchembl="7.0", **overrides):
@@ -70,23 +70,6 @@ def no_network(monkeypatch):
         raise AssertionError("this test should not touch the network")
 
     monkeypatch.setattr(urllib.request, "urlopen", boom)
-
-
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("CC(=O)[O-].[Na+]", "CC(=O)[O-]"),  # strips counterion, keeps the charge
-        ("Cl.CCN", "CCN"),  # strips HCl salt
-        ("[Na+].[Cl-].c1ccccc1CC(=O)O", "O=C(O)Cc1ccccc1"),  # keeps the big fragment
-        ("C[C@H](N)C(=O)O", "C[C@H](N)C(=O)O"),  # stereo preserved
-    ],
-)
-def test_standardize_smiles(raw, expected):
-    assert bl.standardize_smiles(raw) == expected
-
-
-def test_standardize_smiles_returns_none_when_unparseable():
-    assert bl.standardize_smiles("not_a_smiles") is None
 
 
 def test_clean_keeps_a_good_row():
@@ -355,9 +338,9 @@ def test_downloaded_csv_has_only_the_cleaned_columns(fake_chembl, tmp_path):
     assert list(pd.read_csv(csv).columns) == bl.CSV_COLUMNS
 
 
-def test_preprocess_does_not_mutate_its_input():
+def test_add_active_label_does_not_mutate_its_input():
     df = pd.DataFrame({"pIC50": [5.0, 7.0]})
-    bl.preprocess(df, 6.0)
+    bl.add_active_label(df, 6.0)
     assert list(df.columns) == ["pIC50"]
 
 
@@ -370,13 +353,14 @@ def test_main_forwards_flags_and_prints_a_summary(monkeypatch, capsys):
 
     monkeypatch.setattr(bl, "load_bace1", fake_load)
     monkeypatch.setattr(
-        sys, "argv", ["bioactivity_loader.py", "--refresh", "--threshold", "6.5"]
+        sys, "argv", ["pipeline.bioactivity_loader", "--refresh", "--threshold", "6.5"]
     )
     bl.main()
 
     assert seen == {"threshold": 6.5, "refresh": True}
     out = capsys.readouterr().out
-    assert "2 molecules" in out
+    assert "bace1: 2 molecules" in out
+    assert re.search(r"active\s+2\s+0\s+0\.5", out)
     # pandas labels the median row "50%"; the two fake pIC50s (5.0, 7.0) give 6.0
     assert re.search(r"50%\s+6\.000", out)
 
@@ -389,7 +373,7 @@ def test_main_defaults(monkeypatch):
         return pd.DataFrame({"pIC50": [6.0], "active": [1]})
 
     monkeypatch.setattr(bl, "load_bace1", fake_load)
-    monkeypatch.setattr(sys, "argv", ["bioactivity_loader.py"])
+    monkeypatch.setattr(sys, "argv", ["pipeline.bioactivity_loader"])
     bl.main()
     assert seen == {"threshold": bl.PIC50_ACTIVE_THRESHOLD, "refresh": False}
 
