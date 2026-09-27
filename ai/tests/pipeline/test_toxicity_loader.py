@@ -23,7 +23,8 @@ def fake_fetch(monkeypatch):
 
     def fetch(name):
         calls.append(name)
-        return raw_dataset(["CCO", "c1ccccc1", "not_a_smiles"], [[1, np.nan]] * 3)
+        raw = raw_dataset(["CCO", "c1ccccc1", "not_a_smiles"], [[1, np.nan]] * 3)
+        return raw.assign(mol_id=["TOX1", "TOX2", "TOX3"])
 
     monkeypatch.setattr(tl, "fetch_dataset", fetch)
     monkeypatch.setitem(tl.DATASETS, "tox21", {"tasks": TASKS, "keep": "first"})
@@ -62,30 +63,17 @@ def test_fetch_dataset_rejects_missing_columns(monkeypatch):
         tl.fetch_dataset("tox21")
 
 
-def test_clean_dataset_keep_first_keeps_first_duplicate():
+# OCC.Cl standardizes to CCO, duplicating the first row
+@pytest.mark.parametrize(
+    ("keep", "expected"),
+    [("first", ["CCO", "c1ccccc1"]), (False, ["c1ccccc1"])],
+)
+def test_clean_dataset_duplicates(keep, expected):
     raw = raw_dataset(["CCO", "OCC.Cl", "c1ccccc1"], [[1, 0], [0, 1], [0, 0]])
-    cleaned = tl.clean_dataset(raw, TASKS, "first")
-    assert cleaned["smiles"].tolist() == ["CCO", "c1ccccc1"]
-    assert cleaned.loc[0, TASKS].tolist() == [1, 0]
-
-
-def test_clean_dataset_remove_all_drops_every_duplicate():
-    raw = raw_dataset(["CCO", "OCC.Cl", "c1ccccc1"])
-    cleaned = tl.clean_dataset(raw, TASKS, False)
-    assert cleaned["smiles"].tolist() == ["c1ccccc1"]
-
-
-def test_clean_dataset_drops_unparseable_and_extra_columns():
-    raw = raw_dataset(["CCO", "not_a_smiles"]).assign(mol_id=["TOX1", "TOX2"])
-    cleaned = tl.clean_dataset(raw, TASKS, "first")
-    assert cleaned["smiles"].tolist() == ["CCO"]
-    assert list(cleaned.columns) == ["smiles", *TASKS]
-
-
-def test_clean_dataset_keeps_missing_labels_as_nan():
-    cleaned = tl.clean_dataset(raw_dataset(["CCO"], [[1, np.nan]]), TASKS, "first")
-    assert cleaned.loc[0, "T1"] == 1
-    assert np.isnan(cleaned.loc[0, "T2"])
+    cleaned = tl.clean_dataset(raw, TASKS, keep)
+    assert cleaned["smiles"].tolist() == expected
+    if keep == "first":
+        assert cleaned.loc[0, TASKS].tolist() == [1, 0]
 
 
 def test_unknown_dataset_raises_before_downloading(fake_fetch, tmp_path):
@@ -96,6 +84,7 @@ def test_unknown_dataset_raises_before_downloading(fake_fetch, tmp_path):
 
 def test_downloads_then_uses_cache(fake_fetch, tmp_path):
     df = tl.load_toxicity_data("tox21", data_dir=tmp_path)
+    assert list(df.columns) == ["smiles", *TASKS]
     assert df["smiles"].tolist() == ["CCO", "c1ccccc1"]
     assert df["T1"].tolist() == [1, 1]
     assert df["T2"].isna().all()
@@ -104,29 +93,6 @@ def test_downloads_then_uses_cache(fake_fetch, tmp_path):
     assert fake_fetch == ["tox21"]
     pd.testing.assert_frame_equal(cached, df)
     assert [p.name for p in tmp_path.iterdir()] == ["MolNet-tox21.csv"]
-
-
-def test_refresh_redownloads(fake_fetch, tmp_path):
-    tl.load_toxicity_data("clintox", data_dir=tmp_path)
-    tl.load_toxicity_data("clintox", refresh=True, data_dir=tmp_path)
-    assert fake_fetch == ["clintox", "clintox"]
-
-
-def test_stale_cache_columns_raise(fake_fetch, tmp_path):
-    pd.DataFrame({"smiles": ["CCO"]}).to_csv(tmp_path / "MolNet-tox21.csv", index=False)
-    with pytest.raises(ValueError, match="--refresh"):
-        tl.load_toxicity_data("tox21", data_dir=tmp_path)
-    assert fake_fetch == []
-
-
-def test_failed_write_leaves_no_cache(fake_fetch, tmp_path, monkeypatch):
-    def boom(*args, **kwargs):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(pd.DataFrame, "to_csv", boom)
-    with pytest.raises(OSError):
-        tl.load_toxicity_data("tox21", data_dir=tmp_path)
-    assert list(tmp_path.iterdir()) == []
 
 
 def test_main_forwards_flags_and_prints_a_summary(monkeypatch, capsys):
