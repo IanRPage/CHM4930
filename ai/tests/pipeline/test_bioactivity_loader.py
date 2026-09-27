@@ -246,6 +246,54 @@ def test_load_downloads_when_csv_is_missing(fake_chembl, tmp_path):
     assert by_smiles.loc["CCN", "pIC50"] == pytest.approx(6.25)
 
 
+def test_egfr_loader_keeps_binding_variants_and_derives_active_label(
+    monkeypatch, tmp_path
+):
+    page = {
+        "activities": [
+            rec("UNANNOTATED", "CCO", "8.0", bao_label="single protein format"),
+            rec(
+                "MUT",
+                "CCO",
+                "6.0",
+                assay_variant_mutation="L858R,T790M",
+                bao_label="cell-based format",
+            ),
+            rec("OTHER", "CCC", "7.0", assay_type="F"),
+        ],
+        "page_meta": {"next": None, "total_count": 3},
+    }
+    requested = []
+
+    def fake_urlopen(url, timeout=None):
+        requested.append(url)
+        return io.BytesIO(json.dumps(page).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    csv = tmp_path / "chembl-egfr.csv"
+    out = bl.load_egfr(csv_path=csv)
+
+    assert "target_chembl_id=CHEMBL203" in requested[0]
+    assert list(out.columns) == [*bl.CSV_COLUMNS, "active"]
+    assert out["smiles"].tolist() == ["CCO"]
+    assert out.loc[0, "pIC50"] == 7.0
+    assert out.loc[0, "n_meas"] == 2
+    assert out.loc[0, "pIC50_spread"] == 2.0
+    assert out.loc[0, "active"] == 1
+    assert list(pd.read_csv(csv).columns) == bl.CSV_COLUMNS
+    assert len(requested) == 1
+    pd.testing.assert_frame_equal(out, bl.load_egfr(csv_path=csv))
+    assert len(requested) == 1
+
+
+def test_egfr_active_threshold_defaults_to_six_and_can_change(cached_csv):
+    default = bl.load_egfr(csv_path=cached_csv)
+    stricter = bl.load_egfr(threshold=6.5, csv_path=cached_csv)
+    assert default["active"].tolist() == [0, 1, 1]
+    assert stricter["active"].tolist() == [0, 0, 1]
+    assert list(pd.read_csv(cached_csv).columns) == bl.CSV_COLUMNS
+
+
 def test_load_uses_the_cached_csv_without_network(fake_chembl, tmp_path):
     csv = tmp_path / "chembl-bace-1.csv"
     first = bl.load_bace1(csv_path=csv)
