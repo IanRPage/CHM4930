@@ -9,6 +9,7 @@ along with any datasets or checkpoints for saved model weights.
 ai/
 ├── data/            # local data storage
 ├── notebooks/       # exploration / scratchpads
+├── scripts/         # helpful utility scripts
 ├── src/             # main code
 │   ├── featurize/   # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
 │   ├── pipeline/    # dataset loaders and structure to model input preprocessing
