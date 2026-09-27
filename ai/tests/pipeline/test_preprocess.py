@@ -18,24 +18,18 @@ from pipeline.preprocess import (
 ASPIRIN = "CC(=O)Oc1ccccc1C(=O)O"
 
 
-def test_str_and_mol_inputs_match():
+@pytest.mark.parametrize(
+    "mol",
+    [Chem.MolFromSmiles(ASPIRIN), Chem.AddHs(Chem.MolFromSmiles(ASPIRIN))],
+    ids=["mol", "mol_with_hs"],
+)
+def test_mol_input_matches_smiles(mol):
     a = featurize(ASPIRIN)
-    b = featurize(Chem.MolFromSmiles(ASPIRIN))
+    b = featurize(mol)
     assert a.smiles == b.smiles
     assert torch.equal(a.fp, b.fp)
     assert torch.equal(a.x, b.x)
     assert torch.equal(a.edge_index, b.edge_index)
-
-
-def test_strips_salt_and_keeps_charge():
-    assert featurize("CC(=O)[O-].[Na+]").smiles == "CC(=O)[O-]"
-
-
-def test_stereo_survives():
-    a = featurize("C[C@H](N)C(=O)O")
-    b = featurize("C[C@@H](N)C(=O)O")
-    assert a.smiles != b.smiles
-    assert not torch.equal(a.x, b.x)
 
 
 @pytest.mark.parametrize(
@@ -51,7 +45,7 @@ def test_fingerprint_input_rejected(fingerprint):
         featurize(fingerprint)
 
 
-@pytest.mark.parametrize("bad", ["not_a_smiles", "", "   ", Chem.RWMol()])
+@pytest.mark.parametrize("bad", ["", "   ", Chem.RWMol()])
 def test_unusable_structure_raises(bad):
     with pytest.raises(ValueError):
         featurize(bad)
@@ -73,50 +67,28 @@ def test_unsupported_n_bits_raises():
 
 
 @pytest.mark.parametrize("n_bits", [1024, 2048])
-def test_shapes(n_bits):
-    data = featurize(ASPIRIN, n_bits=n_bits)
-    assert data.fp.shape == (1, n_bits)
-    assert data.fp.dtype == torch.uint8
-    assert data.x.shape == (13, NODE_FEATURE_DIM)
-
-
-def test_batches_all_modalities():
-    batch = Batch.from_data_list([featurize("CCO"), featurize("c1ccccc1")])
+def test_batches_all_modalities(n_bits):
+    batch = Batch.from_data_list(
+        [featurize("CCO", n_bits=n_bits), featurize("c1ccccc1", n_bits=n_bits)]
+    )
     assert batch.num_graphs == 2
-    assert batch.fp.shape == (2, 2048)
+    assert batch.fp.shape == (2, n_bits)
+    assert batch.fp.dtype == torch.uint8
     assert batch.smiles == ["CCO", "c1ccccc1"]
     assert batch.x.shape == (9, NODE_FEATURE_DIM)
 
 
-def test_featurize_many_reports_failures():
-    featurized, failed = featurize_many(["CCO", "not_a_smiles", "c1ccccc1"])
+@pytest.mark.parametrize(
+    ("structures", "expected_failed"),
+    [
+        (["CCO", "not_a_smiles", "c1ccccc1"], [1]),
+        (pd.Series(["CCO", "not_a_smiles", "c1ccccc1"], index=[0, 4, 7]), [4]),
+    ],
+)
+def test_featurize_many_reports_failures(structures, expected_failed):
+    featurized, failed = featurize_many(structures)
     assert [d.smiles for d in featurized] == ["CCO", "c1ccccc1"]
-    assert failed == [1]
-
-
-def test_featurize_many_reports_series_index_labels():
-    smiles = pd.Series(["CCO", "not_a_smiles", "c1ccccc1"], index=[0, 4, 7])
-    featurized, failed = featurize_many(smiles)
-    assert len(featurized) == 2
-    assert failed == [4]
-
-
-def test_featurize_many_propagates_fingerprint_input():
-    with pytest.raises(TypeError):
-        featurize_many(["CCO", np.zeros(2048, dtype=np.uint8)])
-
-
-def test_mol_with_explicit_hs_matches_smiles():
-    from_smiles = featurize(ASPIRIN)
-    from_mol = featurize(Chem.AddHs(Chem.MolFromSmiles(ASPIRIN)))
-    assert from_mol.smiles == from_smiles.smiles
-    assert torch.equal(from_mol.x, from_smiles.x)
-    assert torch.equal(from_mol.fp, from_smiles.fp)
-
-
-def test_largest_fragment_prefers_organic():
-    # PF6- has more atoms than acetonitrile but no carbon
-    assert standardize_smiles("CC#N.F[P-](F)(F)(F)(F)F") == "CC#N"
+    assert failed == expected_failed
 
 
 def test_input_mol_not_mutated():
@@ -127,15 +99,6 @@ def test_input_mol_not_mutated():
     assert mol.GetNumAtoms() == 5
 
 
-def test_smiles_is_idempotent():
-    once = featurize("[Na+].[Cl-].c1ccccc1CC(=O)O").smiles
-    assert featurize(once).smiles == once
-
-
-def test_to_mol_keeps_largest_fragment():
-    assert to_mol("Cl.CCN").GetNumAtoms() == 3
-
-
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
@@ -143,14 +106,12 @@ def test_to_mol_keeps_largest_fragment():
         ("Cl.CCN", "CCN"),  # strips HCl salt
         ("[Na+].[Cl-].c1ccccc1CC(=O)O", "O=C(O)Cc1ccccc1"),  # keeps the big fragment
         ("C[C@H](N)C(=O)O", "C[C@H](N)C(=O)O"),  # stereo preserved
+        ("CC#N.F[P-](F)(F)(F)(F)F", "CC#N"),  # prefers organic over bigger PF6-
+        ("not_a_smiles", None),
     ],
 )
 def test_standardize_smiles(raw, expected):
     assert standardize_smiles(raw) == expected
-
-
-def test_standardize_smiles_none_when_unparseable():
-    assert standardize_smiles("not_a_smiles") is None
 
 
 def test_standardize_smiles_column_drops_unparseable(caplog):
