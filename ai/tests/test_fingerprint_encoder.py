@@ -70,3 +70,12 @@ def test_uses_layer_norm_and_dropout_per_hidden_layer():
     assert kinds.count(nn.LayerNorm) == 3
     assert kinds.count(nn.Dropout) == 3
     assert not any(isinstance(m, nn.BatchNorm1d) for m in enc.modules())
+
+
+def test_no_final_activation_ends_at_layer_norm():
+    enc = FingerprintEncoder(hidden_dims=(64, 32), final_activation=False)
+    assert isinstance(enc.net[-1], nn.LayerNorm)
+    kinds = [type(m) for m in enc.modules()]
+    assert kinds.count(nn.ReLU) == 1
+    assert kinds.count(nn.Dropout) == 1
+    assert (enc.eval()(bits()) < 0).any()

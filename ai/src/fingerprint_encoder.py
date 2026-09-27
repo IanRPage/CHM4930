@@ -17,21 +17,18 @@ class FingerprintEncoder(nn.Module):
         in_bits: int = 2048,
         hidden_dims: Sequence[int] = (1024, 512),
         dropout: float = 0.2,
+        final_activation: bool = True,
     ) -> None:
         super().__init__()
         self.in_bits = in_bits
         self.out_dim = hidden_dims[-1]
 
-        # each hidden layer is Linear -> LayerNorm -> ReLU -> Dropout
         layers: list[nn.Module] = []
         width = in_bits
-        for hidden in hidden_dims:
-            layers += [
-                nn.Linear(width, hidden),
-                nn.LayerNorm(hidden),
-                nn.ReLU(),
-                nn.Dropout(dropout),
-            ]
+        for i, hidden in enumerate(hidden_dims):
+            layers += [nn.Linear(width, hidden), nn.LayerNorm(hidden)]
+            if final_activation or i < len(hidden_dims) - 1:
+                layers += [nn.ReLU(), nn.Dropout(dropout)]
             width = hidden
         self.net = nn.Sequential(*layers)
 
