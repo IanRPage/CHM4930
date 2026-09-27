@@ -10,8 +10,10 @@ ai/
 ├── data/            # local data storage
 ├── notebooks/       # exploration / scratchpads
 ├── src/             # main code
+│   ├── featurize/   # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
+│   ├── pipeline/    # dataset loaders and structure to model input preprocessing
 │   └── check_env.py # sanity check that dependencies are installed correctly
-├── tests/           # pytest suite
+├── tests/           # pytest suite (mirrors src/)
 ├── checkpoints/     # saved model weights
 ├── outputs/         # generated artifacts (figures, logs, metrics, etc.)
 ├── environment.yml  # conda environment config
@@ -64,6 +66,37 @@ python src/check_env.py
 It imports each dependency and prints its version, so if something's missing or
 broken, you'll know.
 
+## Data Pipeline
+
+Modules under `src/pipeline/` import from `src/` as packages, so run them as
+modules from this directory with `src/` on the import path:
+
+```
+PYTHONPATH=src python -m pipeline.bioactivity_loader   # download/load ChEMBL BACE-1
+PYTHONPATH=src python -m pipeline.toxicity_loader      # download/load Tox21 + ClinTox
+```
+
+Each loader's documentation is in its file docstring. They cache cleaned data as
+CSVs in `data/` and return a Pandas `DataFrame` with a standardized `smiles`
+column plus labels.
+
+`pipeline.preprocess.featurize()` takes a SMILES string or RDKit `Mol` and
+returns a PyG `Data` object with all three model inputs:
+
+- graph (`x`, `edge_index`, `edge_attr`)
+- ECFP4 fingerprint (`fp`)
+- canonical SMILES (`smiles`)
+
+Note that fingerprints are rejected as input since ECFP is a lossy hash. To
+featurize a whole dataset, pass its `smiles` column to `featurize_many()`.
+
+> NOTE: While any valid input structure is accepted, predictions for inorganic
+> compounds are basically extrapolations. The training data is almost entirely
+> organic, and anything outside what the graph explicitly one-hot encodes is
+> treated as "other". Salts are reduced to their largest organic fragment when
+> there is one, so inorganic salts that share an ion standardize to the same
+> SMILES.
+
 ## Testing
 
 Tests use [`pytest`](https://docs.pytest.org). From anywhere inside this
@@ -76,8 +109,8 @@ pytest
 `pytest.ini` points pytest at `tests/` and adds `src/` to the import path, so
 tests can `import` modules from `src` directly.
 
-Tests marked `network` call external services (e.g. the ChEMBL API), so they're
-skipped by default. To run `network` tests, do:
+Tests marked `network` call external services (ChEMBL and MoleculeNet), so
+they're skipped by default. To run `network` tests, do:
 
 ```
 pytest -m network
