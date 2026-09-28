@@ -1,9 +1,9 @@
 import numpy as np
+from bioactivity_loader import load_bace1
 from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
 from sklearn.ensemble import RandomForestRegressor
 
-from bioactivity_loader import load_bace1
 from evaluation import evaluation_metrics
 from featurize.fingerprint import mol_to_ecfp4
 
