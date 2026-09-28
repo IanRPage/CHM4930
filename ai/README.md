@@ -13,6 +13,7 @@ ai/
 ├── src/             # main code
 │   ├── featurize/   # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
 │   ├── pipeline/    # dataset loaders and structure to model input preprocessing
+│   ├── encoders/    # where each of MuFu's encoders are implemented
 │   └── check_env.py # sanity check that dependencies are installed correctly
 ├── tests/           # pytest suite (mirrors src/)
 ├── checkpoints/     # saved model weights

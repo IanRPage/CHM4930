@@ -38,8 +38,8 @@ from sklearn.linear_model import Ridge
 from torch import nn
 from torch.utils.data import DataLoader
 
+from encoders.fingerprint_encoder import FingerprintEncoder
 from evaluation import evaluation_metrics
-from fingerprint_encoder import FingerprintEncoder
 from pipeline import bioactivity_loader as bl
 from pipeline.cache import DATA_DIR
 from pipeline.preprocess import featurize_many

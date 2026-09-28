@@ -2,7 +2,7 @@ import pytest
 import torch
 from torch import nn
 
-from fingerprint_encoder import FingerprintEncoder
+from encoders.fingerprint_encoder import FingerprintEncoder
 
 
 def bits(batch=4, in_bits=2048):
