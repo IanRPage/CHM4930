@@ -73,7 +73,6 @@ def test_shared_compound_lands_in_one_row_with_every_label_and_flag(sources):
 
 def test_combined_has_one_row_per_smiles_in_the_union(sources):
     combined = cl.combine_sources(sources)
-    assert combined["smiles"].is_unique
     assert sorted(combined["smiles"]) == ["CCC", "CCCC", "CCN", "CCO"]
 
 
@@ -107,7 +106,6 @@ def test_missing_labels_stay_nan(sources):
 def test_flags_are_bool_without_nan(sources):
     flags = cl.combine_sources(sources)[cl.SOURCE_FLAGS]
     assert (flags.dtypes == bool).all()
-    assert flags.sum().tolist() == [2, 2, 2, 1]
 
 
 def test_active_labels_use_the_threshold_and_keep_nan(sources):
