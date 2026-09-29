@@ -294,6 +294,13 @@ def test_egfr_active_threshold_defaults_to_six_and_can_change(cached_csv):
     assert list(pd.read_csv(cached_csv).columns) == bl.CSV_COLUMNS
 
 
+@pytest.mark.parametrize("download", ["download_bace1", "download_egfr"])
+def test_downloaded_csv_has_no_active_label(fake_chembl, tmp_path, download):
+    csv = tmp_path / "cached.csv"
+    getattr(bl, download)(csv)
+    assert pd.read_csv(csv).columns.tolist() == bl.CSV_COLUMNS
+
+
 def test_load_uses_the_cached_csv_without_network(fake_chembl, tmp_path):
     csv = tmp_path / "chembl-bace-1.csv"
     first = bl.load_bace1(csv_path=csv)
@@ -399,9 +406,18 @@ def test_main_forwards_flags_and_prints_a_summary(monkeypatch, capsys):
         seen.update(threshold=threshold, refresh=refresh)
         return pd.DataFrame({"pIC50": [5.0, 7.0], "active": [0, 1]})
 
-    monkeypatch.setattr(bl, "load_bace1", fake_load)
+    monkeypatch.setitem(bl.LOADERS, "bace1", fake_load)
     monkeypatch.setattr(
-        sys, "argv", ["pipeline.bioactivity_loader", "--refresh", "--threshold", "6.5"]
+        sys,
+        "argv",
+        [
+            "pipeline.bioactivity_loader",
+            "--refresh",
+            "--dataset",
+            "bace1",
+            "--threshold",
+            "6.5",
+        ],
     )
     bl.main()
 
@@ -413,17 +429,45 @@ def test_main_forwards_flags_and_prints_a_summary(monkeypatch, capsys):
     assert re.search(r"50%\s+6\.000", out)
 
 
-def test_main_defaults(monkeypatch):
-    seen = {}
+def test_main_defaults_to_all_datasets(monkeypatch, capsys):
+    seen = []
 
-    def fake_load(threshold, refresh):
-        seen.update(threshold=threshold, refresh=refresh)
-        return pd.DataFrame({"pIC50": [6.0], "active": [1]})
+    def fake_load(name):
+        def load(threshold, refresh):
+            seen.append((name, threshold, refresh))
+            return pd.DataFrame({"pIC50": [6.0], "active": [1]})
 
-    monkeypatch.setattr(bl, "load_bace1", fake_load)
+        return load
+
+    monkeypatch.setitem(bl.LOADERS, "bace1", fake_load("bace1"))
+    monkeypatch.setitem(bl.LOADERS, "egfr", fake_load("egfr"))
     monkeypatch.setattr(sys, "argv", ["pipeline.bioactivity_loader"])
     bl.main()
-    assert seen == {"threshold": bl.PIC50_ACTIVE_THRESHOLD, "refresh": False}
+
+    default = bl.PIC50_ACTIVE_THRESHOLD
+    assert seen == [("bace1", default, False), ("egfr", default, False)]
+    out = capsys.readouterr().out
+    assert "bace1: 1 molecules" in out
+    assert "egfr: 1 molecules" in out
+
+
+def test_main_loads_only_the_chosen_dataset(monkeypatch):
+    seen = []
+
+    def fake_load(name):
+        def load(threshold, refresh):
+            seen.append(name)
+            return pd.DataFrame({"pIC50": [6.0], "active": [1]})
+
+        return load
+
+    monkeypatch.setitem(bl.LOADERS, "bace1", fake_load("bace1"))
+    monkeypatch.setitem(bl.LOADERS, "egfr", fake_load("egfr"))
+    monkeypatch.setattr(
+        sys, "argv", ["pipeline.bioactivity_loader", "--dataset", "egfr"]
+    )
+    bl.main()
+    assert seen == ["egfr"]
 
 
 @pytest.mark.network

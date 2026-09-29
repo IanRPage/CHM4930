@@ -74,7 +74,7 @@ Modules under `src/pipeline/` import from `src/` as packages, so run them as
 modules from this directory with `src/` on the import path:
 
 ```
-PYTHONPATH=src python -m pipeline.bioactivity_loader   # download/load ChEMBL BACE-1
+PYTHONPATH=src python -m pipeline.bioactivity_loader   # download/load ChEMBL BACE-1 + EGFR
 PYTHONPATH=src python -m pipeline.toxicity_loader      # download/load Tox21 + ClinTox
 ```
 

@@ -3,12 +3,14 @@ Download, clean, and load bioactivity data from ChEMBL.
 
 How to use as CLI tool (from `ai/`, with `PYTHONPATH=src`):
 
-    python -m pipeline.bioactivity_loader                  # use cached CSV, download if missing
+    python -m pipeline.bioactivity_loader                  # use cached CSVs, download if missing
     python -m pipeline.bioactivity_loader --refresh        # re-download from ChEMBL
+    python -m pipeline.bioactivity_loader --dataset egfr   # only one dataset (default: all)
     python -m pipeline.bioactivity_loader --threshold 7.0  # pIC50 cutoff for "active" (default 6.0)
 
-Prints the BACE-1 molecule count, active label summary, and pIC50 summary. From Python,
-use `load_bace1()` for BACE-1 or `load_egfr()` for EGFR pIC50 and active labels.
+Prints the molecule count, active label summary, and pIC50 summary for each dataset. From
+Python, use `load_bace1()` for BACE-1 and `load_egfr()` for EGFR pIC50, and active labels
+for both.
 """
 
 import argparse
@@ -179,10 +181,19 @@ def load_egfr(
     return add_active_label(df, threshold)
 
 
+LOADERS = {"bace1": load_bace1, "egfr": load_egfr}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument(
         "--refresh", action="store_true", help="re-download even if the CSV exists"
+    )
+    parser.add_argument(
+        "--dataset",
+        choices=[*LOADERS, "all"],
+        default="all",
+        help="which dataset to load (default: %(default)s)",
     )
     parser.add_argument(
         "--threshold",
@@ -193,10 +204,12 @@ def main() -> None:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    df = load_bace1(threshold=args.threshold, refresh=args.refresh)
-    print(f"\nbace1: {len(df)} molecules")
-    print(summarize_labels(df, ["active"]).round(3), end="\n\n")
-    print(df["pIC50"].describe().round(3))
+    names = list(LOADERS) if args.dataset == "all" else [args.dataset]
+    for name in names:
+        df = LOADERS[name](threshold=args.threshold, refresh=args.refresh)
+        print(f"\n{name}: {len(df)} molecules")
+        print(summarize_labels(df, ["active"]).round(3), end="\n\n")
+        print(df["pIC50"].describe().round(3))
 
 
 if __name__ == "__main__":
