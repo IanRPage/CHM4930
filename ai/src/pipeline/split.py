@@ -28,10 +28,7 @@ from featurize.smiles import mol_to_smiles
 from pipeline.cache import write_csv
 from pipeline.preprocess import to_mol
 
-log = logging.getLogger(__name__)
-
 SPLITS = ["train", "val", "test"]
-DEFAULT_FRAC = (0.8, 0.1, 0.1)
 
 
 def murcko_scaffold(smiles: str) -> str:
@@ -49,48 +46,36 @@ def _validate_frac(frac: Sequence[float]) -> None:
 
 
 def _scaffold_groups(scaffolds: Sequence[str]) -> list[list[int]]:
-    by_scaffold: dict[str, list[int]] = {}
-    groups = []
+    groups: dict[str | int, list[int]] = {}
     for pos, scaffold in enumerate(scaffolds):
-        if scaffold:
-            by_scaffold.setdefault(scaffold, []).append(pos)
-        else:
-            groups.append([pos])
-    return sorted(
-        [*by_scaffold.values(), *groups],
-        key=lambda g: (-len(g), scaffolds[g[0]], g[0]),
-    )
-
-
-def _order_groups(
-    groups: list[list[int]], val_size: float, test_size: float, seed: int | None
-) -> list[list[int]]:
-    if seed is None:
-        return groups
-    rng = random.Random(seed)
-    big = [g for g in groups if len(g) > val_size / 2 or len(g) > test_size / 2]
-    small = [g for g in groups if len(g) <= val_size / 2 and len(g) <= test_size / 2]
-    rng.shuffle(big)
-    rng.shuffle(small)
-    return big + small
+        groups.setdefault(scaffold or pos, []).append(pos)
+    return sorted(groups.values(), key=lambda g: (-len(g), scaffolds[g[0]], g[0]))
 
 
 def scaffold_split(
     df: pd.DataFrame,
-    frac: Sequence[float] = DEFAULT_FRAC,
+    frac: Sequence[float] = (0.8, 0.1, 0.1),
     seed: int | None = None,
 ) -> pd.DataFrame:
     _validate_frac(frac)
     scaffolds = [murcko_scaffold(s) for s in df["smiles"]]
-    n = len(scaffolds)
-    train_size, val_size, test_size = (f * n for f in frac)
+    sizes = dict(zip(SPLITS, (f * len(scaffolds) for f in frac)))
+
+    groups = _scaffold_groups(scaffolds)
+    if seed is not None:
+        rng = random.Random(seed)
+        half = min(sizes["val"], sizes["test"]) / 2
+        big = [g for g in groups if len(g) > half]
+        small = [g for g in groups if len(g) <= half]
+        rng.shuffle(big)
+        rng.shuffle(small)
+        groups = big + small
 
     counts = dict.fromkeys(SPLITS, 0)
-    limits = {"train": train_size, "val": val_size}
-    assigned = [""] * n
-    for group in _order_groups(_scaffold_groups(scaffolds), val_size, test_size, seed):
+    assigned = [""] * len(scaffolds)
+    for group in groups:
         name = next(
-            (s for s in SPLITS[:2] if counts[s] + len(group) <= limits[s]), "test"
+            (s for s in SPLITS[:2] if counts[s] + len(group) <= sizes[s]), "test"
         )
         counts[name] += len(group)
         for pos in group:
@@ -112,7 +97,6 @@ def main() -> None:
     parser.add_argument(
         "--seed",
         type=int,
-        default=None,
         help="shuffle scaffold groups with this seed (default: largest groups first)",
     )
     args = parser.parse_args()
