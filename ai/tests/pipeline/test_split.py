@@ -37,12 +37,8 @@ KNOWN_SCAFFOLDS = [
 BENZENES = ["c1ccccc1", "Cc1ccccc1", "Oc1ccccc1", "CCc1ccccc1"]
 
 
-def ring(n):
-    return "C1" + "C" * (n - 1) + "1"
-
-
 def rings(count):
-    return [ring(n) for n in range(3, 3 + count)]
+    return ["C1" + "C" * (n - 1) + "1" for n in range(3, 3 + count)]
 
 
 def alkanes(count):
@@ -51,10 +47,6 @@ def alkanes(count):
 
 def table(smiles):
     return pd.DataFrame({"smiles": smiles, "label": range(len(smiles))})
-
-
-def groups_by_split(df):
-    return df.groupby("scaffold")["split"].nunique()
 
 
 @pytest.mark.parametrize(("smiles", "expected"), KNOWN_SCAFFOLDS)
@@ -73,18 +65,13 @@ def test_compounds_sharing_a_scaffold_get_the_same_scaffold_string():
     assert out["scaffold"].nunique() == 7
 
 
-def test_scaffold_never_leaks_across_splits():
+@pytest.mark.parametrize("seed", [None, 0, 1, 2])
+def test_every_compound_gets_one_split_and_no_scaffold_leaks(seed):
     df = table(BENZENES + rings(12) + ["CCO", "CCN", "Cc1ccncc1", "c1ccncc1"])
-    for seed in (None, 0, 1, 2):
-        out = sp.scaffold_split(df, seed=seed)
-        assert (groups_by_split(out[out["scaffold"] != ""]) == 1).all()
-
-
-def test_every_compound_gets_exactly_one_split():
-    df = table(BENZENES + rings(12))
-    out = sp.scaffold_split(df)
-    assert len(out) == len(df)
+    out = sp.scaffold_split(df, seed=seed)
     assert out["split"].isin(sp.SPLITS).all()
+    cyclic = out[out["scaffold"] != ""]
+    assert (cyclic.groupby("scaffold")["split"].nunique() == 1).all()
 
 
 def test_returns_a_copy_with_only_scaffold_and_split_added():
@@ -121,15 +108,11 @@ def test_with_seed_groups_bigger_than_half_the_val_size_go_to_train_first():
     assert (out.loc[out["scaffold"] == BENZENE, "split"] == "train").all()
 
 
-def test_acyclic_compounds_are_their_own_groups():
-    out = sp.scaffold_split(table(alkanes(10)))
+@pytest.mark.parametrize("seed", [None, 0])
+def test_acyclic_compounds_are_their_own_groups(seed):
+    out = sp.scaffold_split(table(alkanes(10)), seed=seed)
     assert out["scaffold"].eq("").all()
     assert out["split"].value_counts().to_dict() == {"train": 8, "val": 1, "test": 1}
-
-
-def test_acyclic_compounds_are_split_the_same_way_with_a_seed():
-    out = sp.scaffold_split(table(alkanes(10)), seed=0)
-    assert out["split"].nunique() == 3
 
 
 @pytest.mark.parametrize("seed", [None, 0])
@@ -171,8 +154,7 @@ def test_cli_writes_only_smiles_scaffold_and_split(tmp_path, monkeypatch):
 
 def test_cli_prints_sizes_overall_and_per_source(tmp_path, monkeypatch, capsys):
     csv = tmp_path / "combined.csv"
-    smiles = rings(10)
-    table(smiles).assign(in_a=True, in_b=[True] * 5 + [False] * 5).to_csv(
+    table(rings(10)).assign(in_a=True, in_b=[True] * 5 + [False] * 5).to_csv(
         csv, index=False
     )
     run_cli(monkeypatch, csv)
