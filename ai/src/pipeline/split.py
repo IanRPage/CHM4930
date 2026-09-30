@@ -45,11 +45,14 @@ def _validate_frac(frac: Sequence[float]) -> None:
         raise ValueError(f"frac must sum to 1, got {sum(frac)}")
 
 
-def _scaffold_groups(scaffolds: Sequence[str]) -> list[list[int]]:
-    groups: dict[str | int, list[int]] = {}
-    for pos, scaffold in enumerate(scaffolds):
-        groups.setdefault(scaffold or pos, []).append(pos)
-    return sorted(groups.values(), key=lambda g: (-len(g), scaffolds[g[0]], g[0]))
+def _scaffold_groups(
+    smiles: Sequence[str], scaffolds: Sequence[str]
+) -> list[list[int]]:
+    groups: dict[str, list[int]] = {}
+    for pos, (smi, scaffold) in enumerate(zip(smiles, scaffolds)):
+        key = scaffold or mol_to_smiles(to_mol(smi))
+        groups.setdefault(key, []).append(pos)
+    return [g for _, g in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))]
 
 
 def scaffold_split(
@@ -61,7 +64,7 @@ def scaffold_split(
     scaffolds = [murcko_scaffold(s) for s in df["smiles"]]
     sizes = dict(zip(SPLITS, (f * len(scaffolds) for f in frac)))
 
-    groups = _scaffold_groups(scaffolds)
+    groups = _scaffold_groups(df["smiles"], scaffolds)
     if seed is not None:
         rng = random.Random(seed)
         half = min(sizes["val"], sizes["test"]) / 2
@@ -81,6 +84,12 @@ def scaffold_split(
         for pos in group:
             assigned[pos] = name
 
+    empty = [name for name in SPLITS if sizes[name] > 0 and counts[name] == 0]
+    if empty:
+        raise ValueError(
+            f"{', '.join(empty)} split(s) came out empty; a scaffold group may be "
+            "too large for the requested frac"
+        )
     return df.assign(scaffold=scaffolds, split=assigned)
 
 
@@ -108,7 +117,10 @@ def main() -> None:
     if "smiles" not in df.columns:
         parser.error(f"{args.csv_path} has no `smiles` column")
 
-    out = scaffold_split(df, seed=args.seed)
+    try:
+        out = scaffold_split(df, seed=args.seed)
+    except ValueError as e:
+        parser.error(str(e))
     out_path = args.csv_path.with_name(f"{args.csv_path.stem}-splits.csv")
     write_csv(out[["smiles", "scaffold", "split"]], out_path)
     print(f"\nsplit sizes: {len(out)} molecules")

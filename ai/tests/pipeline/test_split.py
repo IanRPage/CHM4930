@@ -115,6 +115,21 @@ def test_acyclic_compounds_are_their_own_groups(seed):
     assert out["split"].value_counts().to_dict() == {"train": 8, "val": 1, "test": 1}
 
 
+def test_repeated_acyclic_compound_stays_in_one_split():
+    out = sp.scaffold_split(table(alkanes(10) + ["CCO"] * 5 + ["OCC"] * 5))
+    assert out["split"].iloc[10:].nunique() == 1
+
+
+def test_raises_when_a_split_comes_out_empty():
+    with pytest.raises(ValueError, match="train, val split"):
+        sp.scaffold_split(table(BENZENES))
+
+
+def test_split_with_zero_frac_can_be_empty():
+    out = sp.scaffold_split(table(rings(10)), frac=(0.9, 0.1, 0.0))
+    assert "test" not in set(out["split"])
+
+
 @pytest.mark.parametrize("seed", [None, 0])
 def test_same_table_and_seed_give_the_same_split(seed):
     df = table(BENZENES + rings(16) + alkanes(6))
