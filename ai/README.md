@@ -9,9 +9,11 @@ along with any datasets or checkpoints for saved model weights.
 ai/
 ├── data/            # local data storage
 ├── notebooks/       # exploration / scratchpads
+├── scripts/         # helpful utility scripts
 ├── src/             # main code
 │   ├── featurize/   # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
 │   ├── pipeline/    # dataset loaders and structure to model input preprocessing
+│   ├── encoders/    # where each of MuFu's encoders are implemented
 │   └── check_env.py # sanity check that dependencies are installed correctly
 ├── tests/           # pytest suite (mirrors src/)
 ├── checkpoints/     # saved model weights
@@ -72,7 +74,7 @@ Modules under `src/pipeline/` import from `src/` as packages, so run them as
 modules from this directory with `src/` on the import path:
 
 ```
-PYTHONPATH=src python -m pipeline.bioactivity_loader   # download/load ChEMBL BACE-1
+PYTHONPATH=src python -m pipeline.bioactivity_loader   # download/load ChEMBL BACE-1 + EGFR
 PYTHONPATH=src python -m pipeline.toxicity_loader      # download/load Tox21 + ClinTox
 ```
 
