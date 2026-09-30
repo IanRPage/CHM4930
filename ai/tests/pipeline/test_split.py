@@ -8,6 +8,8 @@ from pipeline import split as sp
 BENZENE = "c1ccccc1"
 NAPHTHALENE = "c1ccc2ccccc2c1"
 BIPHENYL = "c1ccc(-c2ccccc2)cc1"
+DECALIN = "C1CCC2CCCCC2C1"
+STILBENE = "C(=Cc1ccccc1)c1ccccc1"
 
 # scaffolds checked against RDKit's MurckoScaffold
 KNOWN_SCAFFOLDS = [
@@ -33,6 +35,10 @@ KNOWN_SCAFFOLDS = [
     ("CCN", ""),
     ("CCC", ""),
     ("CCCC", ""),
+    ("C1CC[C@H]2CCCC[C@@H]2C1", DECALIN),
+    ("C1CC[C@H]2CCCC[C@H]2C1", DECALIN),
+    ("c1ccc(/C=C/c2ccccc2)cc1", STILBENE),
+    ("c1ccc(/C=C\\c2ccccc2)cc1", STILBENE),
 ]
 BENZENES = ["c1ccccc1", "Cc1ccccc1", "Oc1ccccc1", "CCc1ccccc1"]
 

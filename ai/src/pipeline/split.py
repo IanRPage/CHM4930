@@ -1,7 +1,8 @@
 """
 Assign each compound to train, val, or test with a Bemis-Murcko scaffold split.
 
-Compounds that share a scaffold always land in the same split. Acyclic compounds have an
+Compounds that share a scaffold always land in the same split. Scaffolds ignore
+stereochemistry, so stereoisomers of a ring system share one. Acyclic compounds have an
 empty scaffold, so each one is its own group. You should split the combined table rather
 than each source that way a compound stays in one split across every task.
 
@@ -22,6 +23,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pandas as pd
+from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
 
 from featurize.smiles import mol_to_smiles
@@ -33,7 +35,9 @@ SPLITS = ["train", "val", "test"]
 
 def murcko_scaffold(smiles: str) -> str:
     scaffold = MurckoScaffold.GetScaffoldForMol(to_mol(smiles))
-    return mol_to_smiles(scaffold) if scaffold.GetNumAtoms() else ""
+    if not scaffold.GetNumAtoms():
+        return ""
+    return Chem.MolToSmiles(scaffold, isomericSmiles=False)
 
 
 def _validate_frac(frac: Sequence[float]) -> None:
