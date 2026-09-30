@@ -3,18 +3,21 @@ Download, clean, and load bioactivity data from ChEMBL.
 
 How to use as CLI tool (from `ai/`, with `PYTHONPATH=src`):
 
-    python -m pipeline.bioactivity_loader                  # use cached CSV, download if missing
+    python -m pipeline.bioactivity_loader                  # use cached CSVs, download if missing
     python -m pipeline.bioactivity_loader --refresh        # re-download from ChEMBL
+    python -m pipeline.bioactivity_loader --dataset egfr   # only one dataset (default: all)
     python -m pipeline.bioactivity_loader --threshold 7.0  # pIC50 cutoff for "active" (default 6.0)
 
-Prints the BACE-1 molecule count, active label summary, and pIC50 summary. From Python,
-use `load_bace1()` for BACE-1 or `load_egfr()` for EGFR pIC50 and active labels.
+Prints the molecule count, active label summary, and pIC50 summary for each dataset. From
+Python, use `load_bioactivity_data("bace1" or "egfr")` for pIC50 and active labels;
+`load_bace1()` and `load_egfr()` are shortcuts for it.
 """
 
 import argparse
 import json
 import logging
 import urllib.request
+from functools import partial
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -42,9 +45,13 @@ API_FIELDS = [
 
 # Target IDs and cache paths
 BACE1_TARGET_ID = "CHEMBL4822"
-BACE1_CSV_PATH = DATA_DIR / "chembl-bace-1.csv"
 EGFR_TARGET_ID = "CHEMBL203"
-EGFR_CSV_PATH = DATA_DIR / "chembl-egfr.csv"
+TARGETS = {
+    "bace1": {"target_id": BACE1_TARGET_ID, "csv_name": "chembl-bace-1.csv"},
+    "egfr": {"target_id": EGFR_TARGET_ID, "csv_name": "chembl-egfr.csv"},
+}
+BACE1_CSV_PATH = DATA_DIR / TARGETS["bace1"]["csv_name"]
+EGFR_CSV_PATH = DATA_DIR / TARGETS["egfr"]["csv_name"]
 PIC50_ACTIVE_THRESHOLD = 6.0
 CSV_COLUMNS = ["molecule_chembl_id", "smiles", "pIC50", "n_meas", "pIC50_spread"]
 
@@ -144,12 +151,9 @@ def clean_activities(raw: pd.DataFrame) -> pd.DataFrame:
     return molecules[CSV_COLUMNS].sort_values("molecule_chembl_id", ignore_index=True)
 
 
-def download_bace1(csv_path: Path = BACE1_CSV_PATH) -> None:
-    write_csv(clean_activities(fetch_activities()), csv_path)
-
-
-def download_egfr(csv_path: Path = EGFR_CSV_PATH) -> None:
-    write_csv(clean_activities(fetch_activities(EGFR_TARGET_ID)), csv_path)
+def download_bioactivity_data(target: str, csv_path: Path) -> None:
+    raw = fetch_activities(TARGETS[target]["target_id"])
+    write_csv(clean_activities(raw), csv_path)
 
 
 def add_active_label(
@@ -160,13 +164,30 @@ def add_active_label(
     return out
 
 
+def _load(target: str, csv_path: Path, threshold: float, refresh: bool) -> pd.DataFrame:
+    download = partial(download_bioactivity_data, target)
+    df = load_csv(csv_path, download, CSV_COLUMNS, refresh)
+    return add_active_label(df, threshold)
+
+
+def load_bioactivity_data(
+    target: str,
+    threshold: float = PIC50_ACTIVE_THRESHOLD,
+    refresh: bool = False,
+    data_dir: Path = DATA_DIR,
+) -> pd.DataFrame:
+    if target not in TARGETS:
+        raise ValueError(f"unknown target {target!r}, expected one of {list(TARGETS)}")
+    csv_path = data_dir / TARGETS[target]["csv_name"]
+    return _load(target, csv_path, threshold, refresh)
+
+
 def load_bace1(
     threshold: float = PIC50_ACTIVE_THRESHOLD,
     csv_path: Path = BACE1_CSV_PATH,
     refresh: bool = False,
 ) -> pd.DataFrame:
-    df = load_csv(csv_path, download_bace1, CSV_COLUMNS, refresh)
-    return add_active_label(df, threshold)
+    return _load("bace1", csv_path, threshold, refresh)
 
 
 def load_egfr(
@@ -175,14 +196,19 @@ def load_egfr(
     refresh: bool = False,
 ) -> pd.DataFrame:
     """Load EGFR pIC50 and derive an active label at the chosen cutoff."""
-    df = load_csv(csv_path, download_egfr, CSV_COLUMNS, refresh)
-    return add_active_label(df, threshold)
+    return _load("egfr", csv_path, threshold, refresh)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument(
         "--refresh", action="store_true", help="re-download even if the CSV exists"
+    )
+    parser.add_argument(
+        "--dataset",
+        choices=[*TARGETS, "all"],
+        default="all",
+        help="which dataset to load (default: %(default)s)",
     )
     parser.add_argument(
         "--threshold",
@@ -193,10 +219,12 @@ def main() -> None:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    df = load_bace1(threshold=args.threshold, refresh=args.refresh)
-    print(f"\nbace1: {len(df)} molecules")
-    print(summarize_labels(df, ["active"]).round(3), end="\n\n")
-    print(df["pIC50"].describe().round(3))
+    names = list(TARGETS) if args.dataset == "all" else [args.dataset]
+    for name in names:
+        df = load_bioactivity_data(name, args.threshold, args.refresh)
+        print(f"\n{name}: {len(df)} molecules")
+        print(summarize_labels(df, ["active"]).round(3), end="\n\n")
+        print(df["pIC50"].describe().round(3))
 
 
 if __name__ == "__main__":
