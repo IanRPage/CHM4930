@@ -1,3 +1,11 @@
+"""
+Random forest pIC50 baseline for BACE-1 on ECFP4 fingerprints.
+
+How to run (from `ai/`, with `PYTHONPATH=src`):
+
+    python -m baseline.baseline_bioactivity
+"""
+
 import numpy as np
 from rdkit import Chem
 from sklearn.ensemble import RandomForestRegressor
@@ -56,7 +64,7 @@ def main():
 
     best_model = None
     best_max_features = None
-    best_val_rmse = float("inf")
+    best_val_metrics = {"rmse": float("inf")}
 
     for max_features in MAX_FEATURES_OPTIONS:
         model = RandomForestRegressor(
@@ -76,18 +84,10 @@ def main():
             val_idx,
         )
 
-        if val_metrics["rmse"] < best_val_rmse:
-            best_val_rmse = val_metrics["rmse"]
+        if val_metrics["rmse"] < best_val_metrics["rmse"]:
+            best_val_metrics = val_metrics
             best_model = model
             best_max_features = max_features
-
-    val_metrics = score_model(
-        best_model,
-        X,
-        y,
-        active,
-        val_idx,
-    )
 
     test_metrics = score_model(
         best_model,
@@ -103,9 +103,9 @@ def main():
     print(f"Best max_features: {best_max_features}")
 
     print(
-        f"Validation: RMSE={val_metrics['rmse']:.4f}, "
-        f"R2={val_metrics['r2']:.4f}, "
-        f"ROC-AUC={val_metrics['roc_auc']:.4f}"
+        f"Validation: RMSE={best_val_metrics['rmse']:.4f}, "
+        f"R2={best_val_metrics['r2']:.4f}, "
+        f"ROC-AUC={best_val_metrics['roc_auc']:.4f}"
     )
 
     print(
