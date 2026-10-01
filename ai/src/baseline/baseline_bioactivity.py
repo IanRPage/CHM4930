@@ -1,47 +1,16 @@
 import numpy as np
-from bioactivity_loader import load_bace1
 from rdkit import Chem
-from rdkit.Chem.Scaffolds import MurckoScaffold
 from sklearn.ensemble import RandomForestRegressor
 
 from evaluation import evaluation_metrics
 from featurize.fingerprint import mol_to_ecfp4
+from pipeline.combined_loader import load_combined
+from pipeline.split import scaffold_split
 
 N_BITS = 2048
 N_ESTIMATORS = 500
 RANDOM_STATE = 42
 MAX_FEATURES_OPTIONS = ["sqrt", "log2", 0.1, 0.3]
-
-
-def scaffold_split(df):
-    """Split molecules 80/10/10 by Bemis-Murcko scaffold."""
-    scaffolds = df["smiles"].map(
-        lambda smiles: MurckoScaffold.MurckoScaffoldSmiles(smiles=smiles)
-    )
-
-    groups = sorted(
-        df.groupby(scaffolds).indices.values(),
-        key=lambda idx: (-len(idx), idx[0]),
-    )
-
-    n = len(df)
-    train_idx = []
-    val_idx = []
-    test_idx = []
-
-    for idx in groups:
-        if len(train_idx) + len(idx) <= 0.8 * n:
-            train_idx += idx.tolist()
-        elif len(val_idx) + len(idx) <= 0.1 * n:
-            val_idx += idx.tolist()
-        else:
-            test_idx += idx.tolist()
-
-    return (
-        np.asarray(train_idx),
-        np.asarray(val_idx),
-        np.asarray(test_idx),
-    )
 
 
 def score_model(model, X, y, active, idx):
@@ -67,7 +36,8 @@ def score_model(model, X, y, active, idx):
 
 
 def main():
-    df = load_bace1()
+    df = scaffold_split(load_combined())
+    df = df[df["pIC50_BACE1"].notna()].reset_index(drop=True)
 
     fingerprints = []
 
@@ -76,10 +46,13 @@ def main():
         fingerprints.append(mol_to_ecfp4(mol, N_BITS))
 
     X = np.stack(fingerprints)
-    y = df["pIC50"].to_numpy(dtype=float)
-    active = df["active"].to_numpy()
+    y = df["pIC50_BACE1"].to_numpy(dtype=float)
+    active = df["active_BACE1"].to_numpy()
 
-    train_idx, val_idx, test_idx = scaffold_split(df)
+    split = df["split"].to_numpy()
+    train_idx, val_idx, test_idx = (
+        np.flatnonzero(split == name) for name in ("train", "val", "test")
+    )
 
     best_model = None
     best_max_features = None
