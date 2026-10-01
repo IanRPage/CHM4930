@@ -220,3 +220,18 @@ def test_split_summary_counts_each_source():
     assert summary.loc["all"].sum() == 10
     assert summary.loc["in_a"].sum() == 10
     assert summary.loc["in_b"].sum() == 2
+
+
+def test_each_source_gets_its_own_80_10_10():
+    df = table(rings(20) + alkanes(10)).assign(
+        in_a=[True] * 20 + [False] * 10, in_b=[False] * 20 + [True] * 10
+    )
+    summary = sp.split_summary(sp.scaffold_split(df))
+    assert summary.loc["in_a"].tolist() == [16, 2, 2]
+    assert summary.loc["in_b"].tolist() == [8, 1, 1]
+
+
+def test_source_left_out_of_a_split_raises():
+    df = table(BENZENES + rings(16)).assign(in_a=True, in_b=[True] * 4 + [False] * 16)
+    with pytest.raises(ValueError, match="in_b train, in_b val"):
+        sp.scaffold_split(df, frac=(0.5, 0.25, 0.25))

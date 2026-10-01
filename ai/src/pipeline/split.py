@@ -4,7 +4,9 @@ Assign each compound to train, val, or test with a Bemis-Murcko scaffold split.
 Compounds that share a scaffold always land in the same split. Scaffolds ignore
 stereochemistry, so stereoisomers of a ring system share one. Acyclic compounds have an
 empty scaffold, so each one is its own group. You should split the combined table rather
-than each source that way a compound stays in one split across every task.
+than each source that way a compound stays in one split across every task. When the table
+has `in_*` source flags, each source gets its own size budget, so every source comes out
+close to `frac` rather than only the table as a whole.
 
 How to use as CLI tool (from `ai/`, with `PYTHONPATH=src`):
 
@@ -22,6 +24,7 @@ import random
 from collections.abc import Sequence
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem.Scaffolds import MurckoScaffold
@@ -49,6 +52,10 @@ def _validate_frac(frac: Sequence[float]) -> None:
         raise ValueError(f"frac must sum to 1, got {sum(frac)}")
 
 
+def _source_flags(df: pd.DataFrame) -> list[str]:
+    return [c for c in df.columns if c.startswith("in_")]
+
+
 def _scaffold_groups(
     smiles: Sequence[str], scaffolds: Sequence[str]
 ) -> list[list[int]]:
@@ -66,40 +73,59 @@ def scaffold_split(
 ) -> pd.DataFrame:
     _validate_frac(frac)
     scaffolds = [murcko_scaffold(s) for s in df["smiles"]]
-    sizes = dict(zip(SPLITS, (f * len(scaffolds) for f in frac)))
+    flags = _source_flags(df)
+    member = (
+        df[flags].fillna(False).to_numpy(bool)
+        if flags
+        else np.ones((len(df), 1), dtype=bool)
+    )
+    sizes = {name: f * member.sum(axis=0) for name, f in zip(SPLITS, frac)}
 
     groups = _scaffold_groups(df["smiles"], scaffolds)
     if seed is not None:
         rng = random.Random(seed)
-        half = min(sizes["val"], sizes["test"]) / 2
+        half = min(frac[1], frac[2]) * len(df) / 2
         big = [g for g in groups if len(g) > half]
         small = [g for g in groups if len(g) <= half]
         rng.shuffle(big)
         rng.shuffle(small)
         groups = big + small
 
-    counts = dict.fromkeys(SPLITS, 0)
+    counts = {name: np.zeros(member.shape[1]) for name in SPLITS}
     assigned = [""] * len(scaffolds)
     for group in groups:
+        group_counts = member[group].sum(axis=0)
         name = next(
-            (s for s in SPLITS[:2] if counts[s] + len(group) <= sizes[s]), "test"
+            (s for s in SPLITS[:2] if np.all(counts[s] + group_counts <= sizes[s])),
+            "test",
         )
-        counts[name] += len(group)
+        counts[name] += group_counts
         for pos in group:
             assigned[pos] = name
 
-    empty = [name for name in SPLITS if sizes[name] > 0 and counts[name] == 0]
+    empty = [name for name, f in zip(SPLITS, frac) if f > 0 and name not in assigned]
     if empty:
         raise ValueError(
             f"{', '.join(empty)} split(s) came out empty; a scaffold group may be "
             "too large for the requested frac"
+        )
+    starved = [
+        f"{flag} {name}"
+        for name in SPLITS
+        for flag, size, count in zip(flags, sizes[name], counts[name])
+        if size >= 1 and count == 0
+    ]
+    if starved:
+        raise ValueError(
+            f"no compounds from {', '.join(starved)}; a scaffold group may be too "
+            "large for the requested frac"
         )
     return df.assign(scaffold=scaffolds, split=assigned)
 
 
 def split_summary(df: pd.DataFrame) -> pd.DataFrame:
     rows = {"all": df["split"].value_counts()}
-    for col in (c for c in df.columns if c.startswith("in_")):
+    for col in _source_flags(df):
         rows[col] = df.loc[df[col].astype(bool), "split"].value_counts()
     return pd.DataFrame(rows).T.reindex(columns=SPLITS).fillna(0).astype(int)
 
