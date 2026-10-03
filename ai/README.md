@@ -129,6 +129,7 @@ the git commit it ran on. Current test set performance:
 | Model            | Task                  | Test result                                  |
 | ---------------- | --------------------- | -------------------------------------------- |
 | `rf_bioactivity` | BACE-1 pIC50          | RMSE 0.81, R² 0.59, ROC-AUC 0.88 (pIC50 ≥ 6) |
+| `rf_bioactivity` | EGFR pIC50            | RMSE 0.87, R² 0.51, ROC-AUC 0.88 (pIC50 ≥ 6) |
 | `rf_toxicity`    | Tox21 (12 endpoints)  | macro ROC-AUC 0.72                           |
 | `rf_toxicity`    | ClinTox (2 endpoints) | macro ROC-AUC 0.65                           |
 
