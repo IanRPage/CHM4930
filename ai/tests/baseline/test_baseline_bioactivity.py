@@ -39,7 +39,7 @@ def fake_forests(monkeypatch):
     return models
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def recorded(monkeypatch):
     calls = []
     monkeypatch.setattr(
