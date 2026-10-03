@@ -1,6 +1,10 @@
 # ai/ data and model artifacts - keep the folders, ignore their contents
 ai/data/*
 !ai/data/.gitkeep
+!ai/data/baseline/
+ai/data/baseline/*
+!ai/data/baseline/combined.csv
+!ai/data/baseline/results.csv
 ai/checkpoints/*
 !ai/checkpoints/.gitkeep
 ai/outputs/*
