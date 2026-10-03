@@ -1,8 +1,19 @@
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from baseline import baseline_toxicity as bt
+
+
+@pytest.fixture(autouse=True)
+def recorded(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        bt, "record_results", lambda rows, model: calls.append((model, rows))
+    )
+    return calls
 
 
 @pytest.fixture
@@ -61,7 +72,7 @@ def combined(monkeypatch):
 
 
 def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
-    monkeypatch, capsys, combined, fake_forests
+    monkeypatch, capsys, combined, fake_forests, recorded
 ):
     original = combined.copy(deep=True)
     monkeypatch.setattr(bt, "load_combined", lambda: combined)
@@ -107,6 +118,36 @@ def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
     assert "val overall: macro ROC-AUC=1.0000 (1/2 evaluable endpoints)" in out
     assert "test tox21: macro ROC-AUC=0.0000 (1/1 evaluable endpoints)" in out
     assert "test clintox: macro ROC-AUC=nan (0/1 evaluable endpoints)" in out
+
+    [(model, rows)] = recorded
+    assert model == "rf_toxicity"
+    rows = pd.DataFrame(rows).set_index(["endpoint", "split"])
+    assert len(rows) == 10
+    assert (rows["metric"] == "roc_auc").all()
+    assert (rows["encoder"] == "ecfp4-2048").all()
+
+    t1 = rows.loc[("T1", "test")]
+    assert (t1["dataset"], t1["value"], t1["n_labeled"], t1["n_positive"]) == (
+        "tox21",
+        0.0,
+        2,
+        1,
+    )
+    assert json.loads(t1["params"]) == {"max_features": "log2", "n_estimators": 500}
+    assert rows.loc[("T1", "val"), "value"] == 1.0
+
+    t2_val, t2_test = rows.loc[("T2", "val")], rows.loc[("T2", "test")]
+    assert t2_val["dataset"] == "clintox"
+    assert np.isnan(t2_val["value"]) and np.isnan(t2_test["value"])
+    assert (t2_val["n_labeled"], t2_val["n_positive"]) == (0, 0)
+    assert (t2_test["n_labeled"], t2_test["n_positive"]) == (2, 2)
+    assert json.loads(t2_test["params"])["max_features"] == "sqrt"
+
+    assert rows.loc[("macro_overall", "val"), "value"] == 1.0
+    assert rows.loc[("macro_tox21", "test"), "value"] == 0.0
+    macro = rows.loc[("macro_clintox", "test")]
+    assert macro["dataset"] == "clintox"
+    assert np.isnan(macro["value"]) and np.isnan(macro["n_labeled"])
 
 
 @pytest.mark.parametrize(
