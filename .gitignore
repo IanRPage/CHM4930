@@ -18,6 +18,8 @@ ai/**/*.npz
 
 # python
 __pycache__/
+.coverage
+coverage.xml
 *.pyc
 *.pyo
 .ipynb_checkpoints/

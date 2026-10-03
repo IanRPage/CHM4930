@@ -10,11 +10,12 @@ dependencies:
   - scikit-learn
   - matplotlib
   - seaborn
-  - scikit-learn
   - rdkit
   - jupyter
   - nbstripout
   - pytest
+  - pytest-cov=7.1.0
+  - diff-cover=10.5.1
   - pytorch
   - pip
   - pip:
