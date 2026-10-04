@@ -317,7 +317,7 @@ STAGES = {
             },
             PICK
             | {
-                "HIDDEN_DIMS": (256, 256, 128),
+                "HIDDEN_DIMS": (128, 128),
             },
             PICK
             | {
