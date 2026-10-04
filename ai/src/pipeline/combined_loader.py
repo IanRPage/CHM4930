@@ -1,10 +1,14 @@
 """
 Combine BACE-1, EGFR, Tox21, and ClinTox into a single training table.
 
+The table is a frozen snapshot committed at `data/baseline/combined.csv` so everyone trains on
+the same data. `load_combined()` only reads the snapshot, and the snapshot only changes with
+`--refresh`.
+
 How to use as CLI tool (from `ai/`, with `PYTHONPATH=src`):
 
-    python -m pipeline.combined_loader                  # rebuild from cached source CSVs
-    python -m pipeline.combined_loader --refresh        # re-download every source first
+    python -m pipeline.combined_loader                  # load snapshot, or build from cached sources if missing
+    python -m pipeline.combined_loader --refresh        # re-download sources and overwrite snapshot
     python -m pipeline.combined_loader --threshold 7.0  # pIC50 cutoff for "active" (default 6.0)
 
 Prints the row count, overlap counts between sources, and a label summary. From Python,
@@ -31,7 +35,7 @@ from pipeline.toxicity_loader import DATASETS, load_toxicity_data
 
 log = logging.getLogger(__name__)
 
-COMBINED_CSV_PATH = DATA_DIR / "combined.csv"
+COMBINED_CSV_PATH = DATA_DIR / "baseline" / "combined.csv"
 TARGETS = ["BACE1", "EGFR"]
 TOX_TASKS = [*DATASETS["tox21"]["tasks"], *DATASETS["clintox"]["tasks"]]
 SOURCE_FLAGS = ["in_bace1", "in_egfr", "in_tox21", "in_clintox"]
@@ -72,19 +76,34 @@ def add_active_labels(
 
 
 def load_combined(
-    threshold: float = PIC50_ACTIVE_THRESHOLD,
-    refresh: bool = False,
-    data_dir: Path = DATA_DIR,
+    threshold: float = PIC50_ACTIVE_THRESHOLD, path: Path = COMBINED_CSV_PATH
 ) -> pd.DataFrame:
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} not found; build it with `python -m pipeline.combined_loader`"
+        )
+    return add_active_labels(pd.read_csv(path), threshold)
+
+
+def _write_combined(refresh: bool, data_dir: Path, path: Path) -> None:
     sources = {
         "bace1": load_bace1(csv_path=data_dir / BACE1_CSV_PATH.name, refresh=refresh),
         "egfr": load_egfr(csv_path=data_dir / EGFR_CSV_PATH.name, refresh=refresh),
         "tox21": load_toxicity_data("tox21", refresh=refresh, data_dir=data_dir),
         "clintox": load_toxicity_data("clintox", refresh=refresh, data_dir=data_dir),
     }
-    combined = combine_sources(sources)
-    write_csv(combined, data_dir / COMBINED_CSV_PATH.name)
-    return add_active_labels(combined, threshold)
+    write_csv(combine_sources(sources), path)
+
+
+def build_combined(
+    refresh: bool = False, data_dir: Path = DATA_DIR, path: Path = COMBINED_CSV_PATH
+) -> None:
+    if path.exists():
+        raise FileExistsError(
+            f"{path}: snapshot already exists; re-snapshot with "
+            "`python -m pipeline.combined_loader --refresh`"
+        )
+    _write_combined(refresh, data_dir, path)
 
 
 # pairwise compound counts, diagonal is each source's size
@@ -96,7 +115,9 @@ def overlap_counts(df: pd.DataFrame) -> pd.DataFrame:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument(
-        "--refresh", action="store_true", help="re-download every source first"
+        "--refresh",
+        action="store_true",
+        help="re-download every source and overwrite the snapshot",
     )
     parser.add_argument(
         "--threshold",
@@ -107,7 +128,11 @@ def main() -> None:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    df = load_combined(threshold=args.threshold, refresh=args.refresh)
+    if args.refresh:
+        _write_combined(refresh=True, data_dir=DATA_DIR, path=COMBINED_CSV_PATH)
+    elif not COMBINED_CSV_PATH.exists():
+        build_combined(data_dir=DATA_DIR, path=COMBINED_CSV_PATH)
+    df = load_combined(threshold=args.threshold, path=COMBINED_CSV_PATH)
     print(f"\ncombined: {len(df)} molecules")
     print(overlap_counts(df), end="\n\n")
     active = [f"active_{t}" for t in TARGETS]

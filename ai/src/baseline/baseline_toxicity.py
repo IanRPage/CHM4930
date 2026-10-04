@@ -5,10 +5,13 @@ Run from ``ai/`` with ``PYTHONPATH=src``:
     python -m baseline.baseline_toxicity
 """
 
+import json
+
 import numpy as np
 from rdkit import Chem
 from sklearn.ensemble import RandomForestClassifier
 
+from baseline.results import record_results
 from evaluation import evaluation_metrics
 from featurize.fingerprint import mol_to_ecfp4
 from pipeline.combined_loader import TOX_TASKS, load_combined
@@ -63,6 +66,24 @@ def fit_endpoint(X, y, train_idx, val_idx):
     return best_model, status
 
 
+def result_row(endpoint, split, value, params, n_labeled=np.nan, n_positive=np.nan):
+    dataset = next(
+        (name for name, config in DATASETS.items() if endpoint in config["tasks"]),
+        endpoint.removeprefix("macro_"),
+    )
+    return {
+        "encoder": f"ecfp4-{N_BITS}",
+        "dataset": dataset,
+        "endpoint": endpoint,
+        "split": split,
+        "metric": "roc_auc",
+        "value": value,
+        "n_labeled": n_labeled,
+        "n_positive": n_positive,
+        "params": json.dumps(params),
+    }
+
+
 def main():
     df = scaffold_split(load_combined())
     df = df.loc[df[TOX_TASKS].notna().any(axis=1)].reset_index(drop=True)
@@ -101,6 +122,7 @@ def main():
             scores[:, j] = positive_probabilities(model, X[indices[name]])
 
     metrics = {}
+    rows = []
     for name, scores in predictions.items():
         idx = indices[name]
         # Untrained endpoints have no predictions and must not enter macro means.
@@ -124,6 +146,14 @@ def main():
                     mask=mask[:, columns],
                 )
             )
+            rows.append(
+                result_row(
+                    f"macro_{group}",
+                    name,
+                    result["mean_roc_auc"],
+                    {"n_estimators": N_ESTIMATORS},
+                )
+            )
             count = np.isfinite(result["per_task_roc_auc"]).sum()
             print(
                 f"{name} {group}: macro ROC-AUC={result['mean_roc_auc']:.4f} "
@@ -137,6 +167,20 @@ def main():
             f"val ROC-AUC={metrics['val']['per_task_roc_auc'][j]:.4f}, "
             f"test ROC-AUC={metrics['test']['per_task_roc_auc'][j]:.4f}; {status}"
         )
+        for name in predictions:
+            labeled = indices[name][observed[indices[name], j]]
+            rows.append(
+                result_row(
+                    task,
+                    name,
+                    metrics[name]["per_task_roc_auc"][j],
+                    {"max_features": max_features, "n_estimators": N_ESTIMATORS},
+                    n_labeled=len(labeled),
+                    n_positive=int(np.sum(y[labeled, j] == 1)),
+                )
+            )
+
+    record_results(rows, model="rf_toxicity")
 
 
 if __name__ == "__main__":

@@ -10,8 +10,8 @@ close to `frac` rather than only the table as a whole.
 
 How to use as CLI tool (from `ai/`, with `PYTHONPATH=src`):
 
-    python -m pipeline.split data/combined.csv            # largest scaffold groups go to train
-    python -m pipeline.split data/combined.csv --seed 0   # balanced split, shuffled with the seed
+    python -m pipeline.split data/baseline/combined.csv            # largest scaffold groups go to train
+    python -m pipeline.split data/baseline/combined.csv --seed 0   # balanced split, shuffled with the seed
 
 Writes `smiles`, `scaffold`, and `split` to `<csv stem>-splits.csv` next to the input, then
 prints split sizes overall for each `in_*` column. From Python, use `scaffold_split()`.

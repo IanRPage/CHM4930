@@ -133,27 +133,52 @@ def test_active_columns_sit_after_their_pic50(sources):
     ]
 
 
-def test_load_writes_csv_without_active_and_leaves_sources_alone(cache_dir):
+def test_build_writes_snapshot_without_active_and_leaves_sources_alone(cache_dir):
     names = [BACE1_CSV_PATH.name, EGFR_CSV_PATH.name, "MolNet-tox21.csv"]
     before = {n: (cache_dir / n).read_bytes() for n in names}
-    df = cl.load_combined(data_dir=cache_dir)
+    path = cache_dir / "baseline" / "combined.csv"
+    cl.build_combined(data_dir=cache_dir, path=path)
 
-    written = pd.read_csv(cache_dir / cl.COMBINED_CSV_PATH.name)
-    assert len(written) == len(df) == 4
+    written = pd.read_csv(path)
+    assert len(written) == 4
     assert not any(c.startswith("active_") for c in written.columns)
-    assert "active_BACE1" in df.columns
     assert {n: (cache_dir / n).read_bytes() for n in names} == before
 
 
-def test_load_rebuilds_from_sources_every_time(cache_dir):
-    assert len(cl.load_combined(data_dir=cache_dir)) == 4
-    bio(["CCO"], [7.0]).to_csv(cache_dir / BACE1_CSV_PATH.name, index=False)
-    df = cl.load_combined(data_dir=cache_dir)
-    assert df["in_bace1"].sum() == 1
-    assert "CCN" not in df["smiles"].tolist()
+def test_build_refuses_to_overwrite_an_existing_snapshot(cache_dir):
+    path = cache_dir / "combined.csv"
+    path.write_text("smiles\nC\n")
+    with pytest.raises(FileExistsError, match="--refresh"):
+        cl.build_combined(data_dir=cache_dir, path=path)
+    assert path.read_text() == "smiles\nC\n"
 
 
-def test_refresh_reaches_every_loader(monkeypatch, tmp_path):
+def test_load_round_trips_the_snapshot_without_downloading_or_writing(
+    cache_dir, sources, monkeypatch
+):
+    path = cache_dir / "combined.csv"
+    combined = cl.combine_sources(sources)
+    combined.to_csv(path, index=False)
+    before = sorted(cache_dir.iterdir())
+
+    def boom(*args, **kwargs):
+        raise AssertionError("tried to write")
+
+    monkeypatch.setattr(cl, "write_csv", boom)
+    df = cl.load_combined(path=path)
+
+    pd.testing.assert_frame_equal(df, cl.add_active_labels(combined))
+    assert (df[cl.SOURCE_FLAGS].dtypes == bool).all()
+    assert sorted(cache_dir.iterdir()) == before
+
+
+def test_load_raises_when_the_snapshot_is_missing(tmp_path):
+    with pytest.raises(FileNotFoundError, match="pipeline.combined_loader"):
+        cl.load_combined(path=tmp_path / "combined.csv")
+
+
+@pytest.fixture
+def fake_loaders(monkeypatch, small_tasks):
     calls = {}
 
     def fake(name, frame):
@@ -168,14 +193,51 @@ def test_refresh_reaches_every_loader(monkeypatch, tmp_path):
     monkeypatch.setattr(
         cl,
         "load_toxicity_data",
-        lambda name, refresh, data_dir: fake(name, tox(["CCO"], [[1, 0]]))(
-            refresh=refresh
-        ),
+        lambda name, refresh, data_dir: fake(
+            name,
+            tox(["CCO"], [[1, 0]])
+            if name == "tox21"
+            else pd.DataFrame({"smiles": ["CCO"], "C1": [1]}),
+        )(refresh=refresh),
     )
-    monkeypatch.setitem(DATASETS, "tox21", {"tasks": TASKS, "keep": "first"})
-    monkeypatch.setitem(DATASETS, "clintox", {"tasks": TASKS, "keep": False})
-    cl.load_combined(refresh=True, data_dir=tmp_path)
-    assert calls == {"bace1": True, "egfr": True, "tox21": True, "clintox": True}
+    return calls
+
+
+def test_refresh_reaches_every_loader(fake_loaders, tmp_path):
+    cl._write_combined(refresh=True, data_dir=tmp_path, path=tmp_path / "c.csv")
+    assert fake_loaders == {
+        "bace1": True,
+        "egfr": True,
+        "tox21": True,
+        "clintox": True,
+    }
+
+
+@pytest.mark.parametrize("refresh", [False, True])
+def test_cli_only_overwrites_the_snapshot_with_refresh(
+    refresh, fake_loaders, tmp_path, monkeypatch
+):
+    path = tmp_path / "combined.csv"
+    cl.combine_sources(
+        {
+            "bace1": bio(["CCN"], [5.0]),
+            "egfr": bio(["CCN"], [5.0]),
+            "tox21": tox(["CCN"], [[0, 0]]),
+            "clintox": pd.DataFrame({"smiles": ["CCN"], "C1": [0]}),
+        }
+    ).to_csv(path, index=False)
+    before = path.read_bytes()
+    monkeypatch.setattr(cl, "COMBINED_CSV_PATH", path)
+    monkeypatch.setattr(cl, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(cl, "TOX_TASKS", [*TASKS, "C1"])
+    monkeypatch.setattr(
+        "sys.argv", ["combined_loader", *(["--refresh"] if refresh else [])]
+    )
+    cl.main()
+
+    assert (path.read_bytes() == before) is not refresh
+    assert pd.read_csv(path)["smiles"].tolist() == (["CCO"] if refresh else ["CCN"])
+    assert bool(fake_loaders) is refresh
 
 
 def test_overlap_counts_are_symmetric_with_source_sizes_on_the_diagonal(sources):
