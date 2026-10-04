@@ -122,7 +122,7 @@ def test_uses_batch_norm():
         module for module in enc.modules() if isinstance(module, nn.BatchNorm1d)
     ]
 
-    assert len(batch_norms) == 2
+    assert len(batch_norms) == 3
 
 
 def test_graph_batch_tracks_molecule_membership():
