@@ -150,6 +150,8 @@ def train_gnn(cfg, seed):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
+    torch.use_deterministic_algorithms(True)
+
     encoder = GNNEncoder(
         hidden_dims=cfg["HIDDEN_DIMS"],
         dropout=cfg["DROPOUT"],
@@ -178,6 +180,9 @@ def train_gnn(cfg, seed):
     best_state = None
     best_epoch = 0
 
+    early_stop = 15
+    epochs_without_improve = 0
+
     for epoch in range(1, cfg["EPOCHS"] + 1):
         model.train()
 
@@ -192,6 +197,7 @@ def train_gnn(cfg, seed):
                 pred,
                 batch.y,
             ).backward()
+
             optimizer.step()
 
         val_pred = predict(
@@ -210,6 +216,12 @@ def train_gnn(cfg, seed):
             best_rmse = val_rmse
             best_state = copy.deepcopy(model.state_dict())
             best_epoch = epoch
+            epochs_without_improve = 0
+        else:
+            epochs_without_improve += 1
+
+        if epochs_without_improve >= early_stop:
+            break
 
     model.load_state_dict(best_state)
 
@@ -229,7 +241,7 @@ DEFAULT = {
     "LR": 1e-3,
     "WEIGHT_DECAY": 1e-4,
     "BATCH_SIZE": 128,
-    "EPOCHS": 50,
+    "EPOCHS": 100,
     "OPT": "adam",
 }
 
@@ -240,7 +252,15 @@ PICK = DEFAULT | {
     "LR": 1e-3,
     "BATCH_SIZE": 32,
     "OPT": "adam",
-    "EPOCHS": 50,
+    "EPOCHS": 100,
+}
+
+FINAL_BASE = {
+    "DROPOUT": 0.1,
+    "LR": 1e-3,
+    "BATCH_SIZE": 64,
+    "EPOCHS": 100,
+    "OPT": "adam",
 }
 
 SEEDS = [0, 1, 2]
@@ -329,6 +349,31 @@ STAGES = {
             },
         ],
         FRESH_SEEDS,
+    ),
+    "6-final-check": (
+        [
+            FINAL_BASE
+            | {
+                "HIDDEN_DIMS": (128, 128),
+                "WEIGHT_DECAY": 0.0,
+            },
+            FINAL_BASE
+            | {
+                "HIDDEN_DIMS": (128, 128),
+                "WEIGHT_DECAY": 1e-4,
+            },
+            FINAL_BASE
+            | {
+                "HIDDEN_DIMS": (256, 256, 128),
+                "WEIGHT_DECAY": 0.0,
+            },
+            FINAL_BASE
+            | {
+                "HIDDEN_DIMS": (256, 256, 128),
+                "WEIGHT_DECAY": 1e-4,
+            },
+        ],
+        [0, 1, 2, 3, 4],
     ),
 }
 
