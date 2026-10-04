@@ -1,6 +1,5 @@
 name: CHM4930
 channels:
-  - pytorch
   - conda-forge
   - nodefaults
 dependencies:
@@ -16,7 +15,7 @@ dependencies:
   - pytest=9.1.1
   - pytest-cov=7.1.0
   - diff-cover=10.5.1
-  - pytorch=2.5.1
+  - pytorch=2.12.1
   - pip=26.2.1
   - pip:
       - torch_geometric==2.8.0.post1

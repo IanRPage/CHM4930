@@ -50,6 +50,19 @@ def test_rerun_replaces_only_that_models_rows(paths):
     assert written["model"].tolist() == ["a", "b"]
 
 
+def test_other_models_rows_from_an_old_snapshot_are_dropped(paths, caplog):
+    path, data = paths
+    results.record_results([row("T1")], model="a", path=path, data_path=data)
+    results.record_results([row("T1")], model="b", path=path, data_path=data)
+    data.write_text("smiles\nCCN\n")
+    results.record_results([row("T1")], model="a", path=path, data_path=data)
+
+    written = pd.read_csv(path)
+    assert written["model"].tolist() == ["a"]
+    assert written["data_sha256"].tolist() == [results.file_sha256(data)]
+    assert "['b']" in caplog.text
+
+
 def test_rows_are_sorted_and_nan_values_kept(paths):
     path, data = paths
     rows = [row("T2", "val"), row("T1", "val", value=np.nan), row("T1", "test")]
