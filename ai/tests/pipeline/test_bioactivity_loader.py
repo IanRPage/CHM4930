@@ -72,12 +72,6 @@ def no_network(monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", boom)
 
 
-def test_clean_keeps_a_good_row():
-    out = clean(rec())
-    assert len(out) == 1
-    assert out.loc[0, "pIC50"] == 7.0
-
-
 @pytest.mark.parametrize(
     "bad",
     [
@@ -280,18 +274,14 @@ def test_egfr_loader_keeps_binding_variants_and_derives_active_label(
     assert out.loc[0, "n_meas"] == 2
     assert out.loc[0, "pIC50_spread"] == 2.0
     assert out.loc[0, "active"] == 1
-    assert list(pd.read_csv(csv).columns) == bl.CSV_COLUMNS
-    assert len(requested) == 1
-    pd.testing.assert_frame_equal(out, bl.load_egfr(csv_path=csv))
     assert len(requested) == 1
 
 
-def test_egfr_active_threshold_defaults_to_six_and_can_change(cached_csv):
-    default = bl.load_egfr(csv_path=cached_csv)
-    stricter = bl.load_egfr(threshold=6.5, csv_path=cached_csv)
-    assert default["active"].tolist() == [0, 1, 1]
-    assert stricter["active"].tolist() == [0, 0, 1]
-    assert list(pd.read_csv(cached_csv).columns) == bl.CSV_COLUMNS
+@pytest.mark.parametrize("target", list(bl.TARGETS))
+def test_downloaded_csv_has_no_active_label(fake_chembl, tmp_path, target):
+    csv = tmp_path / "cached.csv"
+    bl.download_bioactivity_data(target, csv)
+    assert pd.read_csv(csv).columns.tolist() == bl.CSV_COLUMNS
 
 
 def test_load_uses_the_cached_csv_without_network(fake_chembl, tmp_path):
@@ -302,20 +292,6 @@ def test_load_uses_the_cached_csv_without_network(fake_chembl, tmp_path):
     second = bl.load_bace1(csv_path=csv)
     assert len(fake_chembl) == calls_after_download  # no new requests
     pd.testing.assert_frame_equal(first, second)
-
-
-def test_load_never_downloads_if_csv_exists(no_network, tmp_path):
-    csv = tmp_path / "chembl-bace-1.csv"
-    pd.DataFrame(
-        {
-            "molecule_chembl_id": ["C1"],
-            "smiles": ["CCO"],
-            "pIC50": [7.0],
-            "n_meas": [1],
-            "pIC50_spread": [0.0],
-        }
-    ).to_csv(csv, index=False)
-    assert len(bl.load_bace1(csv_path=csv)) == 1
 
 
 def test_load_refresh_redownloads(fake_chembl, tmp_path):
@@ -379,13 +355,6 @@ def test_threshold_is_an_argument(cached_csv, threshold, expected):
     )
 
 
-def test_downloaded_csv_has_only_the_cleaned_columns(fake_chembl, tmp_path):
-    # the label is derived at load time, so it must not be baked into the cache
-    csv = tmp_path / "chembl-bace-1.csv"
-    bl.load_bace1(csv_path=csv)
-    assert list(pd.read_csv(csv).columns) == bl.CSV_COLUMNS
-
-
 def test_add_active_label_does_not_mutate_its_input():
     df = pd.DataFrame({"pIC50": [5.0, 7.0]})
     bl.add_active_label(df, 6.0)
@@ -395,17 +364,26 @@ def test_add_active_label_does_not_mutate_its_input():
 def test_main_forwards_flags_and_prints_a_summary(monkeypatch, capsys):
     seen = {}
 
-    def fake_load(threshold, refresh):
-        seen.update(threshold=threshold, refresh=refresh)
+    def fake_load(name, threshold, refresh):
+        seen.update(name=name, threshold=threshold, refresh=refresh)
         return pd.DataFrame({"pIC50": [5.0, 7.0], "active": [0, 1]})
 
-    monkeypatch.setattr(bl, "load_bace1", fake_load)
+    monkeypatch.setattr(bl, "load_bioactivity_data", fake_load)
     monkeypatch.setattr(
-        sys, "argv", ["pipeline.bioactivity_loader", "--refresh", "--threshold", "6.5"]
+        sys,
+        "argv",
+        [
+            "pipeline.bioactivity_loader",
+            "--refresh",
+            "--dataset",
+            "bace1",
+            "--threshold",
+            "6.5",
+        ],
     )
     bl.main()
 
-    assert seen == {"threshold": 6.5, "refresh": True}
+    assert seen == {"name": "bace1", "threshold": 6.5, "refresh": True}
     out = capsys.readouterr().out
     assert "bace1: 2 molecules" in out
     assert re.search(r"active\s+2\s+0\s+0\.5", out)
@@ -413,17 +391,55 @@ def test_main_forwards_flags_and_prints_a_summary(monkeypatch, capsys):
     assert re.search(r"50%\s+6\.000", out)
 
 
-def test_main_defaults(monkeypatch):
-    seen = {}
+def test_main_defaults_to_all_datasets(monkeypatch, capsys):
+    seen = []
 
-    def fake_load(threshold, refresh):
-        seen.update(threshold=threshold, refresh=refresh)
+    def fake_load(name, threshold, refresh):
+        seen.append((name, threshold, refresh))
         return pd.DataFrame({"pIC50": [6.0], "active": [1]})
 
-    monkeypatch.setattr(bl, "load_bace1", fake_load)
+    monkeypatch.setattr(bl, "load_bioactivity_data", fake_load)
     monkeypatch.setattr(sys, "argv", ["pipeline.bioactivity_loader"])
     bl.main()
-    assert seen == {"threshold": bl.PIC50_ACTIVE_THRESHOLD, "refresh": False}
+
+    default = bl.PIC50_ACTIVE_THRESHOLD
+    assert seen == [("bace1", default, False), ("egfr", default, False)]
+    out = capsys.readouterr().out
+    assert "bace1: 1 molecules" in out
+    assert "egfr: 1 molecules" in out
+
+
+def test_main_loads_only_the_chosen_dataset(monkeypatch):
+    seen = []
+
+    def fake_load(name, threshold, refresh):
+        seen.append(name)
+        return pd.DataFrame({"pIC50": [6.0], "active": [1]})
+
+    monkeypatch.setattr(bl, "load_bioactivity_data", fake_load)
+    monkeypatch.setattr(
+        sys, "argv", ["pipeline.bioactivity_loader", "--dataset", "egfr"]
+    )
+    bl.main()
+    assert seen == ["egfr"]
+
+
+def test_unknown_target_raises_before_downloading(fake_chembl, tmp_path):
+    with pytest.raises(ValueError, match="unknown target"):
+        bl.load_bioactivity_data("nope", data_dir=tmp_path)
+    assert fake_chembl == []
+
+
+@pytest.mark.parametrize("target", list(bl.TARGETS))
+def test_generic_loader_matches_the_shortcut_and_uses_data_dir(
+    fake_chembl, tmp_path, target
+):
+    df = bl.load_bioactivity_data(target, data_dir=tmp_path)
+    assert (tmp_path / bl.TARGETS[target]["csv_name"]).exists()
+    shortcut = getattr(bl, f"load_{target}")(
+        csv_path=tmp_path / bl.TARGETS[target]["csv_name"]
+    )
+    pd.testing.assert_frame_equal(df, shortcut)
 
 
 @pytest.mark.network

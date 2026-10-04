@@ -1,0 +1,68 @@
+name: test
+
+on:
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect ai/src changes
+    runs-on: ubuntu-latest
+    outputs:
+      src: ${{ steps.diff.outputs.src }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check for changes in ai/src
+        id: diff
+        run: |
+          if git diff --quiet "origin/${GITHUB_BASE_REF}...HEAD" -- ai/src; then
+            echo "src=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "src=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    name: Tests
+    needs: changes
+    if: needs.changes.outputs.src == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+        working-directory: ai
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up conda environment
+        uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
+        with:
+          environment-file: ai/environment.yml
+          cache-environment: true
+
+      - name: Run tests with coverage
+        run: pytest --cov=src --cov-report=xml --cov-report=term-missing
+
+      - name: Check coverage of changed lines (>= 60%)
+        run: |
+          diff-cover coverage.xml \
+            --compare-branch="origin/${GITHUB_BASE_REF}" \
+            --fail-under=60 \
+            --markdown-report "$GITHUB_STEP_SUMMARY"
