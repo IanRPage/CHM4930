@@ -7,8 +7,9 @@ DEFAULT_MODEL_NAME = "ibm-research/MoLFormer-XL-both-10pct"
 
 class SmilesEncoder(nn.Module):
     """
-    Pretrained MolFormer encoder for SMILES strings; takes a batch of SMILES strings and 
-    returns one pooled molecular representation per molecule. 
+    Pretrained MolFormer encoder for SMILES strings; takes either a single SMILES string or
+    a batch of SMILES strings and returns one pooled molecular representation per molecule. A
+    single SMILES string is treated as a batch of size 1.  
 
     By default, the pretrained MolFormer weights are frozen.
     """
@@ -41,11 +42,13 @@ class SmilesEncoder(nn.Module):
             for parameter in self.model.parameters():
                 parameter.requires_grad = False
 
-    def forward(self, smiles: Sequence[str]) -> torch.Tensor:
+    def forward(self, smiles: str | Sequence[str]) -> torch.Tensor:
         if isinstance(smiles, str):
-            raise TypeError("expected a batch of SMILES strings, not a single string")
+            smiles = [smiles]
+        elif not isinstance(smiles, Sequence):
+            raise TypeError("expected a SMILES string or a sequence of SMILES strings")
        
-        if not smiles:
+        if len(smiles) == 0:
             raise ValueError("SMILES batch is empty")
         
         if any(not isinstance(s, str) or not s.strip() for s in smiles):
