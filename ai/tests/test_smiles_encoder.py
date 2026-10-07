@@ -1,17 +1,17 @@
 from types import SimpleNamespace
 
 import pytest
-import torch
-from torch import nn
-
 import src.encoders.smiles_encoder as smiles_module
+import torch
 from src.encoders.smiles_encoder import SmilesEncoder
+from torch import nn
 
 HIDDEN_SIZE = 32
 
 """
 This test file tests the wrapper logic of the smiles encoder; the actual pretrained MolFormer is tested separately in a notebook.
 """
+
 
 class DummyTokenizer:
     # lightweight stand-in for the MolFormer tokenizer for unit tests
@@ -26,10 +26,19 @@ class DummyTokenizer:
         batch_size = len(smiles)
         seq_len = 4
 
-        return{
-        "input_ids": torch.ones(batch_size, seq_len, dtype=torch.long,), 
-        "attention_mask": torch.ones(batch_size, seq_len, dtype=torch.long,),
+        return {
+            "input_ids": torch.ones(
+                batch_size,
+                seq_len,
+                dtype=torch.long,
+            ),
+            "attention_mask": torch.ones(
+                batch_size,
+                seq_len,
+                dtype=torch.long,
+            ),
         }
+
 
 class DummyMolFormer(nn.Module):
     # small trainable model w/ the input the smiles encoder expects
@@ -45,7 +54,6 @@ class DummyMolFormer(nn.Module):
         pooled = self.projection(x.mean(dim=1))
 
         return SimpleNamespace(pooler_output=pooled)
-
 
 
 @pytest.fixture
@@ -73,11 +81,13 @@ def mocked_pretrained(monkeypatch):
 def test_output_shape_for_batch(mocked_pretrained):
     encoder = SmilesEncoder()
 
-    output = encoder([
-        "CCO",
-        "CC(=O)O",
-        "c1ccccc1",
-    ])
+    output = encoder(
+        [
+            "CCO",
+            "CC(=O)O",
+            "c1ccccc1",
+        ]
+    )
 
     assert encoder.out_dim == HIDDEN_SIZE
     assert output.shape == (3, HIDDEN_SIZE)
@@ -173,20 +183,14 @@ def test_non_string_non_sequence_input_rejected(
 def test_frozen_by_default(mocked_pretrained):
     encoder = SmilesEncoder()
 
-    assert all(
-        not parameter.requires_grad
-        for parameter in encoder.model.parameters()
-    )
+    assert all(not parameter.requires_grad for parameter in encoder.model.parameters())
 
 
 # tests that freeze=False leaves MolFormer parameters trainable for fine-tuning
 def test_freeze_false_keeps_model_trainable(mocked_pretrained):
     encoder = SmilesEncoder(freeze=False)
 
-    assert all(
-        parameter.requires_grad
-        for parameter in encoder.model.parameters()
-    )
+    assert all(parameter.requires_grad for parameter in encoder.model.parameters())
 
 
 # tests that gradients can propagate through MolFormer when it is unfrozen
