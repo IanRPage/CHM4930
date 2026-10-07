@@ -66,6 +66,20 @@ python src/check_env.py
 It imports each dependency and prints its version, so if something's missing or
 broken, you'll know.
 
+### Updating the Environment for the SMILES Encoder
+
+After pulling changes that add new dependencies, activate the project environment and update it from `environment.yml`:
+
+```bash
+conda activate CHM4930
+conda env update -f environment.yml --prune
+
+To verify that Hugging Face Transformers was installed correctly, run:
+
+python -c "import transformers; print(transformers.__version__)"
+
+You should see the installed transformers version printed without any errors.
+
 ## Data Pipeline
 
 Modules under `src/pipeline/` import from `src/` as packages, so run them as
