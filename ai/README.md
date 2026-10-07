@@ -8,10 +8,14 @@ along with any datasets or checkpoints for saved model weights.
 ```
 ai/
 ├── data/            # local data storage
+│   └── baseline/    # frozen combined.csv baselines train on, and their results.csv (tracked)
 ├── notebooks/       # exploration / scratchpads
+├── scripts/         # helpful utility scripts
 ├── src/             # main code
+│   ├── baseline/    # random forest baselines and their results recorder
 │   ├── featurize/   # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
 │   ├── pipeline/    # dataset loaders and structure to model input preprocessing
+│   ├── encoders/    # where each of MuFu's encoders are implemented
 │   └── check_env.py # sanity check that dependencies are installed correctly
 ├── tests/           # pytest suite (mirrors src/)
 ├── checkpoints/     # saved model weights
@@ -86,8 +90,9 @@ Modules under `src/pipeline/` import from `src/` as packages, so run them as
 modules from this directory with `src/` on the import path:
 
 ```
-PYTHONPATH=src python -m pipeline.bioactivity_loader   # download/load ChEMBL BACE-1
+PYTHONPATH=src python -m pipeline.bioactivity_loader   # download/load ChEMBL BACE-1 + EGFR
 PYTHONPATH=src python -m pipeline.toxicity_loader      # download/load Tox21 + ClinTox
+PYTHONPATH=src python -m pipeline.combined_loader      # load frozen combined table (see Baselines)
 ```
 
 Each loader's documentation is in its file docstring. They cache cleaned data as
@@ -110,6 +115,42 @@ featurize a whole dataset, pass its `smiles` column to `featurize_many()`.
 > treated as "other". Salts are reduced to their largest organic fragment when
 > there is one, so inorganic salts that share an ion standardize to the same
 > SMILES.
+
+## Baselines
+
+Two random forest baselines on 2048-bit ECFP4 fingerprints, both on the same
+Bemis-Murcko scaffold split:
+
+```
+PYTHONPATH=src python -m baseline.baseline_bioactivity
+PYTHONPATH=src python -m baseline.baseline_toxicity
+```
+
+They train on the frozen snapshot `data/baseline/combined.csv`. The only way to
+change the snapshot is:
+
+```
+PYTHONPATH=src python -m pipeline.combined_loader --refresh
+```
+
+Don't run that casually. It invalidates every recorded result, so re-run both
+baselines and commit the new snapshot together with the new results.
+
+Each run replaces its own rows in `data/baseline/results.csv`, one row per model
+× endpoint × split × metric. Each row is tagged with the snapshot's SHA-256 and
+the git commit it ran on. Current test set performance:
+
+| Model            | Task                  | Test result                                  |
+| ---------------- | --------------------- | -------------------------------------------- |
+| `rf_bioactivity` | BACE-1 pIC50          | RMSE 0.81, R² 0.59, ROC-AUC 0.88 (pIC50 ≥ 6) |
+| `rf_bioactivity` | EGFR pIC50            | RMSE 0.87, R² 0.51, ROC-AUC 0.88 (pIC50 ≥ 6) |
+| `rf_toxicity`    | Tox21 (12 endpoints)  | macro ROC-AUC 0.72                           |
+| `rf_toxicity`    | ClinTox (2 endpoints) | macro ROC-AUC 0.65                           |
+
+NOTE: See `data/baseline/results.csv` for per-task numbers. Some test sets have
+very few examples of one class, so read their ROC-AUC loosely. For example,
+NR-AR has 11 actives out of 704 (val 0.83, test 0.55), and FDA_APPROVED has only
+6 unapproved compounds out of 144 (val 0.84, test 0.56).
 
 ## Testing
 
