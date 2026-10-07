@@ -1,10 +1,11 @@
 from types import SimpleNamespace
 
 import pytest
-import encoders.smiles_encoder as smiles_module
 import torch
-from encoders.smiles_encoder import SmilesEncoder
 from torch import nn
+
+import encoders.smiles_encoder as smiles_module
+from encoders.smiles_encoder import SmilesEncoder
 
 HIDDEN_SIZE = 32
 
