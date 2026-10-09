@@ -9,11 +9,13 @@ along with any datasets or checkpoints for saved model weights.
 ai/
 ├── data/            # local data storage
 │   └── baseline/    # frozen combined.csv baselines train on, and their results.csv (tracked)
+├── docs/            # design docs (MuFu-v1.md)
 ├── notebooks/       # exploration / scratchpads
 ├── scripts/         # helpful utility scripts
 ├── src/             # main code
 │   ├── baseline/    # random forest baselines and their results recorder
 │   ├── featurize/   # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
+│   ├── mufu/        # MuFu interface contract (names, shapes, defaults)
 │   ├── pipeline/    # dataset loaders and structure to model input preprocessing
 │   ├── encoders/    # where each of MuFu's encoders are implemented
 │   └── check_env.py # sanity check that dependencies are installed correctly
