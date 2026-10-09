@@ -20,12 +20,27 @@ class SmilesEncoder(nn.Module):
         self,
         model_name: str = DEFAULT_MODEL_NAME,
         freeze: bool = True,  # change to a method later to allow explicit freeze/unfreeze control? consider it
-        max_length: int = 202,
+        max_length: int = 202, # matching MolFormer's mox_position_embdeddings configuration
+        cache_embeddings: bool | None = None,
+        max_cache_size: int = 10000,
     ) -> None:
         super().__init__()
 
+        if cache_embeddings is None:
+            cache_embeddings = freeze
+
+        if cache_embeddings and not freeze:
+            raise ValueError("Embedding caches requires freeze=True")
+
+        if max_cache_size < 1:
+            raise ValueError("max_cache_size must be at least 1")
+
         self.model_name = model_name
         self.max_length = max_length
+        self.freeze = freeze
+        self.cache_embeddings = cache_embeddings
+        self.max_cache_size = max_cache_size
+        self._embedding_cache: dict[str, torch.Tensor] = {}
 
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name,
@@ -46,6 +61,20 @@ class SmilesEncoder(nn.Module):
             for parameter in self.model.parameters():
                 parameter.requires_grad = False
 
+            self.model.eval()
+
+    def train(self, mode: bool = True):
+        super().train(mode)
+
+        if self.freeze:
+            self.model.eval()
+
+        return self
+
+    def clear_cache(self):
+        # to remove all previously cached molecular embeddings
+        self._embedding_cache.clear()
+
     def forward(self, smiles: str | Sequence[str]) -> torch.Tensor:
         if isinstance(smiles, str):
             smiles = [smiles]
@@ -60,16 +89,56 @@ class SmilesEncoder(nn.Module):
 
         device = next(self.model.parameters()).device
 
-        encoded = self.tokenizer(
-            list(smiles),
-            padding=True,
-            truncation=True,
-            max_length=self.max_length,
-            return_tensors="pt",
-        )
+        # without caching, encode the batch normally
+        if not self.cache_embeddings:
+            encoded = self.tokenizer(
+                list(smiles),
+                padding=True,
+                truncation=True,
+                max_length=self.max_length,
+                return_tensors="pt",
+            )
+            encoded = {key: value.to(device) for key, value in encoded.items()}
 
-        encoded = {key: value.to(device) for key, value in encoded.items()}
 
-        outputs = self.model(**encoded)
+            if self.freeze:
+                with torch.no_grad():
+                    outputs = self.model(**encoded)
+            else:
+                outputs = self.model(**encoded)
 
-        return outputs.pooler_output
+            return outputs.pooler_output
+
+        # collect cached embeddings needed for this batch
+        batch_embeddings = {
+            s: self._embedding_cache[s]
+            for s in dict.fromkeys(smiles)
+            if s in self._embedding_cache
+        }
+        # identify unique SMILES not already cached
+        missing_smiles = [s for s in dict.fromkeys(smiles) if s not in batch_embeddings]
+
+        if missing_smiles:
+            encoded = self.tokenizer(
+                missing_smiles,
+                padding=True,
+                truncation=True,
+                max_length=self.max_length,
+                return_tensors = "pt",
+            )
+            encoded = {key: value.to(device) for key, value in encoded.items()}
+            with torch.no_grad():
+                outputs = self.model(**encoded)
+
+            new_embeddings = outputs.pooler_output.detach().cpu()
+
+            # store embeddings & evict oldest entry if cache is full
+            for smiles_string, embedding in zip(missing_smiles, new_embeddings):
+                stored_embedding = embedding.clone()
+                batch_embeddings[smiles_string] = stored_embedding
+                if len(self._embedding_cache) >= self.max_cache_size:
+                    oldest_key = next(iter(self._embedding_cache))
+                    del self._embedding_cache[oldest_key]
+                self._embedding_cache[smiles_string] = stored_embedding
+        # reassemble batch in the original order
+        return torch.stack([batch_embeddings[s].to(device) for s in smiles])

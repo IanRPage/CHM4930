@@ -6,6 +6,7 @@ from torch import nn
 
 import encoders.smiles_encoder as smiles_module
 from encoders.smiles_encoder import SmilesEncoder
+from unittest.mock import patch
 
 HIDDEN_SIZE = 32
 
@@ -235,3 +236,158 @@ def test_single_string_is_converted_to_batch(mocked_pretrained):
     encoder("CCO")
 
     assert tokenizer.last_smiles == ["CCO"]
+
+@pytest.mark.parametrize(
+    "freeze, expected_grad_enabled",
+    [(True, False), (False, True)],
+)
+def test_gradient_mode_during_forward(
+    mocked_pretrained, monkeypatch, freeze, expected_grad_enabled
+):
+    # check whether gradients are enabled inside MolFormer's forward pass
+    _, model = mocked_pretrained
+    observed_grad_modes = []
+
+    original_forward = model.forward
+
+    def tracked_forward(*args, **kwargs):
+        observed_grad_modes.append(torch.is_grad_enabled())
+        return original_forward(*args, **kwargs)
+
+    monkeypatch.setattr(model, "forward", tracked_forward)
+
+    encoder = SmilesEncoder(freeze=freeze)
+    encoder.eval()
+
+    with torch.enable_grad():
+        encoder(["CCO"])
+
+    assert observed_grad_modes == [expected_grad_enabled]
+
+def test_frozen_model_stays_in_eval_mode(mocked_pretrained):
+    # a frozen MolFormer should remain in eval mode during training
+    encoder = SmilesEncoder(freeze=True)
+
+    encoder.train()
+
+    assert encoder.model.training is False
+
+def test_unfrozen_model_enters_train_mode(mocked_pretrained):
+    # an unfrozen MolFormer should support normal training behavior
+    encoder = SmilesEncoder(freeze=False)
+
+    encoder.eval()
+    encoder.train()
+
+    assert encoder.model.training is True
+def test_frozen_molformer_stays_in_eval_when_switching_modes(mocked_pretrained):
+    encoder = SmilesEncoder(freeze=True)
+
+    assert encoder.model.training is False
+
+    encoder.train()
+    assert encoder.model.training is False
+
+    encoder.eval()
+    assert encoder.model.training is False
+
+    encoder.train()
+    assert encoder.model.training is False
+
+def test_cache_enabled_by_default_for_frozen_encoder(mocked_pretrained):
+    encoder = SmilesEncoder()
+
+    assert encoder.freeze is True
+    assert encoder.cache_embeddings is True
+    assert encoder._embedding_cache == {}
+
+def test_cached_smiles_skips_model_forward(mocked_pretrained):
+    encoder = SmilesEncoder()
+
+    with patch.object(encoder.model, "forward", wraps=encoder.model.forward) as mock_forward:
+        first = encoder(["CCO", "CCN"])
+        second = encoder(["CCO", "CCN"])
+
+        assert mock_forward.call_count == 1
+
+    assert torch.equal(first, second)
+    assert len(encoder._embedding_cache) == 2
+
+def test_duplicate_smiles_in_batch(mocked_pretrained):
+    encoder = SmilesEncoder()
+
+    with patch.object(encoder.model, "forward", wraps=encoder.model.forward) as mock_forward:
+        result = encoder(["CCO", "CCO", "CCN", "CCO"])
+
+        assert mock_forward.call_count == 1
+        assert mock_forward.call_args.kwargs["input_ids"].shape[0] == 2
+
+    assert result.shape == (4, encoder.out_dim)
+    assert torch.equal(result[0], result[1])
+    assert torch.equal(result[0], result[3])
+    assert len(encoder._embedding_cache) == 2
+
+def test_only_missing_smiles_are_encoded(mocked_pretrained):
+    encoder = SmilesEncoder()
+
+    with patch.object(encoder.model, "forward", wraps=encoder.model.forward) as mock_forward:
+        encoder(["CCO", "CCN"])
+        encoder(["CCN", "CCC"])
+
+        assert mock_forward.call_count == 2
+        assert mock_forward.call_args.kwargs["input_ids"].shape[0] == 1
+
+    assert len(encoder._embedding_cache) == 3
+
+def test_clear_cache_forces_recomputation(mocked_pretrained):
+    encoder = SmilesEncoder()
+
+    with patch.object(encoder.model, "forward", wraps=encoder.model.forward) as mock_forward:
+        encoder("CCO")
+        encoder("CCO")
+
+        assert mock_forward.call_count == 1
+
+        encoder.clear_cache()
+        assert len(encoder._embedding_cache) == 0
+
+        encoder("CCO")
+        assert mock_forward.call_count == 2
+
+def test_cache_eviction_preserves_batch_output(mocked_pretrained):
+    encoder = SmilesEncoder(max_cache_size=2)
+
+    result = encoder(["CCO", "CCN", "CCC"])
+
+    assert result.shape == (3, encoder.out_dim)
+    assert len(encoder._embedding_cache) == 2
+    assert "CCO" not in encoder._embedding_cache
+    assert "CCN" in encoder._embedding_cache
+    assert "CCC" in encoder._embedding_cache
+
+def test_cached_embeddings_preserve_input_order(mocked_pretrained):
+    encoder = SmilesEncoder()
+
+    encoder(["CCO", "CCN", "CCC"])
+
+    result = encoder(["CCC", "CCO", "CCN", "CCO"])
+
+    assert torch.equal(result[0], encoder._embedding_cache["CCC"])
+    assert torch.equal(result[1], encoder._embedding_cache["CCO"])
+    assert torch.equal(result[2], encoder._embedding_cache["CCN"])
+    assert torch.equal(result[3], encoder._embedding_cache["CCO"])
+
+def test_cache_rejected_for_trainable_encoder(mocked_pretrained):
+    with pytest.raises(ValueError, match="freeze=True"):
+        SmilesEncoder(freeze=False, cache_embeddings=True)
+
+def test_cache_disabled_for_trainable_encoder(mocked_pretrained):
+    encoder = SmilesEncoder(freeze=False)
+
+    assert encoder.cache_embeddings is False
+    assert len(encoder._embedding_cache) == 0
+
+@pytest.mark.parametrize("cache_size", [0, -1])
+def test_invalid_cache_size(mocked_pretrained, cache_size):
+    with pytest.raises(ValueError, match="max_cache_size"):
+        SmilesEncoder(max_cache_size=cache_size)
