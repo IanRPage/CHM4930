@@ -20,7 +20,7 @@ class SmilesEncoder(nn.Module):
         self,
         model_name: str = DEFAULT_MODEL_NAME,
         freeze: bool = True,  # change to a method later to allow explicit freeze/unfreeze control? consider it
-        max_length: int = 202, # matching MolFormer's mox_position_embdeddings configuration
+        max_length: int = 202,  # matching MolFormer's mox_position_embdeddings configuration
         cache_embeddings: bool | None = None,
         max_cache_size: int = 10000,
     ) -> None:
@@ -100,7 +100,6 @@ class SmilesEncoder(nn.Module):
             )
             encoded = {key: value.to(device) for key, value in encoded.items()}
 
-
             if self.freeze:
                 with torch.no_grad():
                     outputs = self.model(**encoded)
@@ -124,7 +123,7 @@ class SmilesEncoder(nn.Module):
                 padding=True,
                 truncation=True,
                 max_length=self.max_length,
-                return_tensors = "pt",
+                return_tensors="pt",
             )
             encoded = {key: value.to(device) for key, value in encoded.items()}
             with torch.no_grad():
