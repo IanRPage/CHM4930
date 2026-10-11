@@ -17,6 +17,7 @@ import seaborn as sns
 import sklearn
 import torch
 import torch_geometric
+import transformers
 
 print(f"numpy           {np.__version__}")
 print(f"pandas          {pd.__version__}")
@@ -26,6 +27,7 @@ print(f"scikit-learn    {sklearn.__version__}")
 print(f"rdkit           {rdkit.__version__}")
 print(f"torch           {torch.__version__}")
 print(f"torch_geometric {torch_geometric.__version__}")
+print(f"transformers    {transformers.__version__}")
 print(f"jupyter         {'found' if shutil.which('jupyter') else 'NOT FOUND'}")
 
 nbstripout_installed = shutil.which("nbstripout") is not None
