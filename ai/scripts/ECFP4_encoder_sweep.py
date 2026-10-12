@@ -1,102 +1,45 @@
-"""
-Staged hyperparameter sweep for ECFP4 encoder (FingerprintEncoder)
+"""Staged FingerprintEncoder experiments on the shared frozen BACE-1 cohort.
 
-Same data, scaffold split, and training as ai/notebooks/ECFP4-encoder.ipynb.
-Each (config, seed) run adds a row to outputs/encoders/ECFP4/sweep/<stage>.csv
-and a line to <stage>.log next to it, and runs already there are skipped. Pick
-by mean val_RMSE across seeds (test only for reporting).
-notebooks/ECFP4-encoder-sweep-results.ipynb plots the CSVs generated from this
-script
+Stage CSVs/logs retain their existing paths. Exploration scores train/val only;
+test is reserved for a selected canonical seed-42 run. Legacy stage files without
+matching benchmark metadata cannot be resumed.
 
-    python scripts/ECFP4_encoder_sweep.py  # every stage, in order
-    python scripts/ECFP4_encoder_sweep.py 3 4  # just these, by number or full name
+    python scripts/ECFP4_encoder_sweep.py 3 4
+    python scripts/ECFP4_encoder_sweep.py --benchmark --config chosen.json --dry-run
+    python scripts/ECFP4_encoder_sweep.py --benchmark --config chosen.json --write-results
 
-One run can't fill the GPU, and stages are independent, so we can speed each
-stage's run using NVIDIA MPS (about ~2.5x faster):
-
-    nvidia-cuda-mps-control -d
-    for s in 1 2 3 4 5 6 7; do
-        python scripts/ECFP4_encoder_sweep.py $s &
-    done; wait
-    echo quit | nvidia-cuda-mps-control
+Stages can still be run independently, including with NVIDIA MPS.
 """
 
 import copy
 import itertools
-import json
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import pandas as pd
 import torch
-from rdkit.Chem.Scaffolds import MurckoScaffold
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import Ridge
 from torch import nn
 from torch.utils.data import DataLoader
 
+from benchmark import evaluate_predictions, set_training_seed
+from encoder_benchmark import config_json, run_cli
 from encoders.fingerprint_encoder import FingerprintEncoder
-from evaluation import evaluation_metrics
-from pipeline import bioactivity_loader as bl
 from pipeline.cache import DATA_DIR
-from pipeline.preprocess import featurize_many
 
 OUT = DATA_DIR.parent / "outputs" / "encoders" / "ECFP4" / "sweep"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-df = bl.load_bace1()
-fps = {}
-data, failed = featurize_many(df["smiles"], 2048)
-df = df.drop(failed).reset_index(drop=True)
-fps[2048] = torch.cat([d.fp for d in data])
-y = torch.tensor(df["pIC50"].to_numpy(), dtype=torch.float32)
-active = df["active"].to_numpy()
 
-# whole scaffolds go to one split, largest first
-scaffolds = df["smiles"].map(lambda s: MurckoScaffold.MurckoScaffoldSmiles(smiles=s))
-train, val, test = [], [], []
-for idx in sorted(
-    df.groupby(scaffolds).indices.values(), key=lambda i: (-len(i), i[0])
-):
-    if len(train) + len(idx) <= 0.8 * len(df):
-        train += idx.tolist()
-    elif len(val) + len(idx) <= 0.1 * len(df):
-        val += idx.tolist()
-    else:
-        test += idx.tolist()
-if not val or not test:
-    raise ValueError(
-        f"scaffold split left val ({len(val)}) or test ({len(test)}) empty"
-    )
-
-
-def fingerprints(n_bits):
-    if n_bits not in fps:
-        fps[n_bits] = torch.cat([d.fp for d in featurize_many(df["smiles"], n_bits)[0]])
-    return fps[n_bits]
-
-
-def score(predict):
-    out = {}
-    for name, idx in [("train", train), ("val", val), ("test", test)]:
-        pred = predict(idx)
-        reg = evaluation_metrics(y[idx], pred, "regression")
-        cls = evaluation_metrics(active[idx], pred, "classification")
-        out |= {
-            f"{name}_RMSE": reg["rmse"],
-            f"{name}_R2": reg["r2"],
-            f"{name}_ROC-AUC": cls["roc_auc"],
-        }
-    return out
-
-
-def train_mlp(cfg, seed):
-    X = fingerprints(cfg["N_BITS"]).to(DEVICE)
+def train_mlp(cfg, seed, data, *, evaluate_test=False):
+    train, val = data.indices["train"], data.indices["val"]
+    y = data.y
+    X = data.fingerprints(cfg["N_BITS"]).to(DEVICE)
     X_train, y_train = X[train], y[train].to(DEVICE)
-    torch.manual_seed(seed)
+    generator = set_training_seed(seed)
     encoder = FingerprintEncoder(
         cfg["N_BITS"],
         cfg["HIDDEN_DIMS"],
@@ -114,7 +57,7 @@ def train_mlp(cfg, seed):
         range(len(train)),
         batch_size=cfg["BATCH_SIZE"],
         shuffle=True,
-        generator=torch.Generator().manual_seed(seed),
+        generator=generator,
     )
 
     @torch.no_grad()
@@ -122,7 +65,6 @@ def train_mlp(cfg, seed):
         model.eval()
         return model(X[idx]).squeeze(-1).cpu()
 
-    # keep best val epoch's weights
     best_rmse, best_state, best_epoch = float("inf"), None, 0
     for epoch in range(1, cfg["EPOCHS"] + 1):
         model.train()
@@ -132,7 +74,9 @@ def train_mlp(cfg, seed):
                 model(X_train[idx]).squeeze(-1), y_train[idx]
             ).backward()
             optimizer.step()
-        rmse = evaluation_metrics(y[val], predict(val), "regression")["rmse"]
+        rmse = evaluate_predictions(
+            data.frame.iloc[val]["pIC50_BACE1"], predict(val), "regression"
+        )["rmse"]
         if rmse < best_rmse:
             best_rmse, best_state, best_epoch = (
                 rmse,
@@ -140,12 +84,18 @@ def train_mlp(cfg, seed):
                 epoch,
             )
 
+    if best_state is None:
+        raise ValueError("training produced no finite validation checkpoint")
     model.load_state_dict(best_state)
-    return {"best_epoch": best_epoch, **score(predict)}
+    return {
+        "best_epoch": best_epoch,
+        **data.score(predict, evaluate_test=evaluate_test),
+    }
 
 
-def fit_baseline(cfg, seed):
-    X = fingerprints(cfg["N_BITS"]).numpy()
+def fit_baseline(cfg, seed, data, *, evaluate_test=False):
+    train = data.indices["train"]
+    X = data.fingerprints(cfg["N_BITS"]).numpy()
     if cfg["MODEL"] == "ridge":
         model = Ridge(alpha=cfg["ALPHA"])
     else:
@@ -155,8 +105,8 @@ def fit_baseline(cfg, seed):
             n_jobs=-1,
             random_state=seed,
         )
-    model.fit(X[train], y[train].numpy())
-    return score(lambda idx: model.predict(X[idx]))
+    model.fit(X[train], data.y[train].numpy())
+    return data.score(lambda idx: model.predict(X[idx]), evaluate_test=evaluate_test)
 
 
 def grid(base, **values):
@@ -246,42 +196,41 @@ STAGES = {
 }
 
 
-def run(cfg, seed):
+def run(cfg, seed, data, *, evaluate_test=False):
     start = time.time()
-    res = (fit_baseline if "MODEL" in cfg else train_mlp)(cfg, seed)
+    res = (fit_baseline if "MODEL" in cfg else train_mlp)(
+        cfg, seed, data, evaluate_test=evaluate_test
+    )
     return {
-        "cfg": json.dumps(cfg),
+        "cfg": config_json(cfg),
         "seed": seed,
         **cfg,
         **res,
         "secs": round(time.time() - start, 1),
+        "device": str(DEVICE),
+        "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
     }
 
 
-if __name__ == "__main__":
-    by_number = {name.split("-")[0]: name for name in STAGES}
-    names = [by_number.get(arg, arg) for arg in sys.argv[1:]] or list(STAGES)
-    if unknown := set(names) - set(STAGES):
-        sys.exit(f"unknown stages {sorted(unknown)}, pick from {list(STAGES)}")
-    OUT.mkdir(parents=True, exist_ok=True)
-
-    for name in names:
-        configs, seeds = STAGES[name]
-        csv = OUT / f"{name}.csv"
-        done = (
-            set(pd.read_csv(csv)[["cfg", "seed"]].itertuples(index=False))
-            if csv.exists()
-            else set()
+def normalize_config(config):
+    if not isinstance(config, dict) or set(config) - set(DEFAULT):
+        raise ValueError(
+            "canonical ECFP4 configuration must contain only encoder training keys"
         )
-        runs = list(itertools.product(configs, seeds))
-        for i, (cfg, seed) in enumerate(runs, 1):
-            if (json.dumps(cfg), seed) in done:
-                continue
-            row = pd.DataFrame([run(cfg, seed)])
-            pd.concat([pd.read_csv(csv), row] if csv.exists() else [row]).to_csv(
-                csv, index=False
-            )
-            line = f"{name} [{i}/{len(runs)}] val {row['val_RMSE'][0]:.3f} {row['secs'][0]}s {row['cfg'][0]}"
-            print(line, flush=True)
-            with open(OUT / f"{name}.log", "a") as log:
-                print(line, file=log)
+    return DEFAULT | config
+
+
+def main(argv=None):
+    return run_cli(
+        argv,
+        stages=STAGES,
+        output_dir=OUT,
+        experiment="ecfp4_encoder",
+        encoder=lambda cfg: f"fingerprint_encoder-{cfg['N_BITS']}",
+        normalize_config=normalize_config,
+        run=run,
+    )
+
+
+if __name__ == "__main__":
+    main()

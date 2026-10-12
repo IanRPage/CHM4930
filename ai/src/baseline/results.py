@@ -39,7 +39,12 @@ SORT_KEYS = ["model", "dataset", "endpoint", "split", "metric"]
 
 
 def file_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """Hash a dataset CSV using LF bytes, including in an existing CRLF checkout.
+
+    This matches the committed snapshot and historical results without rewriting
+    the file. All bytes other than CRLF line endings remain significant.
+    """
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def git_commit() -> str:

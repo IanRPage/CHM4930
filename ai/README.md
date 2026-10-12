@@ -140,6 +140,98 @@ very few examples of one class, so read their ROC-AUC loosely. For example,
 NR-AR has 11 actives out of 704 (val 0.83, test 0.55), and FDA_APPROVED has only
 6 unapproved compounds out of 144 (val 0.84, test 0.56).
 
+## Shared Benchmark Foundation
+
+`src/benchmark.py` provides the common dataset, protocol metadata, seed setup,
+and masked evaluation API. Load and split the full frozen combined table before
+filtering for an endpoint. The canonical protocol keeps the existing RF split:
+80/10/10, split seed `None`, training seed `42`, and active labels at pIC50 ≥ 6.0.
+
+```python
+from benchmark import (
+    benchmark_metadata,
+    evaluate_predictions,
+    load_benchmark,
+    set_training_seed,
+    verify_benchmark_metadata,
+)
+
+full = load_benchmark()
+metadata = benchmark_metadata(full)
+generator = set_training_seed()  # pass to a shuffled DataLoader
+endpoint = full.loc[full["pIC50_BACE1"].notna()]
+# evaluate_predictions(labels, aligned_scores, "regression")
+# verify_benchmark_metadata(metadata, full) before explicit results export
+```
+
+Metadata includes the dataset checksum and a checksum of sorted SMILES/split
+assignments, independent of row order and DataFrame indexes. Keep it in result
+`params`; `benchmark.record_results` re-exports the existing CSV recorder and
+does not write automatically. NumPy/Torch inputs are positional; pandas inputs
+must also have matching row indexes and task columns. Missing labels are masked
+automatically; zero-filled MuFu labels require their explicit label masks.
+
+Dataset checksums normalize CRLF to LF in memory, preserving the historical
+checksum without rewriting the snapshot. `.gitattributes` enforces LF for future
+checkouts of `combined.csv`. Its Git index already contains LF, so no
+renormalization is needed for this change. Do not rebuild the dataset or rewrite
+existing results to correct a checkout's line endings.
+
+## Encoder Benchmark Runs
+
+Both encoder sweep scripts use `src/encoder_benchmark.py` on top of the shared
+foundation. They split the entire frozen combined table first, then select
+observed BACE-1 labels: 6,469 train, 808 validation, and 810 test molecules, exactly
+as in the BACE-1 RF baseline. Featurization failures abort rather than silently
+changing that cohort. Evaluation uses the original labels and shared metrics.
+
+Exploratory stages keep their grids, seeds, wide CSV columns, and log paths:
+
+```sh
+python scripts/ECFP4_encoder_sweep.py 3 4 --output-dir outputs/encoders/ECFP4/shared-v1
+python scripts/gnn_encoder_sweep.py 1 --output-dir outputs/encoders/GNN/shared-v1
+```
+
+These are noncanonical experiments. Only train/validation metrics are computed;
+the existing `test_*` columns contain NaN. Each row adds dataset/split/protocol
+metadata. Resume and automatic selection reject legacy files or mismatched
+metadata. Existing CSVs/logs are preserved; use a new `--output-dir` for these
+experiments instead of deleting old results. Run separate stages concurrently
+if useful, but use one writer per stage file or `results.csv`.
+
+A canonical run requires either an explicit configuration JSON (training keys
+from the script's `DEFAULT`, with omitted keys retaining those defaults) or
+compatible stage files. For example, after choosing a configuration using
+validation only, put `{"HIDDEN_DIMS": [128, 128], "EPOCHS": 100}` in `chosen.json`:
+
+```sh
+python scripts/gnn_encoder_sweep.py --benchmark --config chosen.json --dry-run
+python scripts/gnn_encoder_sweep.py --benchmark --config chosen.json
+python scripts/gnn_encoder_sweep.py --benchmark --config chosen.json --write-results
+```
+
+The ECFP4 script accepts the same flags. Alternatively:
+
+```sh
+python scripts/ECFP4_encoder_sweep.py --benchmark --select-from outputs/encoders/ECFP4/shared-v1/3-training-dynamics.csv --selection-seeds 0 1 2 --write-results
+```
+
+Automatic selection minimizes mean validation RMSE over a complete, matching
+seed set; it never reads test metrics for selection. The selected configuration
+is retrained with seed 42, its best validation checkpoint is restored, and only
+then is test evaluated. The scripts retain their optimizers, losses, epoch
+limits, and GNN patience. Avoid repeatedly tuning against canonical test results.
+
+Without `--write-results`, canonical metrics are displayed without exporting.
+`--dry-run` loads/verifies metadata and configuration without featurization,
+training, or writes, even when combined with `--write-results`. Explicit export
+uses the existing recorder and unchanged 13-column `data/baseline/results.csv`
+schema: six validation/test rows per encoder (`rmse`, `r2`, `roc_auc`), tagged as
+`ecfp4_encoder` or `gnn_encoder`. Protocol, configuration, seed, selected epoch,
+selection method, device, and determinism setting are stored in `params`.
+Re-export replaces only that encoder's rows on the current snapshot. Export
+refuses a snapshot mismatch that would discard existing RF results.
+
 ## Testing
 
 Tests use [`pytest`](https://docs.pytest.org). From anywhere inside this
@@ -158,3 +250,13 @@ they're skipped by default. To run `network` tests, do:
 ```
 pytest -m network
 ```
+
+`tests/test_smiles_encoder.py` imports `transformers` during collection, even
+though its model downloads are mocked. If collection fails with
+`ModuleNotFoundError: transformers`, the local environment is incomplete:
+`environment.yml` already declares the pinned dependency in its `pip` section.
+From `ai/`, synchronize the project environment with
+`conda env update -n CHM4930 -f environment.yml`, or create it as described above.
+Use `python src/check_env.py` to check installed versions. Encoder benchmark tests
+run offline without Transformers; excluding that module lets the remaining
+offline suite run while the environment is repaired.
