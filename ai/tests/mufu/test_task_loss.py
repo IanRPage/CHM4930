@@ -54,8 +54,12 @@ def test_batch_invariance_and_nan_masking():
 
 
 def test_pos_weight_upweights_inactives():
-    labels = torch.tensor([[1.0, 1.0], [1.0, 1.0], [1.0, 1.0], [0.0, 0.0]])
-    mask = torch.tensor([[True, True], [True, True], [True, False], [True, False]])
+    labels = torch.tensor(
+        [[1.0, 1.0], [1.0, 1.0], [1.0, 1.0], [0.0, 0.0], [float("nan"), 0.0]]
+    )
+    mask = torch.tensor(
+        [[True, True], [True, True], [True, False], [True, False], [False, False]]
+    )
     pw = compute_pos_weight(labels, mask)
     assert torch.allclose(pw, torch.tensor([1.0 / 3.0, 1.0]))
 

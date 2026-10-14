@@ -53,9 +53,8 @@ def compute_pos_weight(labels: torch.Tensor, mask: torch.Tensor) -> torch.Tensor
     if mask.dtype != torch.bool:
         raise ValueError(f"mask: expected dtype bool, got {mask.dtype}")
 
-    valid = mask.float()
-    pos = (labels * valid).sum(dim=0)
-    neg = ((1.0 - labels) * valid).sum(dim=0)
+    pos = torch.where(mask, labels, 0.0).sum(dim=0)
+    neg = torch.where(mask, 1.0 - labels, 0.0).sum(dim=0)
     both_present = (pos > 0) & (neg > 0)
     safe_pos = torch.where(both_present, pos, torch.ones_like(pos))
     return torch.where(both_present, neg / safe_pos, torch.ones_like(pos))
