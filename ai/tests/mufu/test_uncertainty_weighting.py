@@ -91,3 +91,37 @@ def test_rejects_nan_loss():
     losses = {**make_task_losses(), "tox": torch.tensor(float("nan"))}
     with pytest.raises(ValueError, match="tox: loss is NaN"):
         weighting(losses)
+
+
+@pytest.mark.parametrize("bad_val", [float("inf"), float("-inf")])
+def test_rejects_inf_loss(bad_val):
+    weighting = UncertaintyWeighting()
+    losses = {**make_task_losses(), "pic50": torch.tensor(bad_val)}
+    with pytest.raises(ValueError, match="pic50: loss is NaN or Inf"):
+        weighting(losses)
+
+
+def test_rejects_negative_loss():
+    weighting = UncertaintyWeighting()
+    losses = {**make_task_losses(), "bio_cls": torch.tensor(-0.1)}
+    with pytest.raises(ValueError, match="bio_cls: loss must be non-negative"):
+        weighting(losses)
+
+
+def test_clamps_extreme_log_vars():
+    weighting = UncertaintyWeighting()
+    with torch.no_grad():
+        weighting.log_vars["pic50"].fill_(-100.0)
+        weighting.log_vars["bio_cls"].fill_(100.0)
+
+    total = weighting(
+        {"pic50": torch.tensor(1.0), "bio_cls": torch.tensor(1.0), "tox": None}
+    )
+    expected = (
+        0.5 * math.exp(5.0) * 1.0
+        + 0.5 * (-5.0)
+        + 1.0 * math.exp(-5.0) * 1.0
+        + 0.5 * 5.0
+    )
+    assert torch.isfinite(total)
+    assert torch.isclose(total, torch.tensor(expected, dtype=torch.float32))
