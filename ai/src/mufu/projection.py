@@ -27,7 +27,7 @@ class ModalityProjection(nn.Module):
         self, embeddings: Mapping[str, torch.Tensor]
     ) -> dict[str, torch.Tensor]:
         _check_keys("embeddings", set(embeddings), set(MODALITIES))
-        size = embeddings[MODALITIES[0]].shape[0]
+        size = len(embeddings[MODALITIES[0]])
         for m in MODALITIES:
             _check_tensor(m, embeddings[m], (size, self.in_dims[m]), "float")
         return {m: self.layers[m](embeddings[m]) for m in MODALITIES}

@@ -35,6 +35,14 @@ def test_rejects_bad_embedding_keys():
         projection(embeddings)
 
 
+def test_rejects_non_tensor_embedding():
+    projection = ModalityProjection(IN_DIMS)
+    embeddings = {**make_embeddings(), "smiles": ["CCO"] * 4}
+
+    with pytest.raises(TypeError, match="smiles: expected a tensor"):
+        projection(embeddings)
+
+
 def test_rejects_wrong_width():
     projection = ModalityProjection(IN_DIMS)
     embeddings = {**make_embeddings(), "fingerprint": torch.randn(4, 256)}
