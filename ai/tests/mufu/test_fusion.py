@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from mufu.contract import D_MODEL, FUSED_DIM, MODALITIES
+from mufu.contract import D_MODEL, DROPOUT_MASKS, FUSED_DIM, MODALITIES
 from mufu.fusion import LateFusion
 
 
@@ -77,3 +77,12 @@ def test_rejects_non_bool_mask():
 
     with pytest.raises(ValueError, match="mask: expected dtype bool"):
         LateFusion()(make_projected(), mask)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_cpu_mask_with_cuda_inputs():
+    fusion = LateFusion().cuda()
+    projected = {m: t.cuda() for m, t in make_projected().items()}
+    mask = torch.tensor(DROPOUT_MASKS[:4])
+
+    assert fusion(projected, mask).device == projected[MODALITIES[0]].device

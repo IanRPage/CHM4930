@@ -35,6 +35,7 @@ class LateFusion(nn.Module):
             fused = torch.cat([projected[m] for m in MODALITIES], dim=1)
         else:
             _check_tensor("mask", mask, (size, len(MODALITIES)), "bool")
+            mask = mask.to(device=projected[MODALITIES[0]].device)
             fused = torch.cat(
                 [projected[m] * mask[:, i : i + 1] for i, m in enumerate(MODALITIES)],
                 dim=1,

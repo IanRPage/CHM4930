@@ -47,6 +47,7 @@ def test_dropout_masks():
     assert len(set(c.DROPOUT_MASKS)) == 6
     for mask in c.DROPOUT_MASKS:
         assert len(mask) == len(c.MODALITIES)
+        assert all(isinstance(v, bool) for v in mask)
         assert 0 < sum(mask) < len(c.MODALITIES)
 
 
