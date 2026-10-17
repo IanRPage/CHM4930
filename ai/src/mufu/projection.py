@@ -10,9 +10,9 @@ class ModalityProjection(nn.Module):
     """
     Per-encoder linear projection into the shared dimension D_MODEL.
 
-    `in_dims` maps each modality in MODALITIES to its encoder's `out_dim`. Each
-    modality gets its own nn.Linear(in_dims[m], D_MODEL), so forward takes
-    {m: (B, in_dims[m])} and returns {m: (B, D_MODEL)} for late fusion.
+    `in_dims` maps each modality in MODALITIES to its encoder's `out_dim`. Each gets its
+    own nn.Linear(in_dims[m], D_MODEL), meaning forward takes {m: (B, in_dims[m])} and
+    returns {m: (B, D_MODEL)} for late fusion.
     """
 
     def __init__(self, in_dims: Mapping[str, int]) -> None:
