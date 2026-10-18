@@ -41,12 +41,12 @@ D_MODEL = 256
 FUSED_DIM = len(MODALITIES) * D_MODEL
 MODALITY_DROPOUT_P = 0.3
 DROPOUT_MASKS = (
-    (0, 1, 1),
-    (1, 0, 1),
-    (1, 1, 0),
-    (1, 0, 0),
-    (0, 1, 0),
-    (0, 0, 1),
+    (False, True, True),
+    (True, False, True),
+    (True, True, False),
+    (True, False, False),
+    (False, True, False),
+    (False, False, True),
 )
 
 TASKS = ("pic50", "bio_cls", "tox")
