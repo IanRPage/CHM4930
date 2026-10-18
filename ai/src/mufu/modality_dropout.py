@@ -26,9 +26,7 @@ def sample_modality_mask(
 
     # Turn off modality dropout
     if p == 0.0:
-        return torch.ones(
-            batch_size, len(MODALITIES), dtype=torch.bool, device=device
-        )
+        return torch.ones(batch_size, len(MODALITIES), dtype=torch.bool, device=device)
 
     patterns = torch.tensor(DROPOUT_MASKS, dtype=torch.bool, device=device)
     indices = torch.randint(

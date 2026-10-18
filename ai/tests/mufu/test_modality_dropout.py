@@ -64,10 +64,16 @@ def test_rejects_negative_batch_size():
     "device",
     [
         pytest.param(
-            "cuda", marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="needs CUDA"
+            ),
         ),
         pytest.param(
-            "mps", marks=pytest.mark.skipif(not torch.backends.mps.is_available(), reason="needs MPS")
+            "mps",
+            marks=pytest.mark.skipif(
+                not torch.backends.mps.is_available(), reason="needs MPS"
+            ),
         ),
     ],
 )
