@@ -11,7 +11,8 @@ class LateFusion(nn.Module):
     Late fusion of the projected modality vectors into the shared latent L.
 
     `mask` is an optional (B, len(MODALITIES)) bool tensor whose column i gates
-    MODALITIES[i], where None means all present.
+    MODALITIES[i], where None means all present. Each row must retain at least
+    one modality; random mask sampling belongs to the training caller.
     """
 
     def __init__(self) -> None:
@@ -35,6 +36,9 @@ class LateFusion(nn.Module):
             fused = torch.cat([projected[m] for m in MODALITIES], dim=1)
         else:
             _check_tensor("mask", mask, (size, len(MODALITIES)), "bool")
+            # The following two lines can be used for future modality ablation experiment, add another validation
+            #if not mask.any(dim=1).all():
+            #    raise ValueError("mask: each sample must retain at least one modality")
             mask = mask.to(device=projected[MODALITIES[0]].device)
             fused = torch.cat(
                 [projected[m] * mask[:, i : i + 1] for i, m in enumerate(MODALITIES)],
