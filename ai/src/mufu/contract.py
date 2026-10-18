@@ -56,10 +56,13 @@ LOG_VAR_INIT = 0.0
 OUTPUT_WIDTHS = {"pic50": N_BIO, "active_logits": N_BIO, "tox_logits": N_TOX}
 
 
-class MuFuBatch(TypedDict):
+class MuFuInputs(TypedDict):
     smiles: list[str]
     fingerprint: torch.Tensor
     graph: Batch
+
+
+class MuFuBatch(MuFuInputs):
     y_pic50: torch.Tensor
     y_active: torch.Tensor
     y_tox: torch.Tensor
