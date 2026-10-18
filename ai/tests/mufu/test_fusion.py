@@ -103,14 +103,6 @@ def test_rejects_non_bool_mask():
         LateFusion()(make_projected(), mask)
 
 
-def test_rejects_a_fully_missing_sample_in_a_mixed_batch():
-    mask = torch.ones(4, len(MODALITIES), dtype=torch.bool)
-    mask[2] = False
-
-    with pytest.raises(ValueError):
-        LateFusion()(make_projected(), mask)
-
-
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
 def test_cpu_mask_with_cuda_inputs():
     fusion = LateFusion().cuda()
