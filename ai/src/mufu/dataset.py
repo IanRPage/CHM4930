@@ -6,7 +6,12 @@ Rows RDKit can't parse are dropped.
 From Python:
 
     datasets = split_datasets(scaffold_split(load_combined()))
-    loader = DataLoader(datasets["train"], batch_size=64, shuffle=True, collate_fn=collate)
+    loader = DataLoader(
+        datasets["train"], batch_size=64, shuffle=True, drop_last=True, collate_fn=collate
+    )
+
+drop_last avoids a final batch of one molecule (GNNEncoder's BatchNorm rejects in
+training mode).
 """
 
 import pandas as pd
