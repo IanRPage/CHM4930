@@ -39,6 +39,7 @@ LABEL_FILL = 0.0
 MODALITIES = ("smiles", "fingerprint", "graph")
 D_MODEL = 256
 FUSED_DIM = len(MODALITIES) * D_MODEL
+# Per-example probability of choosing a partial pattern; otherwise all are present.
 MODALITY_DROPOUT_P = 0.3
 DROPOUT_MASKS = (
     (False, True, True),
