@@ -117,9 +117,17 @@ def test_mixed_infeasible_distinct_batch_raises():
         list(MixedBatchSampler(MaskDataset(1, 1), 4))
 
 
+@pytest.mark.parametrize("batch_size,fraction", [(2, 0.49), (10, 0.01), (64, 0.001)])
+def test_mixed_rejects_fraction_that_rounds_bio_quota_to_zero(batch_size, fraction):
+    with pytest.raises(ValueError, match="batch quotas"):
+        MixedBatchSampler(MaskDataset(2, 2), batch_size, fraction)
+
+
 @pytest.mark.parametrize("sampler_class", [MixedBatchSampler, AlternatingBatchSampler])
-def test_no_labeled_examples_yields_no_batches(sampler_class):
-    assert list(sampler_class(MaskDataset(unlabeled=3), 4)) == []
+@pytest.mark.parametrize("unlabeled", [0, 3])
+def test_no_labeled_examples_are_rejected(sampler_class, unlabeled):
+    with pytest.raises(ValueError, match="labeled examples?"):
+        sampler_class(MaskDataset(unlabeled=unlabeled), 4)
 
 
 @pytest.mark.parametrize("bio,tox,expected_batches", [(9, 2, 6), (2, 9, 6), (6, 6, 4)])

@@ -13,6 +13,13 @@ class MixedBatchSampler(Sampler[list[int]]):
         bio_fraction: float = 0.5,  # ratio bio data/tox data
     ):
 
+        n_bio = int(batch_size * bio_fraction)
+        n_tox = batch_size - n_bio
+        if n_bio < 1 or n_tox < 1:
+            raise ValueError(
+                "batch quotas must allocate at least one example to each task"
+            )
+
         self.dataset = dataset
         self.batch_size = batch_size
         self.bio_fraction = bio_fraction
@@ -31,6 +38,11 @@ class MixedBatchSampler(Sampler[list[int]]):
                 self.bio_only.append(i)
             elif has_tox:
                 self.tox_only.append(i)
+
+        if not (self.bio_only or self.tox_only or self.both):
+            raise ValueError(
+                "Mixed batching requires at least one labeled example per task"
+            )
 
     def __iter__(self):
         bio_only = self.bio_only.copy()
@@ -77,7 +89,8 @@ class MixedBatchSampler(Sampler[list[int]]):
             for eligible, quota in ((bio_labels, n_bio), (tox_labels, n_tox)):
                 selected = set(batch)
                 missing = max(0, quota - len(selected & eligible))
-                batch.extend(random.sample(list(eligible - selected), missing))
+                if missing > 0:
+                    batch.extend(random.sample(list(eligible - selected), missing))
 
             # Both-label examples can satisfy both quotas with fewer slots.
             remaining = self.batch_size - len(batch)
@@ -99,6 +112,11 @@ class AlternatingBatchSampler(Sampler[list[int]]):
             for i, labels in enumerate(dataset.masks[mask]):
                 if labels.any().item():
                     pool.append(i)
+            # the batch samplers are intended to be used with non-empty datasets
+            if not pool:
+                raise ValueError(
+                    "Alternating batching requires labeled examples for both tasks"
+                )
             self.pools.append(pool)
 
     def __iter__(self):
