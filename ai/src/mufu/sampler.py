@@ -102,14 +102,18 @@ class MixedBatchSampler(Sampler[list[int]]):
 
 
 class AlternatingBatchSampler(Sampler[list[int]]):
+    task_names = ("bio", "tox")
+
     def __init__(self, dataset: MuFuDataset, batch_size: int):
+        if batch_size < 2:
+            raise ValueError("batch_size must be at least 2")
 
         self.batch_size = batch_size
         self.pools = []
 
-        for mask in ("mask_bio", "mask_tox"):
+        for task in self.task_names:
             pool = []
-            for i, labels in enumerate(dataset.masks[mask]):
+            for i, labels in enumerate(dataset.masks[f"mask_{task}"]):
                 if labels.any().item():
                     pool.append(i)
             # the batch samplers are intended to be used with non-empty datasets
@@ -117,7 +121,16 @@ class AlternatingBatchSampler(Sampler[list[int]]):
                 raise ValueError(
                     "Alternating batching requires labeled examples for both tasks"
                 )
+
+            if len(pool) < 2:
+                raise ValueError(
+                    "Alternating batching requires at least two labeled examples for each task"
+                )
+
             self.pools.append(pool)
+
+    def task_for_batch(self, batch_index: int) -> str:
+        return self.task_names[batch_index % len(self.task_names)]
 
     def __iter__(self):
         pools = [pool.copy() for pool in self.pools]
@@ -125,9 +138,12 @@ class AlternatingBatchSampler(Sampler[list[int]]):
             random.shuffle(pool)
         positions = [0] * len(pools)
 
-        rounds = max(
-            (len(pool) + self.batch_size - 1) // self.batch_size for pool in self.pools
-        )
+        rounds = 0
+        for pool in pools:
+            full_batches, remainder = divmod(len(pool), self.batch_size)
+            # Merge a batch smaller than 2
+            pool_rounds = full_batches + int(remainder >= 2)
+            rounds = max(rounds, pool_rounds, 1)
 
         for each in range(rounds):
             for task, pool in enumerate(pools):
@@ -135,6 +151,9 @@ class AlternatingBatchSampler(Sampler[list[int]]):
                     random.shuffle(pool)
                     positions[task] = 0
                 start = positions[task]
-                batch = pool[start : start + self.batch_size]
+                end = min(start + self.batch_size, len(pool))
+                if len(pool) - end == 1:
+                    end += 1
+                batch = pool[start:end]
                 positions[task] += len(batch)
                 yield batch

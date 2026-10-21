@@ -54,7 +54,7 @@ def assert_unique_batches(batches, size, partial=False):
         assert len(batch) == len(set(batch))
         assert len(batch) > 0
         if partial:
-            assert len(batch) <= size
+            assert 2 <= len(batch) <= size + 1
         else:
             assert len(batch) == size
 
@@ -130,7 +130,7 @@ def test_no_labeled_examples_are_rejected(sampler_class, unlabeled):
         sampler_class(MaskDataset(unlabeled=unlabeled), 4)
 
 
-@pytest.mark.parametrize("bio,tox,expected_batches", [(9, 2, 6), (2, 9, 6), (6, 6, 4)])
+@pytest.mark.parametrize("bio,tox,expected_batches", [(9, 2, 4), (2, 9, 4), (6, 6, 4)])
 def test_alternating_bio_then_tox_covers_both_pools(bio, tox, expected_batches):
     dataset = MaskDataset(bio, tox, unlabeled=2)
     batches = list(AlternatingBatchSampler(dataset, 4))
@@ -143,9 +143,43 @@ def test_alternating_bio_then_tox_covers_both_pools(bio, tox, expected_batches):
         assert {i for batch in task_batches for i in batch} == eligible
 
 
-def test_alternating_partial_batches_are_not_padded():
-    batches = list(AlternatingBatchSampler(MaskDataset(5, 3), 2))
-    assert [len(batch) for batch in batches] == [2, 2, 2, 1, 1, 2]
+@pytest.mark.parametrize(
+    "bio,tox,size,expected_sizes",
+    [
+        (5, 3, 2, [2, 3, 3, 3]),
+        (9, 6, 4, [4, 4, 5, 2]),
+        (7, 6, 3, [3, 3, 4, 3]),
+    ],
+)
+def test_alternating_merges_singleton_tails(bio, tox, size, expected_sizes):
+    dataset = MaskDataset(bio, tox)
+    sampler = AlternatingBatchSampler(dataset, size)
+    batches = list(sampler)
+    assert [len(batch) for batch in batches] == expected_sizes
+    assert_unique_batches(batches, size, partial=True)
+    for offset, mask in enumerate(("mask_bio", "mask_tox")):
+        task_batches = batches[offset::2]
+        eligible = labeled_indices(dataset, mask)
+        assert all(set(batch) <= eligible for batch in task_batches)
+        assert {i for batch in task_batches for i in batch} == eligible
+    assert [sampler.task_for_batch(step) for step in range(len(batches))] == [
+        "bio",
+        "tox",
+        "bio",
+        "tox",
+    ]
+
+
+@pytest.mark.parametrize("counts", [(1, 3, 0), (3, 1, 0), (0, 0, 1)])
+def test_alternating_rejects_single_molecule_task_pool(counts):
+    with pytest.raises(ValueError, match="at least two"):
+        AlternatingBatchSampler(MaskDataset(*counts), 4)
+
+
+@pytest.mark.parametrize("batch_size", [0, 1, -1])
+def test_alternating_rejects_batch_size_below_two(batch_size):
+    with pytest.raises(ValueError, match="batch_size"):
+        AlternatingBatchSampler(MaskDataset(3, 3), batch_size)
 
 
 def test_alternating_dual_labeled_compound_is_in_both_task_pools():
@@ -172,3 +206,16 @@ def test_alternating_repeated_epochs_preserve_pools():
         assert_unique_batches(batches, 4, partial=True)
         assert {i for batch in batches for i in batch} == set(range(12))
     assert sampler.pools == original
+
+
+@pytest.mark.parametrize("counts", [(9, 2, 2), (2, 9, 2), (0, 0, 5)])
+def test_alternating_exposes_task_for_each_batch(counts):
+    dataset = MaskDataset(*counts)
+    sampler = AlternatingBatchSampler(dataset, 3)
+    for _ in range(2):
+        # Fetch the whole epoch first to simulate sampler advancement by workers.
+        batches = list(sampler)
+        for step, batch in enumerate(batches):
+            task = sampler.task_for_batch(step)
+            assert task == ("bio" if step % 2 == 0 else "tox")
+            assert set(batch) <= labeled_indices(dataset, f"mask_{task}")
