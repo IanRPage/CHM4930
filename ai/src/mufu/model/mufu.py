@@ -1,14 +1,19 @@
+"""
+End-to-end multimodal fusion model (`MuFu`) combining encoders, projection, fusion, and
+heads.
+"""
+
 from torch import nn
 
 from mufu.contract import Encoder, MuFuInputs, MuFuOutputs
-from mufu.fusion import LateFusion
-from mufu.heads import (
+from mufu.model.fusion import LateFusion
+from mufu.model.heads import (
     BioactivityClassificationHead,
     BioactivityRegressionHead,
     ToxicityHead,
 )
-from mufu.modality_dropout import sample_modality_mask
-from mufu.projection import ModalityProjection
+from mufu.model.modality_dropout import sample_modality_mask
+from mufu.model.projection import ModalityProjection
 
 
 class MuFu(nn.Module):

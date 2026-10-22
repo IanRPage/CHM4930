@@ -15,10 +15,10 @@ ai/
 ├── src/             # main code
 │   ├── baseline/    # random forest baselines and their results recorder
 │   ├── featurize/   # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
-│   ├── mufu/        # MuFu interface contract (names, shapes, defaults)
+│   ├── mufu/        # MuFu multimodal dataset, model, loss, and training components
 │   ├── pipeline/    # dataset loaders and structure to model input preprocessing
 │   ├── encoders/    # where each of MuFu's encoders are implemented
-│   └── check_env.py # sanity check that dependencies are installed correctly
+│   └── evaluation.py # regression, classification, and multi-task evaluation metrics
 ├── tests/           # pytest suite (mirrors src/)
 ├── checkpoints/     # saved model weights
 ├── outputs/         # generated artifacts (figures, logs, metrics, etc.)
@@ -66,7 +66,7 @@ Now when you open a notebook, select "Python (CHM4930)" as the kernel. To make
 sure everything installed correctly, run:
 
 ```
-python src/check_env.py
+python scripts/check_env.py
 ```
 
 It imports each dependency and prints its version, so if something's missing or

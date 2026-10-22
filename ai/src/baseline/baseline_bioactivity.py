@@ -9,16 +9,15 @@ How to run (from `ai/`, with `PYTHONPATH=src`):
 import json
 
 import numpy as np
-from rdkit import Chem
 from sklearn.ensemble import RandomForestRegressor
 
 from baseline.results import record_results
 from evaluation import evaluation_metrics
-from featurize.fingerprint import mol_to_ecfp4
+from featurize.fingerprint import FINGERPRINT_BITS, mol_to_ecfp4
 from pipeline.combined_loader import TARGETS, load_combined
+from pipeline.preprocess import to_mol
 from pipeline.split import scaffold_split
 
-N_BITS = 2048
 N_ESTIMATORS = 500
 RANDOM_STATE = 42
 MAX_FEATURES_OPTIONS = ["sqrt", "log2", 0.1, 0.3]
@@ -52,7 +51,7 @@ def result_rows(target, split_metrics, max_features):
     params = json.dumps({"max_features": max_features, "n_estimators": N_ESTIMATORS})
     return [
         {
-            "encoder": f"ecfp4-{N_BITS}",
+            "encoder": f"ecfp4-{FINGERPRINT_BITS}",
             "dataset": target.lower(),
             "endpoint": f"pIC50_{target}",
             "split": split,
@@ -73,8 +72,8 @@ def fit_target(df, target):
     fingerprints = []
 
     for smiles in df["smiles"]:
-        mol = Chem.MolFromSmiles(smiles)
-        fingerprints.append(mol_to_ecfp4(mol, N_BITS))
+        mol = to_mol(smiles)
+        fingerprints.append(mol_to_ecfp4(mol, FINGERPRINT_BITS))
 
     X = np.stack(fingerprints)
     y = df[f"pIC50_{target}"].to_numpy(dtype=float)

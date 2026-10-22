@@ -1,3 +1,8 @@
+"""
+Task-specific prediction heads for bioactivity regression, bioactivity classification,
+and toxicity.
+"""
+
 import torch
 from torch import nn
 

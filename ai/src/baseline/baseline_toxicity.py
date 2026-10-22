@@ -8,18 +8,16 @@ Run from ``ai/`` with ``PYTHONPATH=src``:
 import json
 
 import numpy as np
-from rdkit import Chem
 from sklearn.ensemble import RandomForestClassifier
 
 from baseline.results import record_results
 from evaluation import evaluation_metrics
-from featurize.fingerprint import mol_to_ecfp4
+from featurize.fingerprint import FINGERPRINT_BITS, mol_to_ecfp4
 from pipeline.combined_loader import TOX_TASKS, load_combined
-from pipeline.preprocess import summarize_labels
+from pipeline.preprocess import summarize_labels, to_mol
 from pipeline.split import scaffold_split
 from pipeline.toxicity_loader import DATASETS
 
-N_BITS = 2048
 N_ESTIMATORS = 500
 RANDOM_STATE = 42
 MAX_FEATURES_OPTIONS = ["sqrt", "log2", 0.1, 0.3]
@@ -72,7 +70,7 @@ def result_row(endpoint, split, value, params, n_labeled=np.nan, n_positive=np.n
         endpoint.removeprefix("macro_"),
     )
     return {
-        "encoder": f"ecfp4-{N_BITS}",
+        "encoder": f"ecfp4-{FINGERPRINT_BITS}",
         "dataset": dataset,
         "endpoint": endpoint,
         "split": split,
@@ -88,9 +86,9 @@ def main():
     df = scaffold_split(load_combined())
     df = df.loc[df[TOX_TASKS].notna().any(axis=1)].reset_index(drop=True)
     X = (
-        np.stack([mol_to_ecfp4(Chem.MolFromSmiles(s), N_BITS) for s in df["smiles"]])
+        np.stack([mol_to_ecfp4(to_mol(s), FINGERPRINT_BITS) for s in df["smiles"]])
         if len(df)
-        else np.empty((0, N_BITS), dtype=np.uint8)
+        else np.empty((0, FINGERPRINT_BITS), dtype=np.uint8)
     )
     y = df[TOX_TASKS].to_numpy(dtype=float)
     observed = df[TOX_TASKS].notna().to_numpy()

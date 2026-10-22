@@ -18,10 +18,10 @@ from mufu.contract import (
     MuFuBatch,
     MuFuOutputs,
     TaskLosses,
-    _check_tensor,
+    check_tensor,
     validate_outputs,
 )
-from mufu.dataset import MuFuDataset
+from mufu.data.dataset import MuFuDataset
 
 
 # averages over valid columns per compound, then over compounds with >=1 label
@@ -111,8 +111,8 @@ def compute_task_losses(
     for task in TASKS:
         spec = TASK_SPECS[task]
         width = outputs[spec.output].shape[1]
-        _check_tensor(spec.label, batch[spec.label], (batch_size, width), "float")
-        _check_tensor(spec.mask, batch[spec.mask], (batch_size, width), "bool")
+        check_tensor(spec.label, batch[spec.label], (batch_size, width), "float")
+        check_tensor(spec.mask, batch[spec.mask], (batch_size, width), "bool")
 
     weights = pos_weights or {}
     return {

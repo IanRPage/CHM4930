@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from mufu import contract as c
-from mufu.uncertainty_weighting import UncertaintyWeighting
+from mufu.loss.uncertainty_weighting import UncertaintyWeighting
 
 
 def make_task_losses(pic50=2.0, bio_cls=0.6, tox=0.8):

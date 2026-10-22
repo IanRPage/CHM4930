@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from mufu.contract import FUSED_DIM, N_BIO, N_TOX, validate_outputs
-from mufu.heads import (
+from mufu.model.heads import (
     BioactivityClassificationHead,
     BioactivityRegressionHead,
     ToxicityHead,

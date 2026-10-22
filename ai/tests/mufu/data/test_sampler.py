@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from mufu.sampler import AlternatingBatchSampler, MixedBatchSampler
+from mufu.data.sampler import AlternatingBatchSampler, MixedBatchSampler
 
 
 class MaskRow:
@@ -69,7 +69,9 @@ def assert_unique_batches(batches, size, partial=False):
 )
 def test_mixed_ratio_survives_pool_exhaustion(bio, tox, size, fraction):
     dataset = MaskDataset(bio, tox)
-    batches = list(MixedBatchSampler(dataset, size, fraction))
+    sampler = MixedBatchSampler(dataset, size, fraction)
+    batches = list(sampler)
+    assert len(sampler) == len(batches)
     bio_indices = labeled_indices(dataset, "mask_bio")
     assert_unique_batches(batches, size)
     for batch in batches:
@@ -80,7 +82,9 @@ def test_mixed_ratio_survives_pool_exhaustion(bio, tox, size, fraction):
 @pytest.mark.parametrize("counts", [(7, 3, 5), (0, 7, 5), (7, 0, 5), (0, 0, 10)])
 def test_mixed_dual_labels_satisfy_quotas_without_duplicates(counts):
     dataset = MaskDataset(*counts, unlabeled=3)
-    batches = list(MixedBatchSampler(dataset, 6))
+    sampler = MixedBatchSampler(dataset, 6)
+    batches = list(sampler)
+    assert len(sampler) == len(batches)
     bio = labeled_indices(dataset, "mask_bio")
     tox = labeled_indices(dataset, "mask_tox")
     assert_unique_batches(batches, 6)
@@ -98,6 +102,7 @@ def test_mixed_repeated_epochs_preserve_coverage_and_pools():
     ]
     for _ in range(3):
         batches = list(sampler)
+        assert len(sampler) == len(batches)
         assert_unique_batches(batches, 6)
         assert {i for batch in batches for i in batch} == set(range(len(dataset)))
     assert [sampler.bio_only, sampler.tox_only, sampler.both] == original
@@ -108,6 +113,7 @@ def test_seed_reproduces_batches(sampler_class):
     sampler = sampler_class(MaskDataset(20, 10, 5), 8)
     random.seed(123)
     first = list(sampler)
+    assert len(sampler) == len(first)
     random.seed(123)
     assert first == list(sampler)
 
@@ -141,7 +147,9 @@ def test_no_labeled_examples_are_rejected(sampler_class, unlabeled):
 @pytest.mark.parametrize("bio,tox,expected_batches", [(9, 2, 4), (2, 9, 4), (6, 6, 4)])
 def test_alternating_bio_then_tox_covers_both_pools(bio, tox, expected_batches):
     dataset = MaskDataset(bio, tox, unlabeled=2)
-    batches = list(AlternatingBatchSampler(dataset, 4))
+    sampler = AlternatingBatchSampler(dataset, 4)
+    batches = list(sampler)
+    assert len(sampler) == expected_batches
     assert_unique_batches(batches, 4, partial=True)
     assert len(batches) == expected_batches
     for offset, mask in enumerate(("mask_bio", "mask_tox")):
@@ -163,6 +171,7 @@ def test_alternating_merges_singleton_tails(bio, tox, size, expected_sizes):
     dataset = MaskDataset(bio, tox)
     sampler = AlternatingBatchSampler(dataset, size)
     batches = list(sampler)
+    assert len(sampler) == len(expected_sizes)
     assert [len(batch) for batch in batches] == expected_sizes
     assert_unique_batches(batches, size, partial=True)
     for offset, mask in enumerate(("mask_bio", "mask_tox")):

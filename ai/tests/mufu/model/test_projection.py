@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from mufu.contract import D_MODEL, MODALITIES
-from mufu.projection import ModalityProjection
+from mufu.model.projection import ModalityProjection
 
 # distinct widths so any mis-routed or shared layer fails on shape
 IN_DIMS = {"smiles": 768, "fingerprint": 512, "graph": 128}

@@ -1,3 +1,8 @@
+"""
+Graph Isomorphism Network with Edge features (GINE) encoder for PyTorch Geometric
+molecular graphs.
+"""
+
 from collections.abc import Sequence
 
 import torch.nn.functional as F

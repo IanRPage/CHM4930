@@ -1,7 +1,7 @@
 """
 Quick check to see if the conda environment is set up right
 
-Run `python src/check_env.py` after activating `CHM4930` env
+Run `python scripts/check_env.py` after activating `CHM4930` env
 """
 
 import pathlib

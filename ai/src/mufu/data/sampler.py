@@ -1,8 +1,16 @@
+"""
+Batch samplers for multi-task training across bioactivity and toxicity pools.
+
+`MixedBatchSampler` builds each batch with a fixed fraction of bioactivity and
+toxicity examples, while `AlternatingBatchSampler` alternates between single-task
+bioactivity and toxicity batches.
+"""
+
 import random
 
 from torch.utils.data import Sampler
 
-from mufu.dataset import MuFuDataset
+from mufu.data.dataset import MuFuDataset
 
 
 class MixedBatchSampler(Sampler[list[int]]):
@@ -52,6 +60,22 @@ class MixedBatchSampler(Sampler[list[int]]):
                 raise ValueError(
                     f"{task} pool has {pool_size} labeled examples, fewer than quota {quota}"
                 )
+
+    def __len__(self) -> int:
+        n_bio = int(self.batch_size * self.bio_fraction)
+        n_tox = self.batch_size - n_bio
+        bio_rem = len(self.bio_only)
+        tox_rem = len(self.tox_only)
+        both_rem = len(self.both)
+        batches = 0
+        while bio_rem > 0 or tox_rem > 0 or both_rem > 0:
+            bio_take = min(n_bio, bio_rem)
+            tox_take = min(n_tox, tox_rem)
+            bio_rem -= bio_take
+            tox_rem -= tox_take
+            both_rem -= min(self.batch_size - bio_take - tox_take, both_rem)
+            batches += 1
+        return batches
 
     def __iter__(self):
         bio_only = self.bio_only.copy()
@@ -141,18 +165,25 @@ class AlternatingBatchSampler(Sampler[list[int]]):
     def task_for_batch(self, batch_index: int) -> str:
         return self.task_names[batch_index % len(self.task_names)]
 
+    def _num_rounds(self) -> int:
+        rounds = 0
+        for pool in self.pools:
+            full_batches, remainder = divmod(len(pool), self.batch_size)
+            # Merge a batch smaller than 2
+            pool_rounds = full_batches + int(remainder >= 2)
+            rounds = max(rounds, pool_rounds, 1)
+        return rounds
+
+    def __len__(self) -> int:
+        return self._num_rounds() * len(self.pools)
+
     def __iter__(self):
         pools = [pool.copy() for pool in self.pools]
         for pool in pools:
             random.shuffle(pool)
         positions = [0] * len(pools)
 
-        rounds = 0
-        for pool in pools:
-            full_batches, remainder = divmod(len(pool), self.batch_size)
-            # Merge a batch smaller than 2
-            pool_rounds = full_batches + int(remainder >= 2)
-            rounds = max(rounds, pool_rounds, 1)
+        rounds = self._num_rounds()
 
         for each in range(rounds):
             for task, pool in enumerate(pools):

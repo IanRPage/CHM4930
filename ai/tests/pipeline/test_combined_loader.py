@@ -204,7 +204,9 @@ def fake_loaders(monkeypatch, small_tasks):
 
 
 def test_refresh_reaches_every_loader(fake_loaders, tmp_path):
-    cl._write_combined(refresh=True, data_dir=tmp_path, path=tmp_path / "c.csv")
+    cl.build_combined(
+        refresh=True, overwrite=True, data_dir=tmp_path, path=tmp_path / "c.csv"
+    )
     assert fake_loaders == {
         "bace1": True,
         "egfr": True,

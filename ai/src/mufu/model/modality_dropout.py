@@ -1,3 +1,7 @@
+"""
+Modality presence mask sampling for training-time input modality dropout.
+"""
+
 import torch
 
 from mufu.contract import DROPOUT_MASKS, MODALITIES, MODALITY_DROPOUT_P

@@ -1,7 +1,13 @@
+"""
+MLP encoder mapping fixed-width ECFP4 fingerprint bit vectors into molecular embeddings.
+"""
+
 from collections.abc import Sequence
 
 import torch
 from torch import nn
+
+from featurize.fingerprint import FINGERPRINT_BITS
 
 
 class FingerprintEncoder(nn.Module):
@@ -14,7 +20,7 @@ class FingerprintEncoder(nn.Module):
 
     def __init__(
         self,
-        in_bits: int = 2048,
+        in_bits: int = FINGERPRINT_BITS,
         hidden_dims: Sequence[int] = (1024, 512),
         dropout: float = 0.2,
         final_activation: bool = True,
