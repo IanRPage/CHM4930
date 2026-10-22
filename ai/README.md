@@ -7,25 +7,24 @@ along with any datasets or checkpoints for saved model weights.
 
 ```
 ai/
-├── data/                     # local data storage
-│   └── baseline/             # frozen combined.csv baselines train on, and their results.csv (tracked)
-├── docs/                     # design docs (MuFu-v1.md)
-├── notebooks/                # exploration / scratchpads
-├── scripts/                  # helpful utility scripts
-├── src/                      # main code
-│   ├── baseline/             # random forest baselines and their results recorder
-│   ├── featurize/            # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
-│   ├── mufu/                 # MuFu multimodal dataset, model, loss, and training components
-│   ├── pipeline/             # dataset loaders and structure to model input preprocessing
-│   ├── encoders/             # where each of MuFu's encoders are implemented
-│   ├── benchmark.py          # shared split, seeding, and scoring every model uses
-│   ├── encoder_benchmark.py  # BACE-1 cohort, resume, and selection for the encoder sweeps
-│   └── evaluation.py         # regression, classification, and multi-task evaluation metrics
-├── tests/                    # pytest suite (mirrors src/)
-├── checkpoints/              # saved model weights
-├── outputs/                  # generated artifacts (figures, logs, metrics, etc.)
-├── environment.yml           # conda environment config
-├── pytest.ini                # pytest config (test paths, import path, markers)
+├── data/               # local data storage
+│   └── baseline/       # frozen combined.csv baselines train on, and their results.csv (tracked)
+├── docs/               # design docs (MuFu-v1.md)
+├── notebooks/          # exploration / scratchpads
+├── scripts/            # helpful utility scripts
+├── src/                # main code
+│   ├── baseline/       # random forest baselines and their results recorder
+│   ├── featurize/      # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
+│   ├── mufu/           # MuFu multimodal dataset, model, loss, and training components
+│   ├── pipeline/       # dataset loaders and structure to model input preprocessing
+│   ├── encoders/       # where each of MuFu's encoders and their benchmark runner live
+│   ├── benchmark.py    # shared split, seeding, and scoring every model uses
+│   └── evaluation.py   # regression, classification, and multi-task evaluation metrics
+├── tests/              # pytest suite (mirrors src/)
+├── checkpoints/        # saved model weights
+├── outputs/            # generated artifacts (figures, logs, metrics, etc.)
+├── environment.yml     # conda environment config
+├── pytest.ini          # pytest config (test paths, import path, markers)
 └── README.md
 ```
 

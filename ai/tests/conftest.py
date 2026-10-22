@@ -6,8 +6,8 @@ import pytest
 import torch
 
 import benchmark as bm
-import encoder_benchmark as eb
 from baseline import results
+from encoders import benchmark as eb
 from pipeline.combined_loader import COMBINED_CSV_PATH
 
 CYCLOALKANE_SMILES = ["C1" + "C" * (n - 1) + "1" for n in range(3, 23)]

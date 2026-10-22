@@ -10,12 +10,12 @@ import torch
 from torch import nn
 
 import benchmark as bm
-import encoder_benchmark as eb
 import encoders.smiles_encoder as smiles_module
 from baseline import results
+from encoders import benchmark as eb
 from pipeline.preprocess import featurize
 
-AI_DIR = Path(__file__).resolve().parents[1]
+AI_DIR = Path(__file__).resolve().parents[2]
 SCRIPTS = ["ECFP4_encoder_sweep", "gnn_encoder_sweep", "SMILES_encoder_sweep"]
 REVISION = "a" * 40
 
@@ -31,7 +31,7 @@ def import_script(name: str):
 
 def measurements(config=None, seed=42):
     return {
-        "cfg": eb.config_json(config or {}),
+        "cfg": bm.config_json(config or {}),
         "seed": seed,
         "best_epoch": 1,
         "secs": 0.1,
@@ -53,7 +53,7 @@ def records(data, experiment="ecfp4_encoder", configs=None, seeds=(0, 1, 2)):
                 **measurements(config, seed),
                 "val_RMSE": 1.0 + position,
                 "test_RMSE": 100.0 - position,
-                "benchmark": eb.config_json(data.metadata),
+                "benchmark": bm.config_json(data.metadata),
                 "sweep_protocol": eb.SWEEP_PROTOCOL,
                 "experiment": experiment,
             }
@@ -210,10 +210,10 @@ def test_load_sweep_records_normalizes_and_rejects_incompatible_files(
     path = tmp_path / "stage.csv"
     table.to_csv(path, index=False)
     loaded = eb.load_sweep_records(path, bace1_data, "ecfp4_encoder")
-    assert loaded["cfg"].eq(eb.config_json({"EPOCHS": 10, "LR": 0.01})).all()
+    assert loaded["cfg"].eq(bm.config_json({"EPOCHS": 10, "LR": 0.01})).all()
 
     if column == "benchmark":
-        value = eb.config_json(bace1_data.metadata | {"data_sha256": "old"})
+        value = bm.config_json(bace1_data.metadata | {"data_sha256": "old"})
     table.loc[0, column] = value
     table.to_csv(path, index=False)
     with pytest.raises(ValueError, match=message):
@@ -307,7 +307,9 @@ def test_run_cli_canonical_selection_dry_run_and_export(
     assert len(after) == 52
 
     with pytest.raises(ValueError, match="discard RF results"):
-        eb.verify_export(bace1_data, results_copy)
+        bm.verify_export(
+            bace1_data.metadata, bace1_data.full, bace1_data.data_path, results_copy
+        )
 
 
 @pytest.mark.parametrize("script", SCRIPTS)

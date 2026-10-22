@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from baseline.results import file_sha256, record_results
+from baseline.results import RESULTS_PATH, file_sha256, record_results
 from evaluation import evaluation_metrics
 from pipeline.bioactivity_loader import PIC50_ACTIVE_THRESHOLD
 from pipeline.combined_loader import (
@@ -38,12 +38,18 @@ ACTIVE_THRESHOLD = PIC50_ACTIVE_THRESHOLD
 
 __all__ = [
     "benchmark_metadata",
+    "config_json",
     "evaluate_predictions",
     "load_benchmark",
     "record_results",
     "set_training_seed",
     "verify_benchmark_metadata",
+    "verify_export",
 ]
+
+
+def config_json(config) -> str:
+    return json.dumps(config, sort_keys=True)
 
 
 def load_benchmark(data_path: Path = COMBINED_CSV_PATH) -> pd.DataFrame:
@@ -112,6 +118,21 @@ def verify_benchmark_metadata(
     )
     if differences:
         raise ValueError(f"benchmark metadata mismatch: {', '.join(differences)}")
+
+
+def verify_export(
+    metadata: dict,
+    df: pd.DataFrame,
+    data_path: Path = COMBINED_CSV_PATH,
+    results_path: Path = RESULTS_PATH,
+) -> None:
+    """Check provenance and refuse an export that would discard existing RF rows."""
+    verify_benchmark_metadata(metadata, df, data_path)
+    if results_path.exists():
+        existing = pd.read_csv(results_path)
+        rf = existing[existing["model"].isin(["rf_bioactivity", "rf_toxicity"])]
+        if not rf["data_sha256"].eq(metadata["data_sha256"]).all():
+            raise ValueError("export would discard RF results from another snapshot")
 
 
 def set_training_seed(seed: int = TRAINING_SEED) -> torch.Generator:

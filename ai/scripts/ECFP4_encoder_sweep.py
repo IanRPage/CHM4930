@@ -25,8 +25,8 @@ from sklearn.linear_model import Ridge
 from torch import nn
 from torch.utils.data import DataLoader
 
-from benchmark import evaluate_predictions, set_training_seed
-from encoder_benchmark import config_json, run_cli
+from benchmark import config_json, evaluate_predictions, set_training_seed
+from encoders.benchmark import run_cli
 from encoders.fingerprint_encoder import FingerprintEncoder
 from pipeline.cache import DATA_DIR
 

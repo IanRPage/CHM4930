@@ -23,8 +23,8 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from benchmark import evaluate_predictions, set_training_seed
-from encoder_benchmark import config_json, run_cli
+from benchmark import config_json, evaluate_predictions, set_training_seed
+from encoders.benchmark import run_cli
 from pipeline.cache import DATA_DIR
 
 OUT = DATA_DIR.parent / "outputs" / "encoders" / "SMILES" / "sweep"

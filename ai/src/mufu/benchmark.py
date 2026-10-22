@@ -11,7 +11,6 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -20,7 +19,6 @@ from torch.utils.data import DataLoader
 
 import benchmark as bm
 from baseline.results import RESULTS_PATH
-from encoder_benchmark import config_json, verify_export
 from mufu import contract as c
 from mufu.data.dataset import LABELS, MASKS, MuFuDataset, collate
 from mufu.model import MuFu
@@ -101,7 +99,7 @@ def _state_sha256(model):
     _validate_state(state, state)
     digest = hashlib.sha256()
     for name, tensor in sorted(state.items()):
-        description = config_json(
+        description = bm.config_json(
             [name, str(tensor.dtype), list(tensor.shape)]
         ).encode()
         digest.update(len(description).to_bytes(8, "big"))
@@ -196,7 +194,7 @@ def _metric_rows(dataset, endpoint, split, metrics, labels, params):
             "value": value,
             "n_labeled": len(observed) if observed is not None else np.nan,
             "n_positive": int(positive.sum()) if positive is not None else np.nan,
-            "params": config_json(params),
+            "params": bm.config_json(params),
         }
         for metric, value in metrics.items()
     ]
@@ -310,7 +308,6 @@ def evaluate_mufu(
         raise ValueError("supply checkpoint provenance or training, not both")
     full = bm.load_benchmark(data_path)
     metadata = bm.benchmark_metadata(full, data_path)
-    context = SimpleNamespace(full=full, metadata=metadata, data_path=data_path)
     state = None
     identity = {"source": "in_memory", "file_sha256": None}
     if checkpoint is not None:
@@ -329,7 +326,7 @@ def evaluate_mufu(
             "test evaluation/export requires attested trained, validation-selected weights"
         )
     if write_results:
-        verify_export(context, results_path)
+        bm.verify_export(metadata, full, data_path, results_path)
     if state is not None:
         _validate_state(state, model.state_dict())
         model.load_state_dict(state, strict=True)
@@ -372,6 +369,6 @@ def evaluate_mufu(
         for module, mode in modes.items():
             module.training = mode
     if write_results:
-        verify_export(context, results_path)
+        bm.verify_export(metadata, full, data_path, results_path)
         bm.record_results(rows, model=MODEL_ID, path=results_path, data_path=data_path)
     return MuFuEvaluation(rows, predictions, metadata, identity, provenance is not None)

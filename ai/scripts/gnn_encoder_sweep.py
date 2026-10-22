@@ -23,8 +23,8 @@ from torch import nn
 from torch.utils.data import BatchSampler, RandomSampler
 from torch_geometric.loader import DataLoader
 
-from benchmark import evaluate_predictions, set_training_seed
-from encoder_benchmark import config_json, run_cli
+from benchmark import config_json, evaluate_predictions, set_training_seed
+from encoders.benchmark import run_cli
 from encoders.gnn_encoder import GNNEncoder
 from pipeline.cache import DATA_DIR
 
