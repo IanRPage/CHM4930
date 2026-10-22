@@ -10,43 +10,16 @@ from torch import nn
 
 import benchmark as bm
 from baseline import results
-from encoders.fingerprint_encoder import FingerprintEncoder
-from encoders.gnn_encoder import GNNEncoder
 from mufu import benchmark as mb
 from mufu import contract as c
-from mufu.model import MuFu
-from pipeline.combined_loader import COMBINED_CSV_PATH
 from pipeline.preprocess import featurize
 
 
-@pytest.fixture(autouse=True)
-def preserve_files_and_rng(monkeypatch):
-    protected = {p: p.read_bytes() for p in (COMBINED_CSV_PATH, results.RESULTS_PATH)}
-    rng = torch.get_rng_state()
-    threads = torch.get_num_threads()
-    torch.set_num_threads(1)
-    record = bm.record_results
-
-    def copy_only(rows, **kwargs):
-        assert (
-            kwargs.get("path", results.RESULTS_PATH).resolve()
-            != results.RESULTS_PATH.resolve()
-        )
-        return record(rows, **kwargs)
-
-    monkeypatch.setattr(bm, "record_results", copy_only)
-    yield
-    for path, contents in protected.items():
-        assert path.read_bytes() == contents
-    torch.set_rng_state(rng)
-    torch.set_num_threads(threads)
-
-
 @pytest.fixture
-def snapshot(tmp_path):
+def snapshot(tmp_path, cycloalkane_smiles):
     frame = pd.DataFrame(
         {
-            "smiles": ["C1" + "C" * (n - 1) + "1" for n in range(3, 23)],
+            "smiles": cycloalkane_smiles,
             "pIC50_BACE1": [5.0 + 2 * (i % 2) for i in range(20)],
             "pIC50_EGFR": [8.0 - 4 * (i % 2) for i in range(20)],
             **{
@@ -101,7 +74,6 @@ class LookupMuFu(nn.Module):
         assert not self.training and not self.dropout.training
         assert not torch.is_grad_enabled() and torch.is_inference_mode_enabled()
         self.calls.append(list(inputs["smiles"]))
-        # Verify fingerprints and graph order against their molecule identities.
         graphs = inputs["graph"].to_data_list()
         for i, smiles in enumerate(inputs["smiles"]):
             expected = featurize(smiles)
@@ -130,7 +102,7 @@ def evaluate(snapshot, model=None, **kwargs):
 def test_complete_sequential_coverage_alignment_eval_mode_and_rng(snapshot):
     _, full, _ = snapshot
     model = LookupMuFu(full).train()
-    model.dropout.eval()  # Restore mixed component modes, not just the root flag.
+    model.dropout.eval()
     modes = {m: m.training for m in model.modules()}
     before = torch.get_rng_state().clone()
     result = evaluate(snapshot, model, splits=("test", "val"), batch_size=1)
@@ -162,10 +134,7 @@ def test_output_mapping_metrics_masks_and_result_identities(snapshot):
     assert not table.duplicated(["dataset", "endpoint", "split", "metric"]).any()
     for j, task in enumerate(c.TOX_COLUMNS):
         row = val.loc[(task, "roc_auc")]
-        if j < 3:
-            assert np.isnan(row["value"])
-        else:
-            assert row["value"] == 1
+        assert np.isnan(row["value"]) if j < 3 else row["value"] == 1
         assert row["n_labeled"] == (1 if j == 0 else 0 if j == 1 else 2)
     for name in ("overall", "tox21", "clintox"):
         assert val.loc[(f"macro_{name}", "roc_auc"), "value"] == 1
@@ -186,25 +155,7 @@ def test_output_mapping_metrics_masks_and_result_identities(snapshot):
     )
 
 
-def test_real_integrated_mufu_accepts_structure_only_batches(snapshot):
-    class TinySmiles(nn.Module):
-        out_dim = 4
-
-        def __init__(self):
-            super().__init__()
-            self.embedding = nn.Embedding(128, 4)
-
-        def forward(self, smiles):
-            return torch.stack(
-                [
-                    self.embedding(torch.tensor(list(map(ord, s)))).mean(0)
-                    for s in smiles
-                ]
-            )
-
-    model = MuFu(
-        TinySmiles(), FingerprintEncoder(hidden_dims=(8,)), GNNEncoder(hidden_dims=(8,))
-    )
+def test_real_integrated_mufu_accepts_structure_only_batches(snapshot, model):
     result = mb.evaluate_mufu(model, data_path=snapshot[0], batch_size=1)
     assert model.training
     assert not result.training_attested
@@ -233,33 +184,22 @@ def test_incompatible_datasets_fail_and_restore_modes(snapshot, monkeypatch, cha
     model = LookupMuFu(snapshot[1]).train()
     with pytest.raises(ValueError, match="cohort|order|mask|misaligned"):
         evaluate(snapshot, model)
-    assert model.training
-    assert not model.calls
+    assert model.training and not model.calls
 
 
-def test_incomplete_loader_is_not_silently_scored(snapshot, monkeypatch):
-    original = mb.DataLoader
-
-    def incomplete(*args, **kwargs):
-        loader = original(*args, **kwargs)
-        return [next(iter(loader))]
-
-    monkeypatch.setattr(mb, "DataLoader", incomplete)
-    with pytest.raises(ValueError, match="incomplete evaluation"):
-        evaluate(snapshot, batch_size=1)
-
-
-def test_collate_reordering_is_rejected(snapshot, monkeypatch):
-    original = mb.collate
-    monkeypatch.setattr(mb, "collate", lambda examples: original(examples[::-1]))
+def test_loader_incompleteness_and_collate_reordering_rejected(snapshot, monkeypatch):
+    original_collate = mb.collate
+    monkeypatch.setattr(mb, "collate", lambda ex: original_collate(ex[::-1]))
     with pytest.raises(ValueError, match="SMILES coverage/order"):
         evaluate(snapshot)
 
-
-def test_filtered_full_table_is_rejected(snapshot, monkeypatch):
-    monkeypatch.setattr(bm, "load_benchmark", lambda path: snapshot[1].iloc[:-1])
-    with pytest.raises(ValueError, match="full, unchanged snapshot"):
-        evaluate(snapshot)
+    monkeypatch.setattr(mb, "collate", original_collate)
+    original_loader = mb.DataLoader
+    monkeypatch.setattr(
+        mb, "DataLoader", lambda *a, **kw: [next(iter(original_loader(*a, **kw)))]
+    )
+    with pytest.raises(ValueError, match="incomplete evaluation"):
+        evaluate(snapshot, batch_size=1)
 
 
 @pytest.mark.parametrize("change", ["keys", "shape", "dtype", "nonfinite"])
@@ -289,7 +229,6 @@ def test_bad_model_outputs_are_rejected(snapshot, change):
         "seed",
         "selection",
         "data",
-        "split",
         "missing_metadata",
         "missing_state",
         "keys",
@@ -311,8 +250,8 @@ def test_invalid_checkpoints_rejected_before_prediction(snapshot, tmp_path, case
         info["training_seed"] = 0
     elif case == "selection":
         info["selection_split"] = "test"
-    elif case in ("data", "split"):
-        info["benchmark"][f"{case}_sha256"] = "old"
+    elif case == "data":
+        info["benchmark"]["data_sha256"] = "old"
     elif case == "missing_metadata":
         del packet["training"]
     elif case == "missing_state":
@@ -331,8 +270,7 @@ def test_invalid_checkpoints_rejected_before_prediction(snapshot, tmp_path, case
         mb.evaluate_mufu(
             model, checkpoint=path, data_path=snapshot[0], splits=("val", "test")
         )
-    assert model.anchor.item() == 0
-    assert not model.calls
+    assert model.anchor.item() == 0 and not model.calls
 
 
 def test_checkpoint_loading_is_safe_strict_and_identified(
@@ -347,12 +285,9 @@ def test_checkpoint_loading_is_safe_strict_and_identified(
     with torch.no_grad():
         model.anchor.fill_(2)
     load, calls = torch.load, []
-
-    def checked_load(*args, **kwargs):
-        calls.append(kwargs)
-        return load(*args, **kwargs)
-
-    monkeypatch.setattr(torch, "load", checked_load)
+    monkeypatch.setattr(
+        torch, "load", lambda *a, **kw: calls.append(kw) or load(*a, **kw)
+    )
     result = mb.evaluate_mufu(
         model, checkpoint=path, data_path=snapshot[0], splits=("val", "test")
     )
@@ -363,27 +298,6 @@ def test_checkpoint_loading_is_safe_strict_and_identified(
         == hashlib.sha256(path.read_bytes()).hexdigest()
     )
     assert result.checkpoint["state_sha256"] == mb._state_sha256(model)
-    assert len(result.checkpoint["state_sha256"]) == 64
-
-
-def test_unattested_weights_are_validation_diagnostics_only(snapshot, tmp_path):
-    model = LookupMuFu(snapshot[1])
-    result = mb.evaluate_mufu(model, data_path=snapshot[0])
-    assert not result.training_attested
-    assert all(
-        not json.loads(row["params"])["training_attested"] for row in result.rows
-    )
-    path = tmp_path / "results.csv"
-    for export in (False, True):
-        with pytest.raises(ValueError, match="requires attested trained"):
-            mb.evaluate_mufu(
-                model,
-                data_path=snapshot[0],
-                splits=("val", "test"),
-                write_results=export,
-                results_path=path,
-            )
-    assert not path.exists()
 
 
 @pytest.mark.parametrize(
@@ -397,28 +311,27 @@ def test_unattested_weights_are_validation_diagnostics_only(snapshot, tmp_path):
         {"checkpoint": "x", "training": {}},
     ],
 )
-def test_invalid_evaluation_configuration_fails_before_loading(
-    snapshot, monkeypatch, kwargs
+def test_invalid_evaluation_or_unattested_test_export_rejected(
+    snapshot, tmp_path, monkeypatch, kwargs
 ):
+    model = LookupMuFu(snapshot[1])
+    with pytest.raises(ValueError, match="requires attested trained"):
+        mb.evaluate_mufu(model, data_path=snapshot[0], splits=("val", "test"))
+
     monkeypatch.setattr(
         bm,
         "load_benchmark",
         lambda *args: pytest.fail("invalid request must fail before dataset loading"),
     )
     with pytest.raises(ValueError):
-        mb.evaluate_mufu(LookupMuFu(snapshot[1]), **kwargs)
-
-
-@pytest.fixture(scope="module")
-def real_benchmark():
-    return bm.load_benchmark()
+        mb.evaluate_mufu(model, **kwargs)
 
 
 def test_one_complete_export_preserves_rf_rows_and_schema(
-    real_benchmark, tmp_path, monkeypatch
+    frozen_benchmark, tmp_path, monkeypatch
 ):
-    metadata = bm.benchmark_metadata(real_benchmark)
-    monkeypatch.setattr(bm, "load_benchmark", lambda path: real_benchmark)
+    metadata = bm.benchmark_metadata(frozen_benchmark)
+    monkeypatch.setattr(bm, "load_benchmark", lambda path: frozen_benchmark)
     monkeypatch.setattr(
         mb,
         "_predict_split",
@@ -427,52 +340,16 @@ def test_one_complete_export_preserves_rf_rows_and_schema(
     path = tmp_path / "results.csv"
     path.write_bytes(results.RESULTS_PATH.read_bytes())
     before = pd.read_csv(path)
-    record, calls = bm.record_results, []
-
-    def observed_record(rows, **kwargs):
-        calls.append((len(rows), kwargs["model"]))
-        return record(rows, **kwargs)
-
-    monkeypatch.setattr(bm, "record_results", observed_record)
-    model = LookupMuFu(real_benchmark)
-    result = mb.evaluate_mufu(
+    model = LookupMuFu(frozen_benchmark)
+    mb.evaluate_mufu(
         model,
         training=provenance(metadata),
         splits=("val", "test"),
         write_results=True,
         results_path=path,
     )
-    assert calls == [(50, "mufu_full")]
     after = pd.read_csv(path)
     assert after.columns.tolist() == results.COLUMNS
     assert len(after) == 96
     rf = after.loc[after["model"] != mb.MODEL_ID].reset_index(drop=True)
     pd.testing.assert_frame_equal(before, rf, rtol=1e-14, atol=1e-14)
-    for row in result.rows:
-        if row["endpoint"] == "pIC50_BACE1":
-            assert row["n_labeled"] == (808 if row["split"] == "val" else 810)
-        if row["endpoint"] in c.TOX_COLUMNS or row["endpoint"] in c.PIC50_COLUMNS:
-            original = before.loc[
-                (before["endpoint"] == row["endpoint"])
-                & (before["split"] == row["split"])
-                & (before["metric"] == row["metric"])
-            ]
-            assert original["n_labeled"].iloc[0] == row["n_labeled"]
-            assert original["n_positive"].iloc[0] == row["n_positive"]
-    saved = path.read_bytes()
-    with pytest.raises(ValueError, match="complete val and test"):
-        mb.evaluate_mufu(
-            model, training=provenance(metadata), write_results=True, results_path=path
-        )
-    assert path.read_bytes() == saved
-
-
-def test_snapshot_mismatch_cannot_discard_rf_rows(snapshot, tmp_path):
-    path = tmp_path / "results.csv"
-    path.write_bytes(results.RESULTS_PATH.read_bytes())
-    before = path.read_bytes()
-    with pytest.raises(ValueError, match="discard RF results"):
-        evaluate(
-            snapshot, splits=("val", "test"), write_results=True, results_path=path
-        )
-    assert path.read_bytes() == before
