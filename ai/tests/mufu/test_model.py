@@ -12,7 +12,7 @@ from mufu.contract import (
     TOX_COLUMNS,
     validate_batch,
 )
-from mufu.dataset import MuFuDataset, collate
+from mufu.dataset import MuFuDataset, collate, to_device
 from mufu.modality_dropout import sample_modality_mask
 from mufu.model import MuFu
 from mufu.task_loss import TaskLoss
@@ -32,7 +32,9 @@ class SmallSmilesEncoder(nn.Module):
     def forward(self, smiles):
         embeddings = []
         for text in smiles:
-            tokens = torch.tensor([ord(char) for char in text])
+            tokens = torch.tensor(
+                [ord(char) for char in text], device=self.embedding.weight.device
+            )
             embeddings.append(self.embedding(tokens).mean(dim=0))
         return torch.stack(embeddings)
 
@@ -130,11 +132,26 @@ def test_single_molecule_eval_matches_batch_prediction(model, dataset):
         )
 
 
-def test_mixed_batch_loss_reaches_every_trainable_part(model, labeled_dataset):
-    batch = collate([labeled_dataset[i] for i in range(len(labeled_dataset))])
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="needs CUDA"
+            ),
+        ),
+    ],
+)
+def test_mixed_batch_loss_reaches_every_trainable_part(model, labeled_dataset, device):
+    batch = to_device(
+        collate([labeled_dataset[i] for i in range(len(labeled_dataset))]), device
+    )
     validate_batch(batch)
-    task_loss = TaskLoss.from_dataset(labeled_dataset)
-    weighting = UncertaintyWeighting()
+    model = model.to(device)
+    task_loss = TaskLoss.from_dataset(labeled_dataset).to(device)
+    weighting = UncertaintyWeighting().to(device)
     model.train()
 
     with torch.random.fork_rng(devices=[]):
