@@ -124,15 +124,21 @@ def test_train_step_skips_unlabeled_batch_leaving_all_params_unchanged(
         assert torch.equal(param, params_before[name]), name
 
 
-def test_predict_output_keys_and_shapes(model, dataset):
+def test_predict_output_keys_shapes_and_probabilities(model, dataset):
+    with torch.no_grad():
+        model.classification_head.linear.bias.fill_(10.0)
+        model.toxicity_head.linear.bias.fill_(-10.0)
     model.train()
 
     preds = predict(model, dataset, batch_size=3)
 
     assert not model.training
-    expected_keys = (*PIC50_COLUMNS, *ACTIVE_COLUMNS, *TOX_COLUMNS)
-    assert tuple(preds) == expected_keys
-    for col in expected_keys:
+    expected_cols = (*PIC50_COLUMNS, *ACTIVE_COLUMNS, *TOX_COLUMNS)
+    assert tuple(preds) == ("smiles", *expected_cols)
+    assert preds["smiles"] == dataset.smiles
+    for col in expected_cols:
         assert isinstance(preds[col], np.ndarray)
         assert preds[col].shape == (len(dataset),)
         assert preds[col].dtype == float
+    for col in (*ACTIVE_COLUMNS, *TOX_COLUMNS):
+        assert ((0.0 <= preds[col]) & (preds[col] <= 1.0)).all()

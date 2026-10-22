@@ -1,5 +1,6 @@
 import pytest
 import torch
+from conftest import DEVICES
 
 from mufu.contract import MODALITIES, validate_batch
 from mufu.dataset import collate, to_device
@@ -64,18 +65,7 @@ def test_single_molecule_eval_matches_batch_prediction(model, dataset):
         )
 
 
-@pytest.mark.parametrize(
-    "device",
-    [
-        "cpu",
-        pytest.param(
-            "cuda",
-            marks=pytest.mark.skipif(
-                not torch.cuda.is_available(), reason="needs CUDA"
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("device", DEVICES)
 def test_mixed_batch_loss_reaches_every_trainable_part(model, labeled_dataset, device):
     batch = to_device(
         collate([labeled_dataset[i] for i in range(len(labeled_dataset))]), device

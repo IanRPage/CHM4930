@@ -10,6 +10,13 @@ from mufu.dataset import MuFuDataset
 from mufu.model import MuFu
 
 SMILES = ["CCO", "CCN", "CCC", "c1ccccc1", "CC(=O)O", "C", "CO", "CN"]
+DEVICES = [
+    "cpu",
+    pytest.param(
+        "cuda",
+        marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA"),
+    ),
+]
 
 
 class SmallSmilesEncoder(nn.Module):
