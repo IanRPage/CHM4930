@@ -153,8 +153,9 @@ def _as_numpy(values) -> np.ndarray:
 def evaluate_predictions(y_true, y_score, task_type: str, mask=None) -> dict:
     """Evaluate aligned continuous scores with the shared metrics and label masks.
 
-    Supplied masks are intersected with observed labels. Nonfinite observed labels
-    or predictions are errors, rather than silently reducing the evaluation cohort.
+    Supplied masks must contain only booleans and are intersected with observed
+    labels. Nonfinite observed labels or predictions are errors, rather than
+    silently reducing the evaluation cohort.
     Use predicted pIC50 for the existing bioactivity ROC-AUC and continuous positive
     class scores for toxicity. Undefined metrics retain evaluation_metrics' NaNs.
     """
@@ -166,10 +167,18 @@ def evaluate_predictions(y_true, y_score, task_type: str, mask=None) -> dict:
         raise ValueError("y_true and y_score must have the same shape")
     observed = ~np.isnan(labels)
     if mask is not None:
-        supplied = _as_numpy(mask).astype(bool)
+        if isinstance(mask, torch.Tensor):
+            if mask.dtype != torch.bool:
+                raise ValueError("mask must contain only boolean values")
+            mask = mask.detach().cpu().numpy()
+        supplied = np.asarray(mask)
         if supplied.shape != labels.shape:
             raise ValueError("mask must have the same shape as y_true")
-        observed &= supplied
+        if supplied.dtype != bool and not all(
+            isinstance(value, (bool, np.bool_)) for value in supplied.flat
+        ):
+            raise ValueError("mask must contain only boolean values")
+        observed &= supplied.astype(bool)
     if not np.isfinite(labels[observed]).all():
         raise ValueError("observed labels must be finite")
     if not np.isfinite(scores[observed]).all():

@@ -232,6 +232,153 @@ selection method, device, and determinism setting are stored in `params`.
 Re-export replaces only that encoder's rows on the current snapshot. Export
 refuses a snapshot mismatch that would discard existing RF results.
 
+### Standalone SMILES Encoder
+
+`scripts/SMILES_encoder_sweep.py` evaluates the existing MolFormer wrapper with
+frozen pretrained weights and a trainable linear pIC50 head. It uses the same
+6,469/808/810 BACE-1 cohort, seed-42 canonical run, validation checkpoint selection,
+metrics, and results recorder as the other standalone encoders. It does not run
+the full MuFu model.
+
+Supply an immutable 40-character pretrained commit SHA in `pretrained.json`:
+
+```json
+{
+  "MODEL_NAME": "ibm-research/MoLFormer-XL-both-10pct",
+  "PRETRAINED_REVISION": "<40-character commit SHA from the model repository>",
+  "FREEZE": true
+}
+```
+
+The placeholder must be replaced with a real revision; a moving branch such as
+`main` is rejected. The same revision is passed to the model and tokenizer. The
+requested/resolved revision, model identity, freezing policy, selected epoch,
+training configuration, seed, and benchmark metadata are retained in result
+parameters. The wrapper's existing unpinned behavior remains available to other
+callers that omit its new `revision` argument.
+
+```sh
+python scripts/SMILES_encoder_sweep.py --stage-config pretrained.json
+python scripts/SMILES_encoder_sweep.py --benchmark --select-from outputs/encoders/SMILES/sweep/1-head.csv --write-results
+python scripts/SMILES_encoder_sweep.py --benchmark --config pretrained.json --dry-run
+```
+
+The exploratory stage compares three head learning rates on seeds 0, 1, and 2
+using validation only. `--stage-config` supplies overrides to those configurations;
+it is separate from canonical `--config`. Canonical selection uses a complete
+matching seed set, retrains the chosen head with seed 42, and evaluates test only
+after restoring the best validation checkpoint. The encoder remains frozen and
+in evaluation mode. Only training labels update the head; frozen train/validation
+embeddings are reused, and test embeddings are requested after selection.
+
+Results use model identifier `smiles_encoder` and the existing six-row
+validation/test format. As with the other encoders, export requires
+`--write-results`; dry runs load neither Transformers nor pretrained weights and
+never export. Actual execution requires the declared Transformers dependency and
+the pinned pretrained model/tokenizer, either locally available or obtainable
+from their model repository. Offline tests replace pretrained loading with small
+local mocks and do not download weights.
+
+The GNN runner merges a final singleton training batch into its preceding batch
+to satisfy BatchNorm. Normal batches keep their existing order and sizes, and no
+training examples are dropped. Evaluation batching is unchanged and retains all
+samples, including singleton final batches.
+
+## Full MuFu Benchmark Evaluation
+
+`mufu.benchmark.evaluate_mufu()` is an inference-only adapter. SCRUM-60 owns model
+construction, training, and validation-based checkpoint selection. Pass the
+selected model on its evaluation device; the adapter does not construct encoders,
+download weights, train, select checkpoints, or move the model between devices.
+
+After training, invoke it with the actual training provenance. `training_metadata`
+below must be the benchmark metadata retained from the full frozen table used for
+training, and `global_step` must be the actual number of completed training steps:
+
+```python
+from mufu.benchmark import evaluate_mufu
+
+training = {
+    "trained": True,
+    "training_steps": global_step,
+    "training_seed": 42,
+    "selection_split": "val",
+    "benchmark": training_metadata,
+    # Optional: run ID, selected epoch/criterion, encoder configuration/revisions.
+}
+report = evaluate_mufu(
+    selected_model,
+    training=training,
+    splits=("val", "test"),
+    batch_size=64,
+    write_results=True,
+)
+```
+
+No trainer changes are needed beyond invoking the adapter with this information.
+The adapter requires explicit training attestation, positive training steps, seed
+42, validation selection, and matching dataset/split/protocol metadata for test
+evaluation or export. This guards against accidentally reporting random initial
+weights; it cannot prove a caller's training-history declaration. Do not fabricate
+provenance for untrained or synthetic models.
+
+For a saved checkpoint, construct a compatible MuFu model first. The optional
+checkpoint format contains tensors and primitive metadata:
+
+```python
+from pathlib import Path
+import torch
+
+torch.save(
+    {"model_state_dict": selected_model.state_dict(), "training": training},
+    "selected.pt",
+)
+report = evaluate_mufu(
+    constructed_model,
+    checkpoint=Path("selected.pt"),
+    splits=("val", "test"),
+    write_results=True,
+)
+```
+
+Checkpoint loading uses `weights_only=True`, validates provenance plus exact
+state keys/shapes/dtypes and finite tensor values, and loads weights in-place.
+Pass either checkpoint metadata or `training`, not both. Existing checkpoint
+formats can instead be loaded by SCRUM-60 and passed through the in-memory model
+interface. Checkpoint identity includes a SHA-256 of the evaluated state and, for
+file loading, a raw file checksum.
+
+The default call `evaluate_mufu(model)` returns validation diagnostics only, marked
+`training_attested=False`. Without valid provenance, test evaluation and export
+are refused. Results are never written by default. Export requires **both** val
+and test, producing all 50 rows in one existing-recorder call under `mufu_full`:
+
+- BACE-1/EGFR pIC50: RMSE, R2, and pIC50-derived activity ROC-AUC.
+- `active_BACE1`/`active_EGFR`: separate classification-head ROC-AUC.
+- Fourteen toxicity endpoints and overall/Tox21/ClinTox macro ROC-AUC groups.
+
+Continuous logits score classification heads; pIC50-derived ROC-AUC retains its
+existing `pIC50_*` identity. Endpoint counts use observed labels, undefined metrics
+remain NaN, and macro counts follow the RF convention. The 13-column results
+schema is unchanged. Parameters record score source, training provenance,
+checkpoint identity, benchmark metadata, and evaluation configuration. Re-export
+replaces the complete `mufu_full` result set while preserving compatible RF and
+standalone encoder rows; incompatible RF snapshot checks abort before export.
+
+Evaluation splits the full frozen table before building partition datasets. It
+rejects molecule loss/reordering or label/mask mismatches, runs sequential batches
+without dropping samples or using training samplers, and calls the model with only
+the three `MuFuInputs` fields. All modules enter evaluation mode and gradients are
+disabled, so normal MuFu modality dropout is off. Previous component modes are
+restored, and the evaluation loader uses a private generator without reseeding
+training RNGs. No test labels are used to select weights.
+
+`report.rows` contains metric rows; `report.predictions[split][output]` contains
+output DataFrames indexed by unique SMILES in evaluation order, with columns from
+the MuFu contract. Mocked offline tests exercise this workflow without pretrained
+downloads or publishing synthetic measurements. Real performance requires the
+selected trained weights supplied by SCRUM-60.
+
 ## Testing
 
 Tests use [`pytest`](https://docs.pytest.org). From anywhere inside this
@@ -251,7 +398,7 @@ they're skipped by default. To run `network` tests, do:
 pytest -m network
 ```
 
-`tests/test_smiles_encoder.py` imports `transformers` during collection, even
+`tests/encoders/test_smiles_encoder.py` imports `transformers` during collection, even
 though its model downloads are mocked. If collection fails with
 `ModuleNotFoundError: transformers`, the local environment is incomplete:
 `environment.yml` already declares the pinned dependency in its `pip` section.

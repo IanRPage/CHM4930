@@ -13,12 +13,14 @@ import copy
 import itertools
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import torch
 from torch import nn
+from torch.utils.data import BatchSampler, RandomSampler
 from torch_geometric.loader import DataLoader
 
 from benchmark import evaluate_predictions, set_training_seed
@@ -28,6 +30,30 @@ from pipeline.cache import DATA_DIR
 
 OUT = DATA_DIR.parent / "outputs" / "encoders" / "GNN" / "sweep"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+class TrainingBatchSampler(BatchSampler):
+    """Keep every training example, merging a singleton tail for BatchNorm."""
+
+    def __iter__(self):
+        previous = None
+        for batch in super().__iter__():
+            if previous is not None:
+                if len(batch) == 1:
+                    yield previous + batch
+                    return
+                yield previous
+            previous = batch
+        if previous is not None:
+            yield previous
+
+    def __len__(self):
+        count = super().__len__()
+        return count - int(
+            not self.drop_last
+            and count > 1
+            and len(self.sampler) % self.batch_size == 1
+        )
 
 
 @torch.no_grad()
@@ -45,10 +71,25 @@ def predict(model, indices, batch_size, graphs):
     return torch.cat(predictions)
 
 
+@contextmanager
+def _deterministic_training():
+    enabled = torch.are_deterministic_algorithms_enabled()
+    warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+    try:
+        torch.use_deterministic_algorithms(True)
+        yield
+    finally:
+        torch.use_deterministic_algorithms(enabled, warn_only=warn_only)
+
+
+@_deterministic_training()
 def train_gnn(cfg, seed, data, *, evaluate_test=False):
     generator = set_training_seed(seed)
-    torch.use_deterministic_algorithms(True)
     train, val = data.indices["train"], data.indices["val"]
+    if cfg["BATCH_SIZE"] < 2 or len(train) < 2:
+        raise ValueError(
+            "GNN training needs a batch size and training cohort of at least 2"
+        )
     y, graphs = data.y, data.graphs()
     encoder = GNNEncoder(
         hidden_dims=cfg["HIDDEN_DIMS"],
@@ -63,10 +104,14 @@ def train_gnn(cfg, seed, data, *, evaluate_test=False):
         lr=cfg["LR"],
         weight_decay=cfg["WEIGHT_DECAY"],
     )
+    train_graphs = [graphs[i] for i in train]
     train_loader = DataLoader(
-        [graphs[i] for i in train],
-        batch_size=cfg["BATCH_SIZE"],
-        shuffle=True,
+        train_graphs,
+        batch_sampler=TrainingBatchSampler(
+            RandomSampler(train_graphs, generator=generator),
+            cfg["BATCH_SIZE"],
+            drop_last=False,
+        ),
         generator=generator,
     )
     best_rmse, best_state, best_epoch = float("inf"), None, 0
@@ -98,6 +143,7 @@ def train_gnn(cfg, seed, data, *, evaluate_test=False):
     model.load_state_dict(best_state)
     return {
         "best_epoch": best_epoch,
+        "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
         **data.score(
             lambda idx: predict(model, idx, cfg["BATCH_SIZE"], graphs),
             evaluate_test=evaluate_test,
@@ -262,7 +308,6 @@ def run(cfg, seed, data, *, evaluate_test=False):
         **result,
         "secs": round(time.time() - start, 1),
         "device": str(DEVICE),
-        "deterministic_algorithms": torch.are_deterministic_algorithms_enabled(),
     }
 
 

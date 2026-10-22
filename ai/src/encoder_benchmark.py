@@ -178,6 +178,11 @@ def canonical_rows(data, config, measurements, *, encoder, selection):
             "score_source": "predicted_pic50",
             "device": measurements.get("device"),
             "deterministic_algorithms": measurements.get("deterministic_algorithms"),
+            **(
+                {"pretrained": measurements["pretrained"]}
+                if "pretrained" in measurements
+                else {}
+            ),
         }
     )
     return [
@@ -223,6 +228,11 @@ def run_cli(argv, *, stages, output_dir, experiment, encoder, normalize_config, 
     parser.add_argument("--selection-seeds", type=int, nargs="+", default=[0, 1, 2])
     parser.add_argument("--output-dir", type=Path, default=output_dir)
     parser.add_argument(
+        "--stage-config",
+        type=Path,
+        help="JSON configuration overrides for exploratory stages",
+    )
+    parser.add_argument(
         "--write-results", action="store_true", help="explicitly export results.csv"
     )
     parser.add_argument(
@@ -230,9 +240,9 @@ def run_cli(argv, *, stages, output_dir, experiment, encoder, normalize_config, 
     )
     args = parser.parse_args(argv)
     if args.benchmark:
-        if args.stages or not (args.config or args.select_from):
+        if args.stages or args.stage_config or not (args.config or args.select_from):
             parser.error(
-                "--benchmark requires --config or --select-from, without stages"
+                "--benchmark requires --config or --select-from, without stages or --stage-config"
             )
     elif args.config or args.select_from or args.write_results:
         parser.error("configuration selection and --write-results require --benchmark")
@@ -240,6 +250,17 @@ def run_cli(argv, *, stages, output_dir, experiment, encoder, normalize_config, 
     names = [by_number.get(arg, arg) for arg in args.stages] or list(stages)
     if unknown := set(names) - set(stages):
         parser.error(f"unknown stages {sorted(unknown)}")
+    if args.stage_config:
+        overrides = json.loads(args.stage_config.read_text())
+        if not isinstance(overrides, dict):
+            parser.error("--stage-config must contain a JSON object")
+        stages = {
+            name: (
+                [normalize_config(cfg | overrides) for cfg in stages[name][0]],
+                stages[name][1],
+            )
+            for name in names
+        }
 
     data = BACE1Benchmark.load()
     if args.benchmark:

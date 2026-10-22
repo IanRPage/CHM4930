@@ -72,13 +72,14 @@ def frozen_data():
 def cpu_training(monkeypatch):
     states = (random.getstate(), np.random.get_state(), torch.get_rng_state())
     deterministic = torch.are_deterministic_algorithms_enabled()
+    warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
     threads = torch.get_num_threads()
     torch.set_num_threads(1)
     yield
     random.setstate(states[0])
     np.random.set_state(states[1])
     torch.set_rng_state(states[2])
-    torch.use_deterministic_algorithms(deterministic)
+    torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
     torch.set_num_threads(threads)
 
 
@@ -494,3 +495,85 @@ def test_best_epoch_restored_before_test_scoring(
     assert trained["best_epoch"] == 1
     assert np.isfinite(trained["test_RMSE"])
     assert events == ["validation", "validation", "selected"]
+
+
+@pytest.mark.parametrize("batch_size", [32, 64, 128])
+def test_gnn_normal_batching_keeps_existing_order_across_epochs(batch_size):
+    from torch.utils.data import BatchSampler, DataLoader, RandomSampler
+
+    module = import_script("gnn_encoder_sweep")
+
+    def batches(safe):
+        generator = torch.Generator().manual_seed(42)
+        sampler = (module.TrainingBatchSampler if safe else BatchSampler)(
+            RandomSampler(range(260), generator=generator), batch_size, drop_last=False
+        )
+        loader = DataLoader(range(260), batch_sampler=sampler, generator=generator)
+        return [[batch.tolist() for batch in loader] for _ in range(2)]
+
+    assert batches(True) == batches(False)
+
+
+def test_gnn_singleton_training_tail_keeps_all_rows_and_evaluation_samples(
+    data, monkeypatch, cpu_training
+):
+    module = import_script("gnn_encoder_sweep")
+    monkeypatch.setattr(module, "DEVICE", torch.device("cpu"))
+    sizes = []
+    original = module.GNNEncoder
+
+    class ObservedEncoder(original):
+        def forward(self, graph):
+            sizes.append((self.training, graph.num_graphs))
+            return super().forward(graph)
+
+    monkeypatch.setattr(module, "GNNEncoder", ObservedEncoder)
+    cfg = module.normalize_config(
+        {"HIDDEN_DIMS": [8], "BATCH_SIZE": 7, "EPOCHS": 2, "DROPOUT": 0.0}
+    )
+    sampler = module.TrainingBatchSampler(range(8), 7, drop_last=False)
+    assert list(sampler) == [list(range(8))]
+    assert len(sampler) == 1
+    result = module.run(cfg, 42, data, evaluate_test=True)
+    assert [size for training, size in sizes if training] == [8, 8]
+    assert (False, 1) in sizes  # The final evaluation batch must not be dropped.
+    assert np.isfinite(result["test_RMSE"])
+
+
+@pytest.mark.parametrize(
+    "enabled,warn_only", [(False, False), (True, False), (True, True), (False, True)]
+)
+@pytest.mark.parametrize("fail", [False, True])
+def test_gnn_restores_deterministic_settings_on_success_and_failure(
+    data, monkeypatch, cpu_training, enabled, warn_only, fail
+):
+    module = import_script("gnn_encoder_sweep")
+    monkeypatch.setattr(module, "DEVICE", torch.device("cpu"))
+    torch.use_deterministic_algorithms(enabled, warn_only=warn_only)
+    observed = []
+    original_predict = module.predict
+
+    def predict(*args):
+        observed.append(
+            (
+                torch.are_deterministic_algorithms_enabled(),
+                torch.is_deterministic_algorithms_warn_only_enabled(),
+            )
+        )
+        if fail:
+            raise RuntimeError("synthetic prediction failure")
+        return original_predict(*args)
+
+    monkeypatch.setattr(module, "predict", predict)
+    cfg = module.normalize_config(
+        {"HIDDEN_DIMS": [8], "EPOCHS": 1, "BATCH_SIZE": 4, "DROPOUT": 0.0}
+    )
+    if fail:
+        with pytest.raises(RuntimeError, match="synthetic prediction failure"):
+            module.run(cfg, 42, data)
+    else:
+        result = module.run(cfg, 42, data)
+        assert result["deterministic_algorithms"] is True
+    assert observed and all(state == (True, False) for state in observed)
+    assert torch.are_deterministic_algorithms_enabled() == enabled
+    assert torch.is_deterministic_algorithms_warn_only_enabled() == warn_only

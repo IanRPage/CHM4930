@@ -220,6 +220,51 @@ def test_classification_masks_missing_labels_even_with_explicit_true_mask():
     assert metrics == {"roc_auc": 1.0}
 
 
+@pytest.mark.parametrize(
+    "invalid", [np.nan, np.inf, -np.inf, 0.5, -1, 0, 1, "True", "False", None, pd.NA]
+)
+def test_nonboolean_mask_values_are_rejected_even_for_missing_labels(invalid):
+    with pytest.raises(ValueError, match="mask must contain only boolean values"):
+        bm.evaluate_predictions(
+            [np.nan, 0, 1],
+            [np.nan, 0.1, 0.9],
+            "classification",
+            mask=[invalid, True, True],
+        )
+
+
+@pytest.mark.parametrize(
+    "mask",
+    [
+        np.array([0, 1]),
+        np.array([False, np.nan], dtype=object),
+        pd.Series([True, pd.NA], dtype="boolean"),
+        torch.tensor([0, 1]),
+        torch.tensor([True, float("inf")]),
+        torch.tensor([0, 1], dtype=torch.bfloat16),
+    ],
+)
+def test_nonboolean_mask_containers_are_rejected(mask):
+    with pytest.raises(ValueError, match="mask must contain only boolean values"):
+        bm.evaluate_predictions([0, 1], [0.1, 0.9], "classification", mask)
+
+
+@pytest.mark.parametrize(
+    "mask",
+    [
+        [True, True, False, True],
+        np.array([True, True, False, True]),
+        np.array([True, True, False, True], dtype=object),
+        pd.Series([True, True, False, True], dtype="boolean"),
+        torch.tensor([True, True, False, True]),
+    ],
+)
+def test_boolean_mask_formats_preserve_missing_label_and_prediction_behavior(mask):
+    assert bm.evaluate_predictions(
+        [0, 1, 0, np.nan], [0.1, 0.9, np.nan, np.inf], "classification", mask
+    ) == {"roc_auc": 1.0}
+
+
 def test_filled_multitask_labels_use_contract_masks_and_tensor_predictions():
     labels = torch.tensor([[0.0, 1.0], [1.0, 0.0], [0.0, 0.0]])
     predictions = torch.tensor(
