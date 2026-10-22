@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        shell: bash -el {0}
+        shell: micromamba-shell {0}
         working-directory: ai
 
     steps:
@@ -56,6 +56,7 @@ jobs:
         with:
           environment-file: ai/environment.yml
           cache-environment: true
+          init-shell: none
 
       - name: Run tests with coverage
         run: pytest --cov=src --cov-report=xml --cov-report=term-missing
