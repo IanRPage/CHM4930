@@ -1,11 +1,13 @@
 import numpy as np
 import pandas as pd
+import pytest
+import torch
 from rdkit import Chem
 from torch.utils.data import DataLoader
 
 from featurize.fingerprint import mol_to_ecfp4
 from mufu import contract as c
-from mufu.dataset import MuFuDataset, collate, split_datasets
+from mufu.dataset import MuFuDataset, collate, split_datasets, to_device
 from pipeline.combined_loader import load_combined
 
 
@@ -104,3 +106,39 @@ def test_duplicate_index_stays_aligned():
     df = make_df().set_axis([0, 0, 1, 1, 1])
     ds = MuFuDataset(df)
     assert len(ds) == len(ds.sources) == ds.labels["y_tox"].shape[0] == 4
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="needs CUDA"
+            ),
+        ),
+    ],
+)
+def test_to_device(device):
+    ds = MuFuDataset(make_df())
+    batch = collate([ds[i] for i in range(len(ds))])
+    before_keys = set(batch)
+    before_smiles = list(batch["smiles"])
+
+    moved = to_device(batch, device)
+
+    assert moved is not batch
+    assert moved["smiles"] is not batch["smiles"]
+    assert moved["graph"] is not batch["graph"]
+    assert moved["smiles"] == before_smiles
+    c.validate_batch(moved)
+
+    for key in ("fingerprint", "y_pic50", "y_active", "y_tox", "mask_bio", "mask_tox"):
+        assert moved[key].device.type == device
+        assert batch[key].device.type == "cpu"
+    for attr in ("x", "edge_index", "edge_attr", "batch"):
+        assert getattr(moved["graph"], attr).device.type == device
+        assert getattr(batch["graph"], attr).device.type == "cpu"
+    assert set(batch) == before_keys
+    assert batch["smiles"] == before_smiles

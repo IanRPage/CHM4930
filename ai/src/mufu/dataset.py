@@ -14,6 +14,8 @@ drop_last avoids a final batch of one molecule (GNNEncoder's BatchNorm rejects i
 training mode).
 """
 
+import copy
+
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
@@ -87,6 +89,15 @@ def collate(examples: list[dict]) -> MuFuBatch:
     for key in (*LABELS, *MASKS):
         batch[key] = torch.stack([e[key] for e in examples])
     return batch
+
+
+def to_device(batch: MuFuBatch, device: torch.device | str) -> MuFuBatch:
+    return {
+        "smiles": list(batch["smiles"]),
+        "fingerprint": batch["fingerprint"].to(device),
+        "graph": copy.copy(batch["graph"]).to(device),
+        **{key: batch[key].to(device) for key in (*LABELS, *MASKS)},
+    }
 
 
 def split_datasets(df: pd.DataFrame) -> dict[str, MuFuDataset]:
