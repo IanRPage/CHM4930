@@ -23,6 +23,8 @@ class SmilesEncoder(nn.Module):
         max_length: int = 202,  # matching MolFormer's mox_position_embdeddings configuration
         cache_embeddings: bool | None = None,
         max_cache_size: int = 10000,
+        *,
+        revision: str | None = None,
     ) -> None:
         super().__init__()
 
@@ -40,17 +42,21 @@ class SmilesEncoder(nn.Module):
         self.freeze = freeze
         self.cache_embeddings = cache_embeddings
         self.max_cache_size = max_cache_size
+        self.revision = revision
         self._embedding_cache: dict[str, torch.Tensor] = {}
 
+        pretrained_kwargs = {"revision": revision} if revision is not None else {}
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name,
             trust_remote_code=True,
+            **pretrained_kwargs,
         )
 
         self.model = AutoModel.from_pretrained(
             model_name,
             trust_remote_code=True,
             deterministic_eval=True,
+            **pretrained_kwargs,
         )
 
         self.out_dim = (
