@@ -5,14 +5,28 @@ import pandas as pd
 import pytest
 
 from baseline import baseline_toxicity as bt
+from baseline import benchmark, results
+
+TEST_SEEDS = (0, 1)
 
 
 @pytest.fixture(autouse=True)
-def recorded(monkeypatch):
+def recorded(monkeypatch, tmp_path):
     calls = []
-    monkeypatch.setattr(
-        bt, "record_results", lambda rows, model: calls.append((model, rows))
-    )
+    out_path = tmp_path / "results.csv"
+    data_path = tmp_path / "combined.csv"
+    data_path.write_text("smiles\nCCO\n")
+    monkeypatch.setattr(results, "git_commit", lambda: "abc1234")
+    monkeypatch.setattr(bt, "SEEDS", TEST_SEEDS)
+    monkeypatch.setattr(benchmark, "SEEDS", TEST_SEEDS)
+
+    real_record = benchmark.record_results
+
+    def capture_record(rows, model, path=out_path, data_path=data_path):
+        calls.append((model, rows))
+        return real_record(rows, model=model, path=out_path, data_path=data_path)
+
+    monkeypatch.setattr(benchmark, "record_results", capture_record)
     return calls
 
 
@@ -55,9 +69,20 @@ def fake_forests(monkeypatch):
 @pytest.fixture
 def combined(monkeypatch):
     tasks = ["T1", "T2"]
+    datasets = {"tox21": {"tasks": ["T1"]}, "clintox": {"tasks": ["T2"]}}
     monkeypatch.setattr(bt, "TOX_TASKS", tasks)
+    monkeypatch.setattr(bt, "DATASETS", datasets)
+    monkeypatch.setattr(benchmark, "TOX_TASKS", tasks)
+    monkeypatch.setattr(benchmark, "DATASETS", datasets)
     monkeypatch.setattr(
-        bt, "DATASETS", {"tox21": {"tasks": ["T1"]}, "clintox": {"tasks": ["T2"]}}
+        benchmark,
+        "TOX_DATASET_BY_TASK",
+        {"T1": "tox21", "T2": "clintox"},
+    )
+    monkeypatch.setattr(
+        benchmark,
+        "VALID_PREDICTION_COLS",
+        frozenset([*benchmark.BIO_PIC50_COLS, *benchmark.BIO_ACTIVE_COLS, *tasks]),
     )
     return pd.DataFrame(
         {
@@ -75,13 +100,13 @@ def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
     monkeypatch, capsys, combined, fake_forests, recorded
 ):
     original = combined.copy(deep=True)
-    monkeypatch.setattr(bt, "load_combined", lambda: combined)
+    monkeypatch.setattr(benchmark, "load_combined", lambda: combined)
 
     def split_full_table(df):
         pd.testing.assert_frame_equal(df, original)
         return df.assign(split=["train"] * 4 + ["val"] * 3 + ["test"] * 2)
 
-    monkeypatch.setattr(bt, "scaffold_split", split_full_table)
+    monkeypatch.setattr(benchmark, "scaffold_split", split_full_table)
     featurized = []
 
     def fingerprint(mol, n_bits):
@@ -95,7 +120,8 @@ def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
     # Unlabeled rows are removed only after splitting; each remaining row is
     # featurized once, even if it has labels for multiple tasks.
     assert featurized == [2, 3, 4, 6, 7, 8, 9]
-    assert len(fake_forests) == 5  # four candidates for T1, sqrt fallback for T2
+    # 5 selection models (4 for T1, 1 sqrt fallback for T2) + 2 endpoints * 2 seeds = 9
+    assert len(fake_forests) == 5 + 2 * len(TEST_SEEDS)
     for model in fake_forests[:4]:
         np.testing.assert_array_equal(model.X[:, 0], [2, 3])
         np.testing.assert_array_equal(model.y, [0, 1])
@@ -103,12 +129,11 @@ def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
             "n_estimators": 500,
             "max_features": model.max_features,
             "n_jobs": -1,
-            "random_state": 42,
+            "random_state": TEST_SEEDS[0],
         }
-        if model.max_features != "log2":
-            assert set(model.predicted) == {6, 7}
-    np.testing.assert_array_equal(fake_forests[-1].X[:, 0], [3, 4])
-    np.testing.assert_array_equal(fake_forests[-1].y, [1, 0])
+        assert set(model.predicted) == {6, 7}
+    np.testing.assert_array_equal(fake_forests[4].X[:, 0], [3, 4])
+    np.testing.assert_array_equal(fake_forests[4].y, [1, 0])
     pd.testing.assert_frame_equal(combined, original)
 
     out = capsys.readouterr().out
@@ -121,33 +146,59 @@ def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
 
     [(model, rows)] = recorded
     assert model == "rf_toxicity"
-    rows = pd.DataFrame(rows).set_index(["endpoint", "split"])
-    assert len(rows) == 10
+    rows = pd.DataFrame(rows).set_index(["endpoint", "split", "seed"])
+    assert len(rows) == 10 * len(TEST_SEEDS)
     assert (rows["metric"] == "roc_auc").all()
     assert (rows["encoder"] == "ecfp4-2048").all()
 
-    t1 = rows.loc[("T1", "test")]
+    t1 = rows.loc[("T1", "test", 0)]
     assert (t1["dataset"], t1["value"], t1["n_labeled"], t1["n_positive"]) == (
         "tox21",
         0.0,
         2,
         1,
     )
-    assert json.loads(t1["params"]) == {"max_features": "log2", "n_estimators": 500}
-    assert rows.loc[("T1", "val"), "value"] == 1.0
+    assert json.loads(t1["params"]) == {
+        "max_features": {"T1": "log2", "T2": "sqrt"},
+        "n_estimators": 500,
+    }
+    assert rows.loc[("T1", "val", 1), "value"] == 1.0
 
-    t2_val, t2_test = rows.loc[("T2", "val")], rows.loc[("T2", "test")]
+    t2_val, t2_test = rows.loc[("T2", "val", 0)], rows.loc[("T2", "test", 0)]
     assert t2_val["dataset"] == "clintox"
     assert np.isnan(t2_val["value"]) and np.isnan(t2_test["value"])
     assert (t2_val["n_labeled"], t2_val["n_positive"]) == (0, 0)
     assert (t2_test["n_labeled"], t2_test["n_positive"]) == (2, 2)
-    assert json.loads(t2_test["params"])["max_features"] == "sqrt"
 
-    assert rows.loc[("macro_overall", "val"), "value"] == 1.0
-    assert rows.loc[("macro_tox21", "test"), "value"] == 0.0
-    macro = rows.loc[("macro_clintox", "test")]
+    assert rows.loc[("macro_overall", "val", 0), "value"] == 1.0
+    assert rows.loc[("macro_tox21", "test", 0), "value"] == 0.0
+    macro = rows.loc[("macro_clintox", "test", 0)]
     assert macro["dataset"] == "clintox"
     assert np.isnan(macro["value"]) and np.isnan(macro["n_labeled"])
+
+
+def test_main_skips_untrainable_endpoint_and_excludes_it_from_macros(
+    monkeypatch, capsys, combined, fake_forests, recorded
+):
+    # Give T2 only class 1 in train, but two classes in test so an accidental
+    # inclusion in macro_overall would change the macro score.
+    combined["T2"] = [np.nan, np.nan, 1, 1, np.nan, 0, 1, 0, 1]
+    monkeypatch.setattr(benchmark, "load_combined", lambda: combined)
+    monkeypatch.setattr(
+        benchmark,
+        "scaffold_split",
+        lambda df: df.assign(split=["train"] * 4 + ["val"] * 3 + ["test"] * 2),
+    )
+    monkeypatch.setattr(
+        bt, "mol_to_ecfp4", lambda mol, n_bits: np.array([mol.GetNumAtoms()])
+    )
+    bt.main()
+
+    [(_, rows)] = recorded
+    rows = pd.DataFrame(rows).set_index(["endpoint", "split", "seed"])
+    assert "T2" not in rows.index.get_level_values("endpoint")
+    assert rows.loc[("macro_overall", "val", 0), "value"] == pytest.approx(1.0)
+    assert np.isnan(rows.loc[("macro_clintox", "val", 0), "value"])
 
 
 @pytest.mark.parametrize(
@@ -201,9 +252,9 @@ def test_main_all_untrainable_reports_nan(
     monkeypatch, capsys, combined, fake_forests, training_label
 ):
     combined[bt.TOX_TASKS] = training_label
-    monkeypatch.setattr(bt, "load_combined", lambda: combined)
+    monkeypatch.setattr(benchmark, "load_combined", lambda: combined)
     monkeypatch.setattr(
-        bt,
+        benchmark,
         "scaffold_split",
         lambda df: df.assign(split=["train"] * 5 + ["val"] * 2 + ["test"] * 2),
     )
