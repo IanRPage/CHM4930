@@ -22,7 +22,7 @@ import benchmark as bm
 from baseline.results import RESULTS_PATH
 from encoder_benchmark import config_json, verify_export
 from mufu import contract as c
-from mufu.dataset import LABELS, MASKS, MuFuDataset, collate
+from mufu.data.dataset import LABELS, MASKS, MuFuDataset, collate
 from mufu.model import MuFu
 from pipeline.combined_loader import COMBINED_CSV_PATH
 from pipeline.toxicity_loader import DATASETS

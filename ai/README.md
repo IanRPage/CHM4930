@@ -404,6 +404,6 @@ though its model downloads are mocked. If collection fails with
 `environment.yml` already declares the pinned dependency in its `pip` section.
 From `ai/`, synchronize the project environment with
 `conda env update -n CHM4930 -f environment.yml`, or create it as described above.
-Use `python src/check_env.py` to check installed versions. Encoder benchmark tests
+Use `python scripts/check_env.py` to check installed versions. Encoder benchmark tests
 run offline without Transformers; excluding that module lets the remaining
 offline suite run while the environment is repaired.

@@ -95,10 +95,10 @@ def mocked_pretrained(monkeypatch):
     class Tokenizer:
         def __call__(self, smiles, **kwargs):
             encoded.extend(smiles)
+            input_ids = torch.tensor([[len(s), sum(map(ord, s)) % 17] for s in smiles])
             return {
-                "input_ids": torch.tensor(
-                    [[len(s), sum(map(ord, s)) % 17] for s in smiles]
-                )
+                "input_ids": input_ids,
+                "attention_mask": torch.ones_like(input_ids),
             }
 
     class Model(nn.Module):
@@ -107,7 +107,7 @@ def mocked_pretrained(monkeypatch):
             self.config = SimpleNamespace(hidden_size=4, _commit_hash=revision)
             self.projection = nn.Linear(2, 4)
 
-        def forward(self, input_ids):
+        def forward(self, input_ids, attention_mask=None):
             return SimpleNamespace(pooler_output=self.projection(input_ids.float()))
 
     def tokenizer_from_pretrained(model_name, **kwargs):
@@ -182,7 +182,7 @@ def test_requires_pinned_frozen_valid_configuration(script, bad):
         config(script, **bad)
 
 
-def test_wrapper_forwards_revision_without_changing_existing_defaults(
+def test_wrapper_forwards_revision_and_defaults_to_pinned_revision(
     mocked_pretrained,
 ):
     mocked_pretrained.module.SmilesEncoder(revision=REVISION)
@@ -191,7 +191,10 @@ def test_wrapper_forwards_revision_without_changing_existing_defaults(
     assert mocked_pretrained.calls[1][2]["deterministic_eval"]
     mocked_pretrained.calls.clear()
     mocked_pretrained.module.SmilesEncoder()
-    assert all("revision" not in call[2] for call in mocked_pretrained.calls)
+    assert all(
+        call[2]["revision"] == mocked_pretrained.module.DEFAULT_REVISION
+        for call in mocked_pretrained.calls
+    )
 
 
 @pytest.mark.parametrize("evaluate_test", [False, True])
