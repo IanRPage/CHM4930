@@ -58,6 +58,46 @@ jobs:
           cache-environment: true
           init-shell: none
 
+      - name: Diagnose environment before pytest (temporary)
+        shell: bash --noprofile --norc -eo pipefail {0}
+        env:
+          BASH_ENV: /dev/null
+          PYTHONUNBUFFERED: "1"
+          PYTHONFAULTHANDLER: "1"
+        run: |
+          failed=0
+          probe() {
+            printf '\n>>>'
+            printf ' %q' "$@"
+            printf '\n'
+            local status=0
+            "$@" || status=$?
+            printf 'Exit code: %s\n' "$status"
+            if [ "$status" -ne 0 ]; then
+              failed=1
+            fi
+          }
+
+          probe pwd
+          probe "$MAMBA_EXE" --version
+          probe "$MAMBA_EXE" env list
+
+          env_python="${MAMBA_ROOT_PREFIX}/envs/CHM4930/bin/python"
+          printf '\nEnvironment Python: %s\n' "$env_python"
+          probe test -f "$env_python"
+          probe test -x "$env_python"
+          probe "$env_python" --version
+          probe "$env_python" -c 'import sys; print("Direct Python execution:", sys.executable)'
+          probe "$env_python" -c 'import pytest; print("pytest:", pytest.__file__)'
+          probe "$env_python" -c 'import pytest_cov; print("pytest-cov:", pytest_cov.__file__)'
+          probe "$env_python" -c 'import transformers; print("transformers:", transformers.__file__)'
+          probe "$env_python" -m pytest --version
+
+          # Compare direct execution with Micromamba's execution path.
+          probe "$MAMBA_EXE" run -r "$MAMBA_ROOT_PREFIX" -n CHM4930 "$env_python" -m pytest --version
+          printf '\nDiagnostic failure flag: %s\n' "$failed"
+          exit "$failed"
+
       - name: Run tests with coverage
         run: pytest --cov=src --cov-report=xml --cov-report=term-missing
 
