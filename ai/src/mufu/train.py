@@ -97,9 +97,13 @@ def _forward_dataset(model: MuFu, dataset: MuFuDataset, batch_size: int) -> MuFu
     model.eval()
     device = next(model.parameters()).device
     loader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=False, collate_fn=collate
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=collate,
+        pin_memory=(device.type == "cuda"),
     )
-    batches = [model(to_device(batch, device)) for batch in loader]
+    batches = [model(to_device(batch, device, non_blocking=True)) for batch in loader]
     return {
         key: torch.cat([b[key].cpu() for b in batches], dim=0)
         for key, _ in COLUMN_GROUPS
@@ -140,7 +144,10 @@ def fit(
         )
 
     train_loader = DataLoader(
-        datasets["train"], batch_sampler=sampler, collate_fn=collate
+        datasets["train"],
+        batch_sampler=sampler,
+        collate_fn=collate,
+        pin_memory=(device.type == "cuda"),
     )
     model.to(device)
     task_loss = TaskLoss.from_dataset(datasets["train"]).to(device)
@@ -160,7 +167,11 @@ def fit(
         step_losses = []
         for batch in train_loader:
             loss = train_step(
-                model, to_device(batch, device), task_loss, weighting, optimizer
+                model,
+                to_device(batch, device, non_blocking=True),
+                task_loss,
+                weighting,
+                optimizer,
             )
             if loss is not None:
                 step_losses.append(loss)
