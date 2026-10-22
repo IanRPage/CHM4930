@@ -15,12 +15,13 @@ def paths(tmp_path, monkeypatch):
     return tmp_path / "baseline" / "results.csv", data
 
 
-def row(endpoint, split="test", value=0.5, **extra):
+def row(endpoint, split="test", seed=0, value=0.5, **extra):
     return {
         "encoder": "ecfp4-2048",
         "dataset": "tox21",
         "endpoint": endpoint,
         "split": split,
+        "seed": seed,
         "metric": "roc_auc",
         "value": value,
         "n_labeled": 10,
@@ -36,7 +37,18 @@ def test_rows_get_every_column_in_order(paths):
     written = pd.read_csv(path)
     assert written.columns.tolist() == results.COLUMNS
     assert written.loc[0, "model"] == "m"
+    assert written.loc[0, "seed"] == 0
     assert written.loc[0, "git_commit"] == "abc1234"
+
+
+def test_params_json_is_key_order_independent():
+    first = results.params_json(
+        {"n_estimators": 500, "max_features": {"EGFR": "sqrt", "BACE1": 0.1}}
+    )
+    second = results.params_json(
+        {"max_features": {"BACE1": 0.1, "EGFR": "sqrt"}, "n_estimators": 500}
+    )
+    assert first == second
 
 
 def test_rerun_replaces_only_that_models_rows(paths):
@@ -63,17 +75,72 @@ def test_other_models_rows_from_an_old_snapshot_are_dropped(paths, caplog):
     assert "['b']" in caplog.text
 
 
-def test_rows_are_sorted_and_nan_values_kept(paths):
+def test_rows_are_sorted_by_seed_and_nan_values_kept(paths):
     path, data = paths
-    rows = [row("T2", "val"), row("T1", "val", value=np.nan), row("T1", "test")]
+    rows = [
+        row("T2", "val", seed=0),
+        row("T1", "val", seed=0, value=np.nan),
+        row("T1", "test", seed=1),
+        row("T1", "test", seed=0),
+    ]
     results.record_results(rows, model="m", path=path, data_path=data)
     written = pd.read_csv(path)
-    assert written[["endpoint", "split"]].values.tolist() == [
-        ["T1", "test"],
-        ["T1", "val"],
-        ["T2", "val"],
+    assert written[["endpoint", "split", "seed"]].values.tolist() == [
+        ["T1", "test", 0],
+        ["T1", "test", 1],
+        ["T1", "val", 0],
+        ["T2", "val", 0],
     ]
-    assert np.isnan(written.loc[1, "value"])
+    assert np.isnan(written.loc[2, "value"])
+
+
+def test_summarize_seeds_computes_mean_ddof1_std_and_keeps_nan_keys(paths):
+    path, data = paths
+    rows = [
+        row("T1", "test", seed=0, value=0.6),
+        row("T1", "test", seed=1, value=0.8),
+        row("T1", "test", seed=2, value=1.0),
+        row(
+            "macro_tox21",
+            "test",
+            seed=0,
+            value=0.5,
+            n_labeled=np.nan,
+            n_positive=np.nan,
+        ),
+        row(
+            "macro_tox21",
+            "test",
+            seed=1,
+            value=0.9,
+            n_labeled=np.nan,
+            n_positive=np.nan,
+        ),
+    ]
+    written = results.record_results(rows, model="m", path=path, data_path=data)
+    summary = results.summarize_seeds(written).set_index("endpoint")
+
+    assert list(summary.columns) == [
+        c for c in results.SUMMARY_COLUMNS if c != "endpoint"
+    ]
+    assert summary.loc["T1", "value"] == pytest.approx(0.8)
+    assert summary.loc["T1", "std"] == pytest.approx(0.2)
+    assert summary.loc["T1", "n_seeds"] == 3
+
+    assert summary.loc["macro_tox21", "value"] == pytest.approx(0.7)
+    assert summary.loc["macro_tox21", "std"] == pytest.approx(
+        np.std([0.5, 0.9], ddof=1)
+    )
+    assert summary.loc["macro_tox21", "n_seeds"] == 2
+    assert np.isnan(summary.loc["macro_tox21", "n_labeled"])
+    assert np.isnan(summary.loc["macro_tox21", "n_positive"])
+
+
+def test_summarize_seeds_empty_dataframe():
+    empty = pd.DataFrame(columns=results.COLUMNS)
+    summary = results.summarize_seeds(empty)
+    assert list(summary.columns) == results.SUMMARY_COLUMNS
+    assert summary.empty
 
 
 def test_data_sha256_tracks_the_snapshot_bytes(paths):
