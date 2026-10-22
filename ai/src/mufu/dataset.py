@@ -91,13 +91,20 @@ def collate(examples: list[dict]) -> MuFuBatch:
     return batch
 
 
-def to_device(batch: MuFuBatch, device: torch.device | str) -> MuFuBatch:
-    return {
-        "smiles": list(batch["smiles"]),
-        "fingerprint": batch["fingerprint"].to(device),
-        "graph": copy.copy(batch["graph"]).to(device),
-        **{key: batch[key].to(device) for key in (*LABELS, *MASKS)},
-    }
+def to_device(
+    batch: MuFuBatch, device: torch.device | str, non_blocking: bool = False
+) -> MuFuBatch:
+    moved = {}
+    for k, v in batch.items():
+        if isinstance(v, Batch):
+            moved[k] = copy.copy(v).to(device, non_blocking=non_blocking)
+        elif isinstance(v, torch.Tensor):
+            moved[k] = v.to(device, non_blocking=non_blocking)
+        elif isinstance(v, list):
+            moved[k] = list(v)
+        else:
+            moved[k] = v
+    return moved
 
 
 def split_datasets(df: pd.DataFrame) -> dict[str, MuFuDataset]:

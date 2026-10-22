@@ -108,6 +108,7 @@ def test_duplicate_index_stays_aligned():
     assert len(ds) == len(ds.sources) == ds.labels["y_tox"].shape[0] == 4
 
 
+@pytest.mark.parametrize("non_blocking", [False, True])
 @pytest.mark.parametrize(
     "device",
     [
@@ -120,13 +121,13 @@ def test_duplicate_index_stays_aligned():
         ),
     ],
 )
-def test_to_device(device):
+def test_to_device(device, non_blocking):
     ds = MuFuDataset(make_df())
     batch = collate([ds[i] for i in range(len(ds))])
     before_keys = set(batch)
     before_smiles = list(batch["smiles"])
 
-    moved = to_device(batch, device)
+    moved = to_device(batch, device, non_blocking=non_blocking)
 
     assert moved is not batch
     assert moved["smiles"] is not batch["smiles"]
@@ -142,3 +143,14 @@ def test_to_device(device):
         assert getattr(batch["graph"], attr).device.type == "cpu"
     assert set(batch) == before_keys
     assert batch["smiles"] == before_smiles
+
+    batch["extra"] = torch.zeros(len(ds))
+    moved_extra = to_device(batch, device, non_blocking=True)
+    assert moved_extra["extra"].device.type == device
+    assert batch["extra"].device.type == "cpu"
+    for key in ("fingerprint", "y_pic50", "y_active", "y_tox", "mask_bio", "mask_tox"):
+        assert torch.equal(moved_extra[key], moved[key])
+    for attr in ("x", "edge_index", "edge_attr", "batch"):
+        assert torch.equal(
+            getattr(moved_extra["graph"], attr), getattr(moved["graph"], attr)
+        )
