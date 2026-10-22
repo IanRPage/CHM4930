@@ -157,16 +157,14 @@ def fit(
     for epoch in range(1, cfg.epochs + 1):
         model.train()
         weighting.train()
-        step_losses = [
-            loss
-            for batch in train_loader
-            if (
-                loss := train_step(
-                    model, to_device(batch, device), task_loss, weighting, optimizer
-                )
+        step_losses = []
+        for batch in train_loader:
+            loss = train_step(
+                model, to_device(batch, device), task_loss, weighting, optimizer
             )
-            is not None
-        ]
+            if loss is not None:
+                step_losses.append(loss)
+
         train_losses.append(
             sum(step_losses) / len(step_losses) if step_losses else float("nan")
         )
@@ -210,6 +208,8 @@ def predict(
     *,
     batch_size: int = 64,
 ) -> dict[str, np.ndarray]:
+    if len(dataset) == 0:
+        raise ValueError("predict needs a non-empty dataset")
     outputs = _forward_dataset(model, dataset, batch_size)
     return {
         col: outputs[key][:, j].numpy().astype(float, copy=False)

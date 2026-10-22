@@ -2,43 +2,13 @@ import copy
 import random
 
 import numpy as np
-import pytest
 import torch
-from test_model import SMILES, SmallSmilesEncoder, unlabeled_frame
 
-from encoders.fingerprint_encoder import FingerprintEncoder
-from encoders.gnn_encoder import GNNEncoder
 from mufu.contract import ACTIVE_COLUMNS, PIC50_COLUMNS, TOX_COLUMNS
-from mufu.dataset import MuFuDataset, collate
-from mufu.model import MuFu
+from mufu.dataset import collate
 from mufu.task_loss import TaskLoss
 from mufu.train import TrainConfig, fit, make_optimizer, predict, train_step
 from mufu.uncertainty_weighting import UncertaintyWeighting
-
-
-@pytest.fixture
-def labeled_dataset():
-    frame = unlabeled_frame()
-    bio_rows, tox_rows = frame.index[:4], frame.index[4:]
-    for j, column in enumerate(PIC50_COLUMNS):
-        frame.loc[bio_rows, column] = [5.0 + j + 0.5 * i for i in range(4)]
-    for j, column in enumerate(ACTIVE_COLUMNS):
-        frame.loc[bio_rows, column] = [float((i + j) % 2) for i in range(4)]
-    for j, column in enumerate(TOX_COLUMNS):
-        frame.loc[tox_rows, column] = [float((i + j) % 2) for i in range(4)]
-    frame.loc[1, [PIC50_COLUMNS[-1], ACTIVE_COLUMNS[-1]]] = float("nan")
-    return MuFuDataset(frame)
-
-
-@pytest.fixture
-def model():
-    with torch.random.fork_rng(devices=[]):
-        torch.manual_seed(42)
-        return MuFu(
-            smiles_encoder=SmallSmilesEncoder(),
-            fingerprint_encoder=FingerprintEncoder(hidden_dims=(16,), dropout=0.0),
-            graph_encoder=GNNEncoder(hidden_dims=(12,), dropout=0.0),
-        )
 
 
 def test_fit_decreases_loss_on_tiny_dataset(model, labeled_dataset):
@@ -124,7 +94,7 @@ def test_make_optimizer_excludes_log_vars_from_weight_decay(model):
 
 
 def test_train_step_skips_unlabeled_batch_leaving_all_params_unchanged(
-    model, labeled_dataset
+    model, labeled_dataset, dataset
 ):
     torch.manual_seed(0)
     task_loss = TaskLoss.from_dataset(labeled_dataset)
@@ -146,8 +116,7 @@ def test_train_step_skips_unlabeled_batch_leaving_all_params_unchanged(
         ]
     }
 
-    unlabeled_ds = MuFuDataset(unlabeled_frame())
-    unlabeled_batch = collate([unlabeled_ds[i] for i in range(len(unlabeled_ds))])
+    unlabeled_batch = collate([dataset[i] for i in range(len(dataset))])
     skipped = train_step(model, unlabeled_batch, task_loss, weighting, optimizer)
 
     assert skipped is None
@@ -155,16 +124,15 @@ def test_train_step_skips_unlabeled_batch_leaving_all_params_unchanged(
         assert torch.equal(param, params_before[name]), name
 
 
-def test_predict_output_keys_and_shapes(model):
-    ds = MuFuDataset(unlabeled_frame())
+def test_predict_output_keys_and_shapes(model, dataset):
     model.train()
 
-    preds = predict(model, ds, batch_size=3)
+    preds = predict(model, dataset, batch_size=3)
 
     assert not model.training
     expected_keys = (*PIC50_COLUMNS, *ACTIVE_COLUMNS, *TOX_COLUMNS)
     assert tuple(preds) == expected_keys
     for col in expected_keys:
         assert isinstance(preds[col], np.ndarray)
-        assert preds[col].shape == (len(SMILES),)
+        assert preds[col].shape == (len(dataset),)
         assert preds[col].dtype == float
