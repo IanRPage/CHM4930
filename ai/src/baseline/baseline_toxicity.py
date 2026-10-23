@@ -75,9 +75,7 @@ def main():
     df = load_benchmark_split()
     tox_df = df.loc[df[TOX_TASKS].notna().any(axis=1)].reset_index(drop=True)
     X = (
-        np.stack(
-            [mol_to_ecfp4(to_mol(s), FINGERPRINT_BITS) for s in tox_df["smiles"]]
-        )
+        np.stack([mol_to_ecfp4(to_mol(s), FINGERPRINT_BITS) for s in tox_df["smiles"]])
         if len(tox_df)
         else np.empty((0, FINGERPRINT_BITS), dtype=np.uint8)
     )
