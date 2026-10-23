@@ -44,6 +44,15 @@ class MixedBatchSampler(Sampler[list[int]]):
                 "Mixed batching requires at least one labeled example per task"
             )
 
+        for task, pool_size, quota in (
+            ("bio", len(self.bio_only) + len(self.both), n_bio),
+            ("tox", len(self.tox_only) + len(self.both), n_tox),
+        ):
+            if pool_size < quota:
+                raise ValueError(
+                    f"{task} pool has {pool_size} labeled examples, fewer than quota {quota}"
+                )
+
     def __iter__(self):
         bio_only = self.bio_only.copy()
         tox_only = self.tox_only.copy()

@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import torch
+from conftest import DEVICES
 from rdkit import Chem
 from torch.utils.data import DataLoader
 
@@ -109,18 +110,7 @@ def test_duplicate_index_stays_aligned():
 
 
 @pytest.mark.parametrize("non_blocking", [False, True])
-@pytest.mark.parametrize(
-    "device",
-    [
-        "cpu",
-        pytest.param(
-            "cuda",
-            marks=pytest.mark.skipif(
-                not torch.cuda.is_available(), reason="needs CUDA"
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("device", DEVICES)
 def test_to_device(device, non_blocking):
     ds = MuFuDataset(make_df())
     batch = collate([ds[i] for i in range(len(ds))])

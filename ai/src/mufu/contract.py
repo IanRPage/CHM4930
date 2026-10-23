@@ -32,6 +32,11 @@ BIO_TARGETS = tuple(TARGETS)
 PIC50_COLUMNS = tuple(f"pIC50_{t}" for t in BIO_TARGETS)
 ACTIVE_COLUMNS = tuple(f"active_{t}" for t in BIO_TARGETS)
 TOX_COLUMNS = tuple(TOX_TASKS)
+COLUMN_GROUPS = (
+    ("pic50", PIC50_COLUMNS),
+    ("active_logits", ACTIVE_COLUMNS),
+    ("tox_logits", TOX_COLUMNS),
+)
 N_BIO = len(BIO_TARGETS)
 N_TOX = len(TOX_COLUMNS)
 LABEL_FILL = 0.0

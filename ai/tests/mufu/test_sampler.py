@@ -112,9 +112,17 @@ def test_seed_reproduces_batches(sampler_class):
     assert first == list(sampler)
 
 
-def test_mixed_infeasible_distinct_batch_raises():
-    with pytest.raises(ValueError):
-        list(MixedBatchSampler(MaskDataset(1, 1), 4))
+@pytest.mark.parametrize(
+    "counts,batch_size,match",
+    [
+        ((1, 4, 0), 4, r"bio.*1.*2"),
+        ((4, 0, 0), 4, r"tox.*0.*2"),
+        ((1, 5, 1), 6, r"bio.*2.*3"),
+    ],
+)
+def test_mixed_rejects_pool_smaller_than_quota(counts, batch_size, match):
+    with pytest.raises(ValueError, match=match):
+        MixedBatchSampler(MaskDataset(*counts), batch_size)
 
 
 @pytest.mark.parametrize("batch_size,fraction", [(2, 0.49), (10, 0.01), (64, 0.001)])
