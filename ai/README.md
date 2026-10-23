@@ -133,14 +133,14 @@ and the git commit it ran on. Current test set performance (mean over 5 seeds):
 | Model            | Task                  | Test result                                  |
 | ---------------- | --------------------- | -------------------------------------------- |
 | `rf_bioactivity` | BACE-1 pIC50          | RMSE 0.81, R² 0.59, ROC-AUC 0.88 (pIC50 ≥ 6) |
-| `rf_bioactivity` | EGFR pIC50            | RMSE 0.87, R² 0.51, ROC-AUC 0.88 (pIC50 ≥ 6) |
-| `rf_toxicity`    | Tox21 (12 endpoints)  | macro ROC-AUC 0.72                           |
+| `rf_bioactivity` | EGFR pIC50            | RMSE 0.88, R² 0.50, ROC-AUC 0.88 (pIC50 ≥ 6) |
+| `rf_toxicity`    | Tox21 (12 endpoints)  | macro ROC-AUC 0.71                           |
 | `rf_toxicity`    | ClinTox (2 endpoints) | macro ROC-AUC 0.65                           |
 
 NOTE: See `data/baseline/results.csv` for per-task numbers. Some test sets have
 very few examples of one class, so read their ROC-AUC loosely. For example,
-NR-AR has 11 actives out of 704 (val 0.83, test 0.55), and FDA_APPROVED has only
-6 unapproved compounds out of 144 (val 0.84, test 0.56).
+NR-AR has 11 actives out of 704 (val 0.82, test 0.56), and FDA_APPROVED has only
+6 unapproved compounds out of 144 (val 0.83, test 0.58).
 
 ## Benchmarks
 

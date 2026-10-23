@@ -1,6 +1,9 @@
 """
 Standalone frozen MolFormer plus a trainable BACE-1 regression head.
 
+`PRETRAINED_REVISION` defaults to `DEFAULT_REVISION` (override with a
+40-character commit SHA).
+
     python scripts/SMILES_encoder_sweep.py 1
 """
 
