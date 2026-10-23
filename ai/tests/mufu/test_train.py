@@ -22,7 +22,9 @@ def test_fit_decreases_loss_on_tiny_dataset(model, labeled_dataset):
         device="cpu",
     )
 
-    result = fit(model, {"train": labeled_dataset, "val": labeled_dataset}, cfg)
+    result = fit(
+        model, {"train": labeled_dataset, "val": labeled_dataset}, cfg, verbose=True
+    )
 
     assert len(result.train_losses) == 20
     assert len(result.val_losses) == 20
