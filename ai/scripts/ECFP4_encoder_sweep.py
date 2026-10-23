@@ -17,7 +17,11 @@ from sklearn.linear_model import Ridge
 from torch import nn
 from torch.utils.data import DataLoader
 
-from benchmark import config_json, evaluate_predictions, set_training_seed
+from baseline.benchmark import (
+    evaluate_split_predictions,
+    params_json,
+    seed_everything,
+)
 from encoder_benchmark import grid, run_cli
 from encoders.fingerprint_encoder import FingerprintEncoder
 from featurize.fingerprint import FINGERPRINT_BITS
@@ -32,7 +36,7 @@ def train_mlp(cfg, seed, data, *, evaluate_test=False):
     y = data.y
     X = data.fingerprints(cfg["N_BITS"]).to(DEVICE)
     X_train, y_train = X[train], y[train].to(DEVICE)
-    generator = set_training_seed(seed)
+    generator = seed_everything(seed)
     encoder = FingerprintEncoder(
         cfg["N_BITS"],
         cfg["HIDDEN_DIMS"],
@@ -67,9 +71,10 @@ def train_mlp(cfg, seed, data, *, evaluate_test=False):
                 model(X_train[idx]).squeeze(-1), y_train[idx]
             ).backward()
             optimizer.step()
-        rmse = evaluate_predictions(
-            data.frame.iloc[val]["pIC50_BACE1"], predict(val), "regression"
-        )["rmse"]
+        rows = evaluate_split_predictions(
+            data.frame, {"val": {"pIC50_BACE1": predict(val)}}
+        )
+        rmse = next(r["value"] for r in rows if r["metric"] == "rmse")
         if rmse < best_rmse:
             best_rmse, best_state, best_epoch = (
                 rmse,
@@ -191,7 +196,7 @@ def run(cfg, seed, data, *, evaluate_test=False):
         cfg, seed, data, evaluate_test=evaluate_test
     )
     return {
-        "cfg": config_json(cfg),
+        "cfg": params_json(cfg),
         "seed": seed,
         **cfg,
         **res,

@@ -6,6 +6,9 @@ import pytest
 import torch
 
 from baseline import benchmark, results
+from pipeline.bioactivity_loader import PIC50_ACTIVE_THRESHOLD
+from pipeline.combined_loader import COMBINED_CSV_PATH
+from pipeline.split import scaffold_split
 
 
 @pytest.fixture
@@ -244,3 +247,73 @@ def test_split_sha256_is_order_independent_and_changes_with_membership(split_df)
     changed = split_df.copy()
     changed.loc[0, "split"] = "train"
     assert benchmark.split_sha256(split_df) != benchmark.split_sha256(changed)
+
+
+def test_shared_split_is_reproducible_and_independent_of_training_seed(snapshot_csv):
+    benchmark.seed_everything(0)
+    first = benchmark.load_benchmark_split(snapshot_csv)
+    benchmark.seed_everything(42)
+    second = benchmark.load_benchmark_split(snapshot_csv)
+    pd.testing.assert_frame_equal(first, second)
+    assert first["split"].tolist() == ["train"] * 16 + ["val"] * 2 + ["test"] * 2
+
+
+def test_full_table_is_split_before_endpoint_filtering(snapshot_csv, monkeypatch):
+    calls = []
+
+    def split_full_table(df, **kwargs):
+        calls.append((len(df), df["pIC50_BACE1"].isna().sum(), kwargs))
+        return scaffold_split(df, **kwargs)
+
+    monkeypatch.setattr(benchmark, "scaffold_split", split_full_table)
+    full = benchmark.load_benchmark_split(snapshot_csv)
+    endpoint = full.loc[full["pIC50_BACE1"].notna()]
+    assert calls == [(20, 8, {})]
+    assert endpoint["split"].value_counts().to_dict() == {
+        "train": 8,
+        "val": 2,
+        "test": 2,
+    }
+    separate = scaffold_split(endpoint.drop(columns=["scaffold", "split"]))
+    assert full.loc[16, "split"] == "val"
+    assert separate.loc[16, "split"] == "train"
+
+
+def test_load_is_read_only_and_missing_snapshot_raises(
+    snapshot_csv, tmp_path, monkeypatch
+):
+    before = snapshot_csv.read_bytes()
+    monkeypatch.setattr(
+        pd.DataFrame,
+        "to_csv",
+        lambda *args, **kwargs: pytest.fail("benchmark loading must not write"),
+    )
+    benchmark.load_benchmark_split(snapshot_csv)
+    assert snapshot_csv.read_bytes() == before
+
+    missing = tmp_path / "missing.csv"
+    with pytest.raises(FileNotFoundError):
+        benchmark.load_benchmark_split(missing)
+    assert not missing.exists()
+
+
+def test_frozen_benchmark_matches_recorded_rf_checksum_and_counts(frozen_benchmark):
+    recorded = pd.read_csv(results.RESULTS_PATH)
+    rf = recorded[recorded["model"].isin(["rf_bioactivity", "rf_toxicity"])]
+    assert len(rf) == 46 * len(benchmark.SEEDS)
+    assert set(rf["seed"]) == set(benchmark.SEEDS)
+    original = "b340ddf73f38e10f8b6a2948156417661a269ffc9a6d9b097b538c4690e1b041"
+    assert set(rf["data_sha256"]) == {original}
+    assert results.file_sha256(COMBINED_CSV_PATH) == original
+
+    for row in rf[rf["n_labeled"].notna()].itertuples(index=False):
+        labels = frozen_benchmark.loc[
+            frozen_benchmark["split"] == row.split, row.endpoint
+        ].dropna()
+        assert len(labels) == row.n_labeled
+        positive = (
+            labels >= PIC50_ACTIVE_THRESHOLD
+            if row.model == "rf_bioactivity"
+            else labels == 1
+        )
+        assert positive.sum() == row.n_positive

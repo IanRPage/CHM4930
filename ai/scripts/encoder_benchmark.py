@@ -12,7 +12,13 @@ import numpy as np
 import pandas as pd
 import torch
 
-import benchmark as bm
+from baseline.benchmark import (
+    evaluate_split_predictions,
+    load_benchmark_split,
+    params_json,
+    split_sha256,
+)
+from baseline.results import file_sha256
 from featurize.fingerprint import FINGERPRINT_BITS
 from pipeline.cache import write_csv
 from pipeline.combined_loader import COMBINED_CSV_PATH
@@ -31,22 +37,24 @@ def grid(base, **values):
 class BACE1Benchmark:
     full: pd.DataFrame
     frame: pd.DataFrame
-    metadata: dict
+    data_sha256: str
+    split_sha256: str
     data_path: Path
     indices: dict[str, np.ndarray]
     _features: dict = field(default_factory=dict, repr=False)
 
     @classmethod
     def load(cls, data_path: Path = COMBINED_CSV_PATH):
-        full = bm.load_benchmark(data_path)
-        metadata = bm.benchmark_metadata(full, data_path)
+        full = load_benchmark_split(data_path)
+        data_hash = file_sha256(data_path)
+        split_hash = split_sha256(full)
         frame = full.loc[full["pIC50_BACE1"].notna()].reset_index(drop=True)
         indices = {
             name: np.flatnonzero(frame["split"].to_numpy() == name) for name in SPLITS
         }
         if any(len(idx) == 0 for idx in indices.values()):
             raise ValueError("BACE-1 needs observed labels in train, val, and test")
-        return cls(full, frame, metadata, data_path, indices)
+        return cls(full, frame, data_hash, split_hash, data_path, indices)
 
     @property
     def y(self):
@@ -74,34 +82,22 @@ class BACE1Benchmark:
         return graphs
 
     def score(self, predict, *, evaluate_test=False):
-        out = {}
         names = SPLITS if evaluate_test else SPLITS[:2]
+        predictions = {}
         for name in names:
-            idx = self.indices[name]
-            predictions = predict(idx)
-            if isinstance(predictions, torch.Tensor):
-                predictions = predictions.detach().cpu().numpy()
-            labels = self.frame.iloc[idx]
-            scores = (
-                predictions
-                if isinstance(predictions, pd.Series)
-                else pd.Series(predictions, index=labels.index)
-            )
-            regression = bm.evaluate_predictions(
-                labels["pIC50_BACE1"], scores, "regression"
-            )
-            classification = bm.evaluate_predictions(
-                labels["active_BACE1"], scores, "classification"
-            )
-            out.update(
-                {
-                    f"{name}_RMSE": regression["rmse"],
-                    f"{name}_R2": regression["r2"],
-                    f"{name}_ROC-AUC": classification["roc_auc"],
-                }
-            )
+            preds = predict(self.indices[name])
+            if isinstance(preds, torch.Tensor):
+                preds = preds.detach().cpu().numpy()
+            predictions[name] = {"pIC50_BACE1": preds}
+        rows = evaluate_split_predictions(self.frame, predictions)
+        by_key = {(r["split"], r["metric"]): r["value"] for r in rows}
+        out = {
+            f"{name}_{wide}": by_key[(name, metric)]
+            for name in names
+            for wide, metric in METRICS.items()
+        }
         if not evaluate_test:
-            out.update({f"test_{name}": np.nan for name in METRICS})
+            out.update({f"test_{wide}": np.nan for wide in METRICS})
         return out
 
 
@@ -109,7 +105,15 @@ def load_sweep_records(path: Path, data: BACE1Benchmark, experiment: str):
     if not path.exists():
         return pd.DataFrame()
     records = pd.read_csv(path)
-    required = {"cfg", "seed", "val_RMSE", "benchmark", "sweep_protocol", "experiment"}
+    required = {
+        "cfg",
+        "seed",
+        "val_RMSE",
+        "data_sha256",
+        "split_sha256",
+        "sweep_protocol",
+        "experiment",
+    }
     if not required <= set(records.columns):
         raise ValueError(
             f"{path}: legacy/incompatible sweep records; preserve this file and "
@@ -121,12 +125,14 @@ def load_sweep_records(path: Path, data: BACE1Benchmark, experiment: str):
         raise ValueError(f"{path}: incompatible sweep protocol")
     if not records["experiment"].eq(experiment).all():
         raise ValueError(f"{path}: incompatible encoder experiment")
-    for stored in records["benchmark"].unique():
-        bm.verify_benchmark_metadata(json.loads(stored), data.full, data.data_path)
+    if not records["data_sha256"].eq(data.data_sha256).all():
+        raise ValueError(f"{path}: incompatible data_sha256")
+    if not records["split_sha256"].eq(data.split_sha256).all():
+        raise ValueError(f"{path}: incompatible split_sha256")
     configs = records["cfg"].map(json.loads)
     if not configs.map(lambda config: isinstance(config, dict)).all():
         raise ValueError(f"{path}: configuration must be a JSON object")
-    records["cfg"] = configs.map(bm.config_json)
+    records["cfg"] = configs.map(params_json)
     records["val_RMSE"] = pd.to_numeric(records["val_RMSE"], errors="raise")
     if not np.isfinite(records["val_RMSE"]).all():
         raise ValueError(f"{path}: validation RMSE must be finite")
@@ -142,9 +148,7 @@ def load_sweep_records(path: Path, data: BACE1Benchmark, experiment: str):
 
 
 def select_configuration(records: pd.DataFrame, seeds):
-    """
-    Select minimum mean validation RMSE using the same complete seed set.
-    """
+    """Select minimum mean validation RMSE using the same complete seed set."""
     if not seeds or len(set(seeds)) != len(seeds):
         raise ValueError("selection seeds must be a nonempty unique list")
     if records.empty:
@@ -199,8 +203,13 @@ def run_cli(argv, *, stages, output_dir, experiment, normalize_config, run):
         for name in names
     }
     print(
-        bm.config_json(
-            {"benchmark": data.metadata, "mode": "exploratory", "stages": names}
+        params_json(
+            {
+                "data_sha256": data.data_sha256,
+                "split_sha256": data.split_sha256,
+                "mode": "exploratory",
+                "stages": names,
+            }
         )
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -214,7 +223,7 @@ def run_cli(argv, *, stages, output_dir, experiment, normalize_config, run):
         configs, seeds = stages[name]
         runs = [(cfg, seed) for cfg in configs for seed in seeds]
         for position, (cfg, seed) in enumerate(runs, 1):
-            key = (bm.config_json(cfg), seed)
+            key = (params_json(cfg), seed)
             if key in done:
                 continue
             measurements = run(cfg, seed, data)
@@ -222,7 +231,8 @@ def run_cli(argv, *, stages, output_dir, experiment, normalize_config, run):
                 [
                     {
                         **measurements,
-                        "benchmark": bm.config_json(data.metadata),
+                        "data_sha256": data.data_sha256,
+                        "split_sha256": data.split_sha256,
                         "sweep_protocol": SWEEP_PROTOCOL,
                         "experiment": experiment,
                     }

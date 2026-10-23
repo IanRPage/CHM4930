@@ -17,7 +17,11 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from benchmark import config_json, evaluate_predictions, set_training_seed
+from baseline.benchmark import (
+    evaluate_split_predictions,
+    params_json,
+    seed_everything,
+)
 from encoder_benchmark import run_cli
 from encoders.smiles_encoder import (
     DEFAULT_MODEL_NAME,
@@ -86,7 +90,7 @@ def make_encoder(cfg):
 
 
 def train_head(cfg, seed, data, *, evaluate_test=False):
-    generator = set_training_seed(seed)
+    generator = seed_everything(seed)
     encoder = make_encoder(cfg).to(DEVICE).eval()
     resolved = getattr(encoder.model.config, "_commit_hash", None)
     if resolved is not None and resolved != cfg["PRETRAINED_REVISION"]:
@@ -150,9 +154,10 @@ def train_head(cfg, seed, data, *, evaluate_test=False):
                 head(X_train[idx]).squeeze(-1), y_train[idx]
             ).backward()
             optimizer.step()
-        rmse = evaluate_predictions(
-            data.frame.iloc[val]["pIC50_BACE1"], predict(val), "regression"
-        )["rmse"]
+        rows = evaluate_split_predictions(
+            data.frame, {"val": {"pIC50_BACE1": predict(val)}}
+        )
+        rmse = next(r["value"] for r in rows if r["metric"] == "rmse")
         if rmse < best_rmse:
             best_rmse, best_state, best_epoch = (
                 rmse,
@@ -180,7 +185,7 @@ def run(cfg, seed, data, *, evaluate_test=False):
     start = time.time()
     result = train_head(cfg, seed, data, evaluate_test=evaluate_test)
     return {
-        "cfg": config_json(cfg),
+        "cfg": params_json(cfg),
         "seed": seed,
         **cfg,
         **result,

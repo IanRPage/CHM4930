@@ -17,7 +17,11 @@ from torch import nn
 from torch.utils.data import BatchSampler, RandomSampler
 from torch_geometric.loader import DataLoader
 
-from benchmark import config_json, evaluate_predictions, set_training_seed
+from baseline.benchmark import (
+    evaluate_split_predictions,
+    params_json,
+    seed_everything,
+)
 from encoder_benchmark import grid, run_cli
 from encoders.gnn_encoder import GNNEncoder
 from pipeline.cache import DATA_DIR
@@ -27,9 +31,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class TrainingBatchSampler(BatchSampler):
-    """
-    Keep every training example, merging a singleton tail for BatchNorm.
-    """
+    """Keep every training example, merging a singleton tail for BatchNorm."""
 
     def __iter__(self):
         previous = None
@@ -80,7 +82,7 @@ def _deterministic_training():
 
 @_deterministic_training()
 def train_gnn(cfg, seed, data, *, evaluate_test=False):
-    generator = set_training_seed(seed)
+    generator = seed_everything(seed)
     train, val = data.indices["train"], data.indices["val"]
     if cfg["BATCH_SIZE"] < 2 or len(train) < 2:
         raise ValueError(
@@ -122,9 +124,10 @@ def train_gnn(cfg, seed, data, *, evaluate_test=False):
             nn.functional.mse_loss(pred, batch.y).backward()
             optimizer.step()
         val_pred = predict(model, val, cfg["BATCH_SIZE"], graphs)
-        val_rmse = evaluate_predictions(
-            data.frame.iloc[val]["pIC50_BACE1"], val_pred, "regression"
-        )["rmse"]
+        rows = evaluate_split_predictions(
+            data.frame, {"val": {"pIC50_BACE1": val_pred}}
+        )
+        val_rmse = next(r["value"] for r in rows if r["metric"] == "rmse")
         if val_rmse < best_rmse:
             best_rmse = val_rmse
             best_state = copy.deepcopy(model.state_dict())
@@ -294,7 +297,7 @@ def run(cfg, seed, data, *, evaluate_test=False):
     start = time.time()
     result = train_gnn(cfg, seed, data, evaluate_test=evaluate_test)
     return {
-        "cfg": config_json(cfg),
+        "cfg": params_json(cfg),
         "seed": seed,
         **cfg,
         **result,
