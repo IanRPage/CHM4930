@@ -63,17 +63,44 @@ def test_rerun_replaces_only_that_models_rows(paths):
     assert written["model"].tolist() == ["a", "b"]
 
 
-def test_other_models_rows_from_an_old_snapshot_are_dropped(paths, caplog):
+def test_other_models_stale_rows_are_dropped_only_with_opt_in(paths, caplog):
     path, data = paths
     results.record_results([row("T1")], model="a", path=path, data_path=data)
     results.record_results([row("T1")], model="b", path=path, data_path=data)
+    before = path.read_bytes()
     data.write_text("smiles\nCCN\n")
-    results.record_results([row("T1")], model="a", path=path, data_path=data)
 
+    with pytest.raises(ValueError, match="different snapshot"):
+        results.record_results([row("T1")], model="a", path=path, data_path=data)
+    assert path.read_bytes() == before
+
+    results.record_results(
+        [row("T1")], model="a", path=path, data_path=data, allow_drop_stale=True
+    )
     written = pd.read_csv(path)
     assert written["model"].tolist() == ["a"]
     assert written["data_sha256"].tolist() == [results.file_sha256(data)]
     assert "['b']" in caplog.text
+
+
+def test_rerun_replaces_only_matching_encoder_and_seed_rows(paths):
+    path, data = paths
+    rows = [row("T1", seed=s, encoder=e) for e in ("gnn", "ecfp") for s in (0, 1)]
+    results.record_results(rows, model="m", path=path, data_path=data)
+    results.record_results(
+        [row("T1", seed=0, value=0.9, encoder="ecfp")],
+        model="m",
+        path=path,
+        data_path=data,
+    )
+
+    written = pd.read_csv(path).set_index(["encoder", "seed"])["value"]
+    assert written.to_dict() == {
+        ("ecfp", 0): 0.9,
+        ("ecfp", 1): 0.5,
+        ("gnn", 0): 0.5,
+        ("gnn", 1): 0.5,
+    }
 
 
 def test_rows_are_sorted_by_seed_and_nan_values_kept(paths):
@@ -101,6 +128,7 @@ def test_summarize_seeds_computes_mean_ddof1_std_and_keeps_nan_keys(paths):
         row("T1", "test", seed=0, value=0.6),
         row("T1", "test", seed=1, value=0.8),
         row("T1", "test", seed=2, value=1.0),
+        row("T1", "test", seed=3, value=np.nan),
         row(
             "macro_tox21",
             "test",

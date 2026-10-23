@@ -231,6 +231,79 @@ def test_run_benchmark_rejects_empty_seeds(split_df, paths):
         )
 
 
+def test_run_benchmark_loads_from_data_path_when_df_is_none(
+    snapshot_csv, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(results, "git_commit", lambda: "abc1234")
+    out_path = tmp_path / "results.csv"
+    seen_rows = []
+
+    def fit_predict(df, seed):
+        seen_rows.append(len(df))
+        return {
+            split: {
+                "pIC50_BACE1": np.full((df["split"] == split).sum(), 6.0, dtype=float)
+            }
+            for split in ("val", "test")
+        }
+
+    benchmark.run_benchmark(
+        fit_predict,
+        model="stub",
+        encoder="enc",
+        params={},
+        seeds=(0,),
+        path=out_path,
+        data_path=snapshot_csv,
+    )
+
+    assert seen_rows == [20]
+    written = pd.read_csv(out_path)
+    assert set(written["data_sha256"]) == {results.file_sha256(snapshot_csv)}
+
+
+@pytest.mark.parametrize(
+    "bad_predictions", [{}, {"val": {"pIC50_BACE1": [5.0, 7.0, np.nan]}}]
+)
+def test_run_benchmark_rejects_missing_split_predictions(
+    split_df, paths, bad_predictions
+):
+    path, data_path = paths
+    with pytest.raises(ValueError, match="must return 'val' and 'test'"):
+        benchmark.run_benchmark(
+            lambda df, seed: bad_predictions,
+            model="stub",
+            encoder="enc",
+            params={},
+            seeds=(0,),
+            df=split_df,
+            path=path,
+            data_path=data_path,
+        )
+    assert not path.exists()
+
+
+def test_run_benchmark_passes_allow_drop_stale(split_df, paths):
+    path, data_path = paths
+    kwargs = {
+        "fit_predict": lambda df, seed: {
+            "val": {"pIC50_BACE1": [5.0, 7.0, np.nan]},
+            "test": {"pIC50_BACE1": [4.0, 8.0, np.nan]},
+        },
+        "encoder": "enc",
+        "params": {},
+        "seeds": (0,),
+        "df": split_df,
+        "path": path,
+        "data_path": data_path,
+    }
+    benchmark.run_benchmark(model="other", **kwargs)
+    data_path.write_text("smiles\nCCN\n")
+
+    benchmark.run_benchmark(model="stub", allow_drop_stale=True, **kwargs)
+    assert set(pd.read_csv(path)["model"]) == {"stub"}
+
+
 def test_load_benchmark_split_delegates_to_combined_and_scaffold(monkeypatch):
     sentinel = pd.DataFrame({"smiles": ["CCO"]})
     monkeypatch.setattr(benchmark, "load_combined", lambda **_: sentinel)

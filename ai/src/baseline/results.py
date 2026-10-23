@@ -2,9 +2,9 @@
 Record benchmark metrics in the tracked CSV `ai/data/baseline/results.csv`.
 
 Each row is one seed's measurement, tagged with the snapshot hash and git commit it came
-from. Readers aggregate across seeds with `summarize_seeds()`. Re-running a model replaces
-that model's rows and drops other models' rows from an older snapshot, so the file only
-ever describes one snapshot.
+from. Readers aggregate across seeds with `summarize_seeds()`. Re-running replaces the
+`(model, encoder, seed)` rows being written and refuses to drop other models' rows from
+an older snapshot unless `allow_drop_stale=True`.
 """
 
 import datetime
@@ -38,7 +38,7 @@ COLUMNS = [
     "git_commit",
     "date",
 ]
-SORT_KEYS = ["model", "dataset", "endpoint", "split", "seed", "metric"]
+SORT_KEYS = ["model", "encoder", "dataset", "endpoint", "split", "seed", "metric"]
 SUMMARY_GROUP_KEYS = [
     c for c in COLUMNS if c not in ("seed", "value", "git_commit", "date")
 ]
@@ -95,6 +95,8 @@ def record_results(
     model: str,
     path: Path = RESULTS_PATH,
     data_path: Path = COMBINED_CSV_PATH,
+    *,
+    allow_drop_stale: bool = False,
 ) -> pd.DataFrame:
     sha = file_sha256(data_path)
     new = pd.DataFrame(rows).assign(
@@ -104,16 +106,29 @@ def record_results(
         date=datetime.datetime.now(datetime.UTC).date().isoformat(),
     )
     new = new.reindex(columns=COLUMNS)
+    new["seed"] = new["seed"].astype("Int64")
     if path.exists():
         old = pd.read_csv(path).reindex(columns=COLUMNS)
-        others = old[old["model"] != model]
-        stale = others["data_sha256"] != sha
-        if stale.any():
+        old["seed"] = old["seed"].astype("Int64")
+        stale = old["data_sha256"] != sha
+        stale_others = sorted(
+            old.loc[stale & (old["model"] != model), "model"].unique()
+        )
+        if stale_others:
+            if not allow_drop_stale:
+                raise ValueError(
+                    f"refusing to drop results for {stale_others} from a different "
+                    "snapshot; pass allow_drop_stale=True to overwrite"
+                )
             log.warning(
                 "dropping results for %s: computed on a different snapshot",
-                sorted(others.loc[stale, "model"].unique()),
+                stale_others,
             )
-        new = pd.concat([others[~stale], new], ignore_index=True)
+        replaced = pd.MultiIndex.from_frame(new[["model", "encoder", "seed"]])
+        keep = ~stale & ~pd.MultiIndex.from_frame(
+            old[["model", "encoder", "seed"]]
+        ).isin(replaced)
+        new = pd.concat([old[keep], new], ignore_index=True)
     out = new[COLUMNS].sort_values(SORT_KEYS, ignore_index=True)
     out["seed"] = out["seed"].astype("Int64")
     write_csv(out, path)
@@ -126,7 +141,7 @@ def summarize_seeds(df: pd.DataFrame) -> pd.DataFrame:
     grouped = df.groupby(SUMMARY_GROUP_KEYS, dropna=False, as_index=False).agg(
         value=("value", "mean"),
         std=("value", lambda s: s.std(ddof=1)),
-        n_seeds=("seed", "size"),
+        n_seeds=("value", "count"),
     )
     sort_cols = [k for k in SORT_KEYS if k != "seed"]
     return grouped[SUMMARY_COLUMNS].sort_values(sort_cols, ignore_index=True)

@@ -22,9 +22,11 @@ def recorded(monkeypatch, tmp_path):
 
     real_record = benchmark.record_results
 
-    def capture_record(rows, model, path=out_path, data_path=data_path):
+    def capture_record(rows, model, path=out_path, data_path=data_path, **kwargs):
         calls.append((model, rows))
-        return real_record(rows, model=model, path=out_path, data_path=data_path)
+        return real_record(
+            rows, model=model, path=out_path, data_path=data_path, **kwargs
+        )
 
     monkeypatch.setattr(benchmark, "record_results", capture_record)
     return calls

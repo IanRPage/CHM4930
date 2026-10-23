@@ -242,24 +242,27 @@ def run_benchmark(
     df: pd.DataFrame | None = None,
     path: Path = RESULTS_PATH,
     data_path: Path = COMBINED_CSV_PATH,
+    allow_drop_stale: bool = False,
 ) -> pd.DataFrame:
     if seeds is None:
         seeds = SEEDS
     if not seeds:
         raise ValueError("seeds must not be empty")
     if df is None:
-        df = load_benchmark_split()
+        df = load_benchmark_split(data_path)
 
     encoded_params = params_json(params)
     rows: list[dict] = []
     for seed in seeds:
         seed_everything(seed)
         predictions = fit_predict(df, seed)
-        eval_preds = {
-            split: predictions[split]
-            for split in ("val", "test")
-            if split in predictions
-        }
+        missing = [s for s in ("val", "test") if s not in predictions]
+        if missing:
+            raise ValueError(
+                "fit_predict must return 'val' and 'test' predictions; "
+                f"missing {missing}"
+            )
+        eval_preds = {split: predictions[split] for split in ("val", "test")}
         for row in evaluate_split_predictions(df, eval_preds):
             rows.append(
                 {
@@ -270,5 +273,13 @@ def run_benchmark(
                 }
             )
 
-    recorded = record_results(rows, model=model, path=path, data_path=data_path)
-    return summarize_seeds(recorded[recorded["model"] == model])
+    recorded = record_results(
+        rows,
+        model=model,
+        path=path,
+        data_path=data_path,
+        allow_drop_stale=allow_drop_stale,
+    )
+    return summarize_seeds(
+        recorded[(recorded["model"] == model) & (recorded["encoder"] == encoder)]
+    )

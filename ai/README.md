@@ -121,13 +121,15 @@ change the snapshot is:
 PYTHONPATH=src python -m pipeline.combined_loader --refresh
 ```
 
-Don't run that casually. It invalidates every recorded result, so re-run both
-baselines and commit the new snapshot together with the new results.
+Don't run that casually. It invalidates every recorded result, so delete
+`data/baseline/results.csv`, re-run both baselines, and commit the new snapshot
+together with the new results.
 
-Each run replaces its own rows in `data/baseline/results.csv`, one row per model
-× endpoint × split × seed × metric across `SEEDS = (0, 1, 2, 3, 4)` (aggregate
-across seeds with `baseline.results.summarize_seeds()`). Each row is tagged with
-the snapshot's SHA-256 (taken with LF line endings, so Windows checkouts match)
+Each run replaces its own `(model, encoder, seed)` rows in
+`data/baseline/results.csv`, one row per model × endpoint × split × seed × metric
+across `SEEDS = (0, 1, 2, 3, 4)` (aggregate across seeds with
+`baseline.results.summarize_seeds()`). Each row is tagged with the snapshot's
+SHA-256 (taken with LF line endings, so Windows checkouts match)
 and the git commit it ran on. Current test set performance (mean over 5 seeds):
 
 | Model            | Task                  | Test result                                  |
@@ -159,7 +161,8 @@ baselines through `src/baseline/benchmark.py`:
 - `run_benchmark(fit_predict, model, encoder, params)`: runs
   `fit_predict(df, seed)` across `SEEDS`, evaluates `"val"` and `"test"`, writes
   per-seed rows to `data/baseline/results.csv`, and returns the
-  `summarize_seeds()` table
+  `summarize_seeds()` table. It refuses to drop other models' rows from an older
+  snapshot unless `allow_drop_stale=True`
 
 ### Encoder sweeps
 
