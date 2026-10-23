@@ -1,9 +1,13 @@
+"""
+Late fusion of projected modality embeddings with optional presence masking.
+"""
+
 from collections.abc import Mapping
 
 import torch
 from torch import nn
 
-from mufu.contract import D_MODEL, FUSED_DIM, MODALITIES, _check_keys, _check_tensor
+from mufu.contract import D_MODEL, FUSED_DIM, MODALITIES, check_keys, check_tensor
 
 
 class LateFusion(nn.Module):
@@ -28,17 +32,16 @@ class LateFusion(nn.Module):
         projected: Mapping[str, torch.Tensor],
         mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        _check_keys("projected", set(projected), set(MODALITIES))
+        check_keys("projected", set(projected), set(MODALITIES))
         size = len(projected[MODALITIES[0]])
         for m in MODALITIES:
-            _check_tensor(m, projected[m], (size, D_MODEL), "float")
+            check_tensor(m, projected[m], (size, D_MODEL), "float")
         if mask is None:
             fused = torch.cat([projected[m] for m in MODALITIES], dim=1)
         else:
-            _check_tensor("mask", mask, (size, len(MODALITIES)), "bool")
-            # The following two lines can be used for future modality ablation experiment, add another validation
-            # if not mask.any(dim=1).all():
-            #    raise ValueError("mask: each sample must retain at least one modality")
+            check_tensor("mask", mask, (size, len(MODALITIES)), "bool")
+            if not mask.any(dim=1).all():
+                raise ValueError("mask: each sample must retain at least one modality")
             mask = mask.to(device=projected[MODALITIES[0]].device)
             fused = torch.cat(
                 [projected[m] * mask[:, i : i + 1] for i, m in enumerate(MODALITIES)],

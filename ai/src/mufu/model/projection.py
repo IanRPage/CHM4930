@@ -1,9 +1,14 @@
+"""
+Linear projection of each modality's encoder output into the shared embedding width
+`D_MODEL`.
+"""
+
 from collections.abc import Mapping
 
 import torch
 from torch import nn
 
-from mufu.contract import D_MODEL, MODALITIES, _check_keys, _check_tensor
+from mufu.contract import D_MODEL, MODALITIES, check_keys, check_tensor
 
 
 class ModalityProjection(nn.Module):
@@ -17,7 +22,7 @@ class ModalityProjection(nn.Module):
 
     def __init__(self, in_dims: Mapping[str, int]) -> None:
         super().__init__()
-        _check_keys("in_dims", set(in_dims), set(MODALITIES))
+        check_keys("in_dims", set(in_dims), set(MODALITIES))
         self.in_dims = dict(in_dims)
         self.layers = nn.ModuleDict(
             {m: nn.Linear(in_dims[m], D_MODEL) for m in MODALITIES}
@@ -26,8 +31,8 @@ class ModalityProjection(nn.Module):
     def forward(
         self, embeddings: Mapping[str, torch.Tensor]
     ) -> dict[str, torch.Tensor]:
-        _check_keys("embeddings", set(embeddings), set(MODALITIES))
+        check_keys("embeddings", set(embeddings), set(MODALITIES))
         size = len(embeddings[MODALITIES[0]])
         for m in MODALITIES:
-            _check_tensor(m, embeddings[m], (size, self.in_dims[m]), "float")
+            check_tensor(m, embeddings[m], (size, self.in_dims[m]), "float")
         return {m: self.layers[m](embeddings[m]) for m in MODALITIES}

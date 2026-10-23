@@ -2,8 +2,8 @@ import pytest
 import torch
 
 from mufu.contract import D_MODEL, DROPOUT_MASKS, FUSED_DIM, MODALITIES
-from mufu.fusion import LateFusion
-from mufu.modality_dropout import sample_modality_mask
+from mufu.model.fusion import LateFusion
+from mufu.model.modality_dropout import sample_modality_mask
 
 
 def make_projected(batch_size=4, requires_grad=False):
@@ -100,6 +100,16 @@ def test_rejects_non_bool_mask():
     mask = torch.ones(4, len(MODALITIES))
 
     with pytest.raises(ValueError, match="mask: expected dtype bool"):
+        LateFusion()(make_projected(), mask)
+
+
+def test_rejects_empty_modality_row():
+    mask = torch.ones(4, len(MODALITIES), dtype=torch.bool)
+    mask[1] = False
+
+    with pytest.raises(
+        ValueError, match="mask: each sample must retain at least one modality"
+    ):
         LateFusion()(make_projected(), mask)
 
 

@@ -1,3 +1,7 @@
+"""
+Convert RDKit molecules into PyTorch Geometric graphs with one-hot atom and bond features.
+"""
+
 import torch
 from rdkit import Chem
 from torch_geometric.data import Data

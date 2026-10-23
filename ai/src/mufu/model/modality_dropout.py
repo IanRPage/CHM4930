@@ -1,3 +1,7 @@
+"""
+Modality presence mask sampling for training-time input modality dropout.
+"""
+
 import torch
 
 from mufu.contract import DROPOUT_MASKS, MODALITIES, MODALITY_DROPOUT_P
@@ -10,7 +14,8 @@ def sample_modality_mask(
     device: torch.device | str | None = None,
     generator: torch.Generator | None = None,
 ) -> torch.Tensor:
-    """Sample a (B, len(MODALITIES)) bool presence mask in MODALITIES order.
+    """
+    Sample a (B, len(MODALITIES)) bool presence mask in MODALITIES order.
 
     Each sample stays fully present with probability 1-p; otherwise choose
     uniformly from DROPOUT_MASKS. At p=0.3 this gives 70% full presence and

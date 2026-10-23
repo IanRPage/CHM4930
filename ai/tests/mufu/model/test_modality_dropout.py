@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from mufu.contract import DROPOUT_MASKS, MODALITIES
-from mufu.modality_dropout import sample_modality_mask
+from mufu.model.modality_dropout import sample_modality_mask
 
 
 def test_disabled_sampling_keeps_all_modalities_without_advancing_rng():

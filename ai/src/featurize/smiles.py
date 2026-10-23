@@ -1,3 +1,7 @@
+"""
+Convert RDKit molecules into canonical isomeric SMILES strings.
+"""
+
 from rdkit import Chem
 
 

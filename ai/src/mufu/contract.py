@@ -24,10 +24,10 @@ from typing import Protocol, TypedDict
 import torch
 from torch_geometric.data import Batch
 
+from featurize.fingerprint import FINGERPRINT_BITS
 from featurize.graph import EDGE_FEATURE_DIM, NODE_FEATURE_DIM
 from pipeline.combined_loader import TARGETS, TOX_TASKS
 
-FINGERPRINT_BITS = 2048
 BIO_TARGETS = tuple(TARGETS)
 PIC50_COLUMNS = tuple(f"pIC50_{t}" for t in BIO_TARGETS)
 ACTIVE_COLUMNS = tuple(f"active_{t}" for t in BIO_TARGETS)
@@ -104,7 +104,7 @@ TASK_SPECS = {
 TaskLosses = dict[str, torch.Tensor | None]
 
 
-def _check_keys(kind: str, got: set[str], expected: set[str]) -> None:
+def check_keys(kind: str, got: set[str], expected: set[str]) -> None:
     if got != expected:
         raise ValueError(
             f"{kind}: missing keys {sorted(expected - got)}, "
@@ -112,7 +112,7 @@ def _check_keys(kind: str, got: set[str], expected: set[str]) -> None:
         )
 
 
-def _check_tensor(name: str, value, shape: tuple[int, ...], dtype: str) -> None:
+def check_tensor(name: str, value, shape: tuple[int, ...], dtype: str) -> None:
     if not isinstance(value, torch.Tensor):
         raise TypeError(f"{name}: expected a tensor, got {type(value).__name__}")
     if tuple(value.shape) != shape:
@@ -124,12 +124,10 @@ def _check_tensor(name: str, value, shape: tuple[int, ...], dtype: str) -> None:
 
 
 def validate_batch(batch: MuFuBatch) -> None:
-    _check_keys("batch", set(batch), set(MuFuBatch.__annotations__))
+    check_keys("batch", set(batch), set(MuFuBatch.__annotations__))
 
     size = len(batch["smiles"])
-    _check_tensor(
-        "fingerprint", batch["fingerprint"], (size, FINGERPRINT_BITS), "float"
-    )
+    check_tensor("fingerprint", batch["fingerprint"], (size, FINGERPRINT_BITS), "float")
 
     graph = batch["graph"]
     if graph.num_graphs != size:
@@ -145,16 +143,16 @@ def validate_batch(batch: MuFuBatch) -> None:
         )
 
     for key, width in (("y_pic50", N_BIO), ("y_active", N_BIO), ("y_tox", N_TOX)):
-        _check_tensor(key, batch[key], (size, width), "float")
+        check_tensor(key, batch[key], (size, width), "float")
         if batch[key].isnan().any():
             raise ValueError(
                 f"{key}: contains NaN, fill missing labels with {LABEL_FILL}"
             )
-    _check_tensor("mask_bio", batch["mask_bio"], (size, N_BIO), "bool")
-    _check_tensor("mask_tox", batch["mask_tox"], (size, N_TOX), "bool")
+    check_tensor("mask_bio", batch["mask_bio"], (size, N_BIO), "bool")
+    check_tensor("mask_tox", batch["mask_tox"], (size, N_TOX), "bool")
 
 
 def validate_outputs(outputs: MuFuOutputs, batch_size: int) -> None:
-    _check_keys("outputs", set(outputs), set(MuFuOutputs.__annotations__))
+    check_keys("outputs", set(outputs), set(MuFuOutputs.__annotations__))
     for key, width in OUTPUT_WIDTHS.items():
-        _check_tensor(key, outputs[key], (batch_size, width), "float")
+        check_tensor(key, outputs[key], (batch_size, width), "float")

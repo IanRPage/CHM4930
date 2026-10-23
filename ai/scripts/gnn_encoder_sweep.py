@@ -1,4 +1,5 @@
-"""Staged GNNEncoder experiments on the shared frozen BACE-1 cohort.
+"""
+Staged GNNEncoder experiments on the shared frozen BACE-1 cohort.
 
 Stage CSVs/logs retain their existing paths. Exploration scores train/val only;
 test is reserved for a selected canonical seed-42 run. Legacy stage files without
@@ -10,7 +11,6 @@ matching benchmark metadata cannot be resumed.
 """
 
 import copy
-import itertools
 import sys
 import time
 from contextlib import contextmanager
@@ -23,8 +23,8 @@ from torch import nn
 from torch.utils.data import BatchSampler, RandomSampler
 from torch_geometric.loader import DataLoader
 
-from benchmark import evaluate_predictions, set_training_seed
-from encoder_benchmark import config_json, run_cli
+from benchmark import config_json, evaluate_predictions, set_training_seed
+from encoder_benchmark import grid, run_cli
 from encoders.gnn_encoder import GNNEncoder
 from pipeline.cache import DATA_DIR
 
@@ -33,7 +33,9 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class TrainingBatchSampler(BatchSampler):
-    """Keep every training example, merging a singleton tail for BatchNorm."""
+    """
+    Keep every training example, merging a singleton tail for BatchNorm.
+    """
 
     def __iter__(self):
         previous = None
@@ -149,10 +151,6 @@ def train_gnn(cfg, seed, data, *, evaluate_test=False):
             evaluate_test=evaluate_test,
         ),
     }
-
-
-def grid(base, **values):
-    return [base | dict(zip(values, v)) for v in itertools.product(*values.values())]
 
 
 DEFAULT = {

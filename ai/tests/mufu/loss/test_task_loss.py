@@ -3,8 +3,8 @@ import pandas as pd
 import torch
 
 from mufu import contract as c
-from mufu.dataset import MuFuDataset
-from mufu.task_loss import (
+from mufu.data.dataset import MuFuDataset
+from mufu.loss.task_loss import (
     TaskLoss,
     bce_loss,
     compute_pos_weight,

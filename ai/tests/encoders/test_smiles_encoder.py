@@ -1,18 +1,24 @@
+"""
+This test file tests the wrapper logic of the smiles encoder; the actual pretrained MolFormer is tested separately in a notebook.
+"""
+
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import numpy as np
+import pandas as pd
 import pytest
 import torch
 from torch import nn
 
 import encoders.smiles_encoder as smiles_module
-from encoders.smiles_encoder import SmilesEncoder
+from encoders.smiles_encoder import (
+    DEFAULT_MAX_CACHE_SIZE,
+    DEFAULT_REVISION,
+    SmilesEncoder,
+)
 
 HIDDEN_SIZE = 32
-
-"""
-This test file tests the wrapper logic of the smiles encoder; the actual pretrained MolFormer is tested separately in a notebook.
-"""
 
 
 class DummyTokenizer:
@@ -414,3 +420,54 @@ def test_cache_disabled_for_trainable_encoder(mocked_pretrained):
 def test_invalid_cache_size(mocked_pretrained, cache_size):
     with pytest.raises(ValueError, match="max_cache_size"):
         SmilesEncoder(max_cache_size=cache_size)
+
+
+def test_default_cache_size_and_unlimited_cache(mocked_pretrained):
+    default_encoder = SmilesEncoder()
+    assert default_encoder.max_cache_size == DEFAULT_MAX_CACHE_SIZE
+
+    unlimited = SmilesEncoder(max_cache_size=None)
+    result = unlimited(["CCO", "CCN", "CCC"])
+    assert result.shape == (3, unlimited.out_dim)
+    assert len(unlimited._embedding_cache) == 3
+
+
+def test_revision_pinned_in_from_pretrained(monkeypatch):
+    tokenizer = DummyTokenizer()
+    model = DummyMolFormer()
+    calls = []
+
+    def fake_tok(name, **kwargs):
+        calls.append(("tokenizer", name, kwargs))
+        return tokenizer
+
+    def fake_mod(name, **kwargs):
+        calls.append(("model", name, kwargs))
+        return model
+
+    monkeypatch.setattr(smiles_module.AutoTokenizer, "from_pretrained", fake_tok)
+    monkeypatch.setattr(smiles_module.AutoModel, "from_pretrained", fake_mod)
+
+    encoder = SmilesEncoder()
+    assert encoder.revision == DEFAULT_REVISION
+    assert len(calls) == 2
+    assert calls[0][2]["revision"] == DEFAULT_REVISION
+    assert calls[1][2]["revision"] == DEFAULT_REVISION
+
+
+def test_accepts_non_sequence_iterables(mocked_pretrained):
+    encoder = SmilesEncoder()
+    series_out = encoder(pd.Series(["CCO", "CCN"]))
+    array_out = encoder(np.array(["CCO", "CCN"]))
+    gen_out = encoder(s for s in ["CCO", "CCN"])
+    list_out = encoder(["CCO", "CCN"])
+
+    assert torch.equal(series_out, list_out)
+    assert torch.equal(array_out, list_out)
+    assert torch.equal(gen_out, list_out)
+
+
+def test_warns_when_smiles_is_truncated(mocked_pretrained, caplog):
+    encoder = SmilesEncoder(max_length=4, cache_embeddings=False)
+    encoder(["CCO", "CCN"])
+    assert "truncated 2 SMILES reaching max_length=4" in caplog.text

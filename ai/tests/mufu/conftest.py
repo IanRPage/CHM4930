@@ -6,7 +6,7 @@ from torch import nn
 from encoders.fingerprint_encoder import FingerprintEncoder
 from encoders.gnn_encoder import GNNEncoder
 from mufu.contract import ACTIVE_COLUMNS, PIC50_COLUMNS, TOX_COLUMNS
-from mufu.dataset import MuFuDataset
+from mufu.data.dataset import MuFuDataset
 from mufu.model import MuFu
 
 SMILES = ["CCO", "CCN", "CCC", "c1ccccc1", "CC(=O)O", "C", "CO", "CN"]

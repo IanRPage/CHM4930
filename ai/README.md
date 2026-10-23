@@ -7,23 +7,24 @@ along with any datasets or checkpoints for saved model weights.
 
 ```
 ai/
-├── data/            # local data storage
-│   └── baseline/    # frozen combined.csv baselines train on, and their results.csv (tracked)
-├── docs/            # design docs (MuFu-v1.md)
-├── notebooks/       # exploration / scratchpads
-├── scripts/         # helpful utility scripts
-├── src/             # main code
-│   ├── baseline/    # random forest baselines and their results recorder
-│   ├── featurize/   # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
-│   ├── mufu/        # MuFu interface contract (names, shapes, defaults)
-│   ├── pipeline/    # dataset loaders and structure to model input preprocessing
-│   ├── encoders/    # where each of MuFu's encoders are implemented
-│   └── check_env.py # sanity check that dependencies are installed correctly
-├── tests/           # pytest suite (mirrors src/)
-├── checkpoints/     # saved model weights
-├── outputs/         # generated artifacts (figures, logs, metrics, etc.)
-├── environment.yml  # conda environment config
-├── pytest.ini       # pytest config (test paths, import path, markers)
+├── data/               # local data storage
+│   └── baseline/       # frozen combined.csv baselines train on, and their results.csv (tracked)
+├── docs/               # design docs (MuFu-v1.md)
+├── notebooks/          # exploration / scratchpads
+├── scripts/            # helpful utility scripts
+├── src/                # main code
+│   ├── baseline/       # random forest baselines and their results recorder
+│   ├── featurize/      # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
+│   ├── mufu/           # MuFu multimodal dataset, model, loss, and training components
+│   ├── pipeline/       # dataset loaders and structure to model input preprocessing
+│   ├── encoders/       # where each of MuFu's encoders are implemented
+│   ├── benchmark.py    # shared split, seeding, and scoring every model uses
+│   └── evaluation.py   # regression, classification, and multi-task evaluation metrics
+├── tests/              # pytest suite (mirrors src/ and scripts/)
+├── checkpoints/        # saved model weights
+├── outputs/            # generated artifacts (figures, logs, metrics, etc.)
+├── environment.yml     # conda environment config
+├── pytest.ini          # pytest config (test paths, import path, markers)
 └── README.md
 ```
 
@@ -66,7 +67,7 @@ Now when you open a notebook, select "Python (CHM4930)" as the kernel. To make
 sure everything installed correctly, run:
 
 ```
-python src/check_env.py
+python scripts/check_env.py
 ```
 
 It imports each dependency and prints its version, so if something's missing or
@@ -125,8 +126,9 @@ Don't run that casually. It invalidates every recorded result, so re-run both
 baselines and commit the new snapshot together with the new results.
 
 Each run replaces its own rows in `data/baseline/results.csv`, one row per model
-× endpoint × split × metric. Each row is tagged with the snapshot's SHA-256 and
-the git commit it ran on. Current test set performance:
+× endpoint × split × metric. Each row is tagged with the snapshot's SHA-256 (taken
+with LF line endings, so Windows checkouts match) and the git commit it ran on.
+Current test set performance:
 
 | Model            | Task                  | Test result                                  |
 | ---------------- | --------------------- | -------------------------------------------- |
@@ -140,244 +142,59 @@ very few examples of one class, so read their ROC-AUC loosely. For example,
 NR-AR has 11 actives out of 704 (val 0.83, test 0.55), and FDA_APPROVED has only
 6 unapproved compounds out of 144 (val 0.84, test 0.56).
 
-## Shared Benchmark Foundation
+## Benchmarks
 
-`src/benchmark.py` provides the common dataset, protocol metadata, seed setup,
-and masked evaluation API. Load and split the full frozen combined table before
-filtering for an endpoint. The canonical protocol keeps the existing RF split:
-80/10/10, split seed `None`, training seed `42`, and active labels at pIC50 ≥ 6.0.
+Every model is scored on the same split, rows, and metrics as the RF baselines.
+`src/benchmark.py` has the shared pieces:
+
+- `load_benchmark()`: the frozen table with its scaffold split
+- `set_training_seed()`: seeds Python, NumPy, and Torch (default 42) and returns a
+  seeded generator for DataLoaders
+- `evaluate_predictions()`: shared metrics, with missing labels masked
+- `benchmark_metadata()`: hashes of the dataset and split assignments. Store it in
+  result `params` so a result can be checked against the snapshot it came from
+
+### Encoder sweeps
+
+`scripts/ECFP4_encoder_sweep.py`, `gnn_encoder_sweep.py`, and
+`SMILES_encoder_sweep.py` train each encoder with a pIC50 head on the BACE-1 rows
+of the shared split (6,469 / 808 / 810), the same molecules as `rf_bioactivity`.
+
+```sh
+python scripts/gnn_encoder_sweep.py 1 2                                  # exploratory stages (train/val only)
+python scripts/gnn_encoder_sweep.py --benchmark --config chosen.json     # canonical seed-42 run, prints val/test
+python scripts/gnn_encoder_sweep.py --benchmark --select-from <stage.csv> --write-results
+```
+
+- stage CSVs and logs go to `--output-dir` (default `outputs/encoders/<encoder>/sweep/`)
+  and resume where they left off. Old files without matching benchmark metadata
+  can't be resumed, so point new runs at a new directory
+- `--select-from` picks the config with the lowest mean val RMSE over
+  `--selection-seeds` (default `0 1 2`). Test is never used for selection
+- `results.csv` is only written with `--write-results`. `--dry-run` checks the
+  config without training
+- `PRETRAINED_REVISION` in the SMILES script defaults to `DEFAULT_REVISION` (override
+  with a 40-character MolFormer commit SHA via `--stage-config` or `--config`)
+
+### MuFu
+
+`mufu.benchmark.evaluate_mufu()` scores a trained MuFu on val/test and records it in
+`results.csv` as `mufu_full`. It needs to be told how the model was trained, or it
+only runs val diagnostics:
 
 ```python
-from benchmark import (
-    benchmark_metadata,
-    evaluate_predictions,
-    load_benchmark,
-    set_training_seed,
-    verify_benchmark_metadata,
-)
-
-full = load_benchmark()
-metadata = benchmark_metadata(full)
-generator = set_training_seed()  # pass to a shuffled DataLoader
-endpoint = full.loc[full["pIC50_BACE1"].notna()]
-# evaluate_predictions(labels, aligned_scores, "regression")
-# verify_benchmark_metadata(metadata, full) before explicit results export
-```
-
-Metadata includes the dataset checksum and a checksum of sorted SMILES/split
-assignments, independent of row order and DataFrame indexes. Keep it in result
-`params`; `benchmark.record_results` re-exports the existing CSV recorder and
-does not write automatically. NumPy/Torch inputs are positional; pandas inputs
-must also have matching row indexes and task columns. Missing labels are masked
-automatically; zero-filled MuFu labels require their explicit label masks.
-
-Dataset checksums normalize CRLF to LF in memory, preserving the historical
-checksum without rewriting the snapshot. `.gitattributes` enforces LF for future
-checkouts of `combined.csv`. Its Git index already contains LF, so no
-renormalization is needed for this change. Do not rebuild the dataset or rewrite
-existing results to correct a checkout's line endings.
-
-## Encoder Benchmark Runs
-
-Both encoder sweep scripts use `src/encoder_benchmark.py` on top of the shared
-foundation. They split the entire frozen combined table first, then select
-observed BACE-1 labels: 6,469 train, 808 validation, and 810 test molecules, exactly
-as in the BACE-1 RF baseline. Featurization failures abort rather than silently
-changing that cohort. Evaluation uses the original labels and shared metrics.
-
-Exploratory stages keep their grids, seeds, wide CSV columns, and log paths:
-
-```sh
-python scripts/ECFP4_encoder_sweep.py 3 4 --output-dir outputs/encoders/ECFP4/shared-v1
-python scripts/gnn_encoder_sweep.py 1 --output-dir outputs/encoders/GNN/shared-v1
-```
-
-These are noncanonical experiments. Only train/validation metrics are computed;
-the existing `test_*` columns contain NaN. Each row adds dataset/split/protocol
-metadata. Resume and automatic selection reject legacy files or mismatched
-metadata. Existing CSVs/logs are preserved; use a new `--output-dir` for these
-experiments instead of deleting old results. Run separate stages concurrently
-if useful, but use one writer per stage file or `results.csv`.
-
-A canonical run requires either an explicit configuration JSON (training keys
-from the script's `DEFAULT`, with omitted keys retaining those defaults) or
-compatible stage files. For example, after choosing a configuration using
-validation only, put `{"HIDDEN_DIMS": [128, 128], "EPOCHS": 100}` in `chosen.json`:
-
-```sh
-python scripts/gnn_encoder_sweep.py --benchmark --config chosen.json --dry-run
-python scripts/gnn_encoder_sweep.py --benchmark --config chosen.json
-python scripts/gnn_encoder_sweep.py --benchmark --config chosen.json --write-results
-```
-
-The ECFP4 script accepts the same flags. Alternatively:
-
-```sh
-python scripts/ECFP4_encoder_sweep.py --benchmark --select-from outputs/encoders/ECFP4/shared-v1/3-training-dynamics.csv --selection-seeds 0 1 2 --write-results
-```
-
-Automatic selection minimizes mean validation RMSE over a complete, matching
-seed set; it never reads test metrics for selection. The selected configuration
-is retrained with seed 42, its best validation checkpoint is restored, and only
-then is test evaluated. The scripts retain their optimizers, losses, epoch
-limits, and GNN patience. Avoid repeatedly tuning against canonical test results.
-
-Without `--write-results`, canonical metrics are displayed without exporting.
-`--dry-run` loads/verifies metadata and configuration without featurization,
-training, or writes, even when combined with `--write-results`. Explicit export
-uses the existing recorder and unchanged 13-column `data/baseline/results.csv`
-schema: six validation/test rows per encoder (`rmse`, `r2`, `roc_auc`), tagged as
-`ecfp4_encoder` or `gnn_encoder`. Protocol, configuration, seed, selected epoch,
-selection method, device, and determinism setting are stored in `params`.
-Re-export replaces only that encoder's rows on the current snapshot. Export
-refuses a snapshot mismatch that would discard existing RF results.
-
-### Standalone SMILES Encoder
-
-`scripts/SMILES_encoder_sweep.py` evaluates the existing MolFormer wrapper with
-frozen pretrained weights and a trainable linear pIC50 head. It uses the same
-6,469/808/810 BACE-1 cohort, seed-42 canonical run, validation checkpoint selection,
-metrics, and results recorder as the other standalone encoders. It does not run
-the full MuFu model.
-
-Supply an immutable 40-character pretrained commit SHA in `pretrained.json`:
-
-```json
-{
-  "MODEL_NAME": "ibm-research/MoLFormer-XL-both-10pct",
-  "PRETRAINED_REVISION": "<40-character commit SHA from the model repository>",
-  "FREEZE": true
-}
-```
-
-The placeholder must be replaced with a real revision; a moving branch such as
-`main` is rejected. The same revision is passed to the model and tokenizer. The
-requested/resolved revision, model identity, freezing policy, selected epoch,
-training configuration, seed, and benchmark metadata are retained in result
-parameters. The wrapper's existing unpinned behavior remains available to other
-callers that omit its new `revision` argument.
-
-```sh
-python scripts/SMILES_encoder_sweep.py --stage-config pretrained.json
-python scripts/SMILES_encoder_sweep.py --benchmark --select-from outputs/encoders/SMILES/sweep/1-head.csv --write-results
-python scripts/SMILES_encoder_sweep.py --benchmark --config pretrained.json --dry-run
-```
-
-The exploratory stage compares three head learning rates on seeds 0, 1, and 2
-using validation only. `--stage-config` supplies overrides to those configurations;
-it is separate from canonical `--config`. Canonical selection uses a complete
-matching seed set, retrains the chosen head with seed 42, and evaluates test only
-after restoring the best validation checkpoint. The encoder remains frozen and
-in evaluation mode. Only training labels update the head; frozen train/validation
-embeddings are reused, and test embeddings are requested after selection.
-
-Results use model identifier `smiles_encoder` and the existing six-row
-validation/test format. As with the other encoders, export requires
-`--write-results`; dry runs load neither Transformers nor pretrained weights and
-never export. Actual execution requires the declared Transformers dependency and
-the pinned pretrained model/tokenizer, either locally available or obtainable
-from their model repository. Offline tests replace pretrained loading with small
-local mocks and do not download weights.
-
-The GNN runner merges a final singleton training batch into its preceding batch
-to satisfy BatchNorm. Normal batches keep their existing order and sizes, and no
-training examples are dropped. Evaluation batching is unchanged and retains all
-samples, including singleton final batches.
-
-## Full MuFu Benchmark Evaluation
-
-`mufu.benchmark.evaluate_mufu()` is an inference-only adapter. SCRUM-60 owns model
-construction, training, and validation-based checkpoint selection. Pass the
-selected model on its evaluation device; the adapter does not construct encoders,
-download weights, train, select checkpoints, or move the model between devices.
-
-After training, invoke it with the actual training provenance. `training_metadata`
-below must be the benchmark metadata retained from the full frozen table used for
-training, and `global_step` must be the actual number of completed training steps:
-
-```python
-from mufu.benchmark import evaluate_mufu
-
 training = {
     "trained": True,
-    "training_steps": global_step,
+    "training_steps": steps,
     "training_seed": 42,
     "selection_split": "val",
-    "benchmark": training_metadata,
-    # Optional: run ID, selected epoch/criterion, encoder configuration/revisions.
+    "benchmark": benchmark_metadata(full),
 }
-report = evaluate_mufu(
-    selected_model,
-    training=training,
-    splits=("val", "test"),
-    batch_size=64,
-    write_results=True,
-)
+evaluate_mufu(model, training=training, splits=("val", "test"), write_results=True)
 ```
 
-No trainer changes are needed beyond invoking the adapter with this information.
-The adapter requires explicit training attestation, positive training steps, seed
-42, validation selection, and matching dataset/split/protocol metadata for test
-evaluation or export. This guards against accidentally reporting random initial
-weights; it cannot prove a caller's training-history declaration. Do not fabricate
-provenance for untrained or synthetic models.
-
-For a saved checkpoint, construct a compatible MuFu model first. The optional
-checkpoint format contains tensors and primitive metadata:
-
-```python
-from pathlib import Path
-import torch
-
-torch.save(
-    {"model_state_dict": selected_model.state_dict(), "training": training},
-    "selected.pt",
-)
-report = evaluate_mufu(
-    constructed_model,
-    checkpoint=Path("selected.pt"),
-    splits=("val", "test"),
-    write_results=True,
-)
-```
-
-Checkpoint loading uses `weights_only=True`, validates provenance plus exact
-state keys/shapes/dtypes and finite tensor values, and loads weights in-place.
-Pass either checkpoint metadata or `training`, not both. Existing checkpoint
-formats can instead be loaded by SCRUM-60 and passed through the in-memory model
-interface. Checkpoint identity includes a SHA-256 of the evaluated state and, for
-file loading, a raw file checksum.
-
-The default call `evaluate_mufu(model)` returns validation diagnostics only, marked
-`training_attested=False`. Without valid provenance, test evaluation and export
-are refused. Results are never written by default. Export requires **both** val
-and test, producing all 50 rows in one existing-recorder call under `mufu_full`:
-
-- BACE-1/EGFR pIC50: RMSE, R2, and pIC50-derived activity ROC-AUC.
-- `active_BACE1`/`active_EGFR`: separate classification-head ROC-AUC.
-- Fourteen toxicity endpoints and overall/Tox21/ClinTox macro ROC-AUC groups.
-
-Continuous logits score classification heads; pIC50-derived ROC-AUC retains its
-existing `pIC50_*` identity. Endpoint counts use observed labels, undefined metrics
-remain NaN, and macro counts follow the RF convention. The 13-column results
-schema is unchanged. Parameters record score source, training provenance,
-checkpoint identity, benchmark metadata, and evaluation configuration. Re-export
-replaces the complete `mufu_full` result set while preserving compatible RF and
-standalone encoder rows; incompatible RF snapshot checks abort before export.
-
-Evaluation splits the full frozen table before building partition datasets. It
-rejects molecule loss/reordering or label/mask mismatches, runs sequential batches
-without dropping samples or using training samplers, and calls the model with only
-the three `MuFuInputs` fields. All modules enter evaluation mode and gradients are
-disabled, so normal MuFu modality dropout is off. Previous component modes are
-restored, and the evaluation loader uses a private generator without reseeding
-training RNGs. No test labels are used to select weights.
-
-`report.rows` contains metric rows; `report.predictions[split][output]` contains
-output DataFrames indexed by unique SMILES in evaluation order, with columns from
-the MuFu contract. Mocked offline tests exercise this workflow without pretrained
-downloads or publishing synthetic measurements. Real performance requires the
-selected trained weights supplied by SCRUM-60.
+Or pass `checkpoint=Path(...)`, a `torch.save` of
+`{"model_state_dict": ..., "training": training}`.
 
 ## Testing
 
@@ -388,8 +205,8 @@ directory, run:
 pytest
 ```
 
-`pytest.ini` points pytest at `tests/` and adds `src/` to the import path, so
-tests can `import` modules from `src` directly.
+`pytest.ini` points pytest at `tests/` and adds `src/` and `scripts/` to the
+import path, so tests can `import` modules from either directly.
 
 Tests marked `network` call external services (ChEMBL and MoleculeNet), so
 they're skipped by default. To run `network` tests, do:
@@ -398,12 +215,6 @@ they're skipped by default. To run `network` tests, do:
 pytest -m network
 ```
 
-`tests/encoders/test_smiles_encoder.py` imports `transformers` during collection, even
-though its model downloads are mocked. If collection fails with
-`ModuleNotFoundError: transformers`, the local environment is incomplete:
-`environment.yml` already declares the pinned dependency in its `pip` section.
-From `ai/`, synchronize the project environment with
-`conda env update -n CHM4930 -f environment.yml`, or create it as described above.
-Use `python src/check_env.py` to check installed versions. Encoder benchmark tests
-run offline without Transformers; excluding that module lets the remaining
-offline suite run while the environment is repaired.
+`tests/encoders/test_smiles_encoder.py` needs `transformers` to import. If
+collection fails with `ModuleNotFoundError: transformers`, run
+`conda env update -n CHM4930 -f environment.yml`.

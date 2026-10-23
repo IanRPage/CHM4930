@@ -15,13 +15,13 @@ from rdkit import Chem, rdBase
 from rdkit.Chem.MolStandardize import rdMolStandardize
 from torch_geometric.data import Data
 
-from featurize.fingerprint import mol_to_ecfp4
+from featurize.fingerprint import FINGERPRINT_BITS, mol_to_ecfp4
 from featurize.graph import mol_to_graph
 from featurize.smiles import mol_to_smiles
 
 log = logging.getLogger(__name__)
 
-ALLOWED_N_BITS = (1024, 2048)
+ALLOWED_N_BITS = (1024, FINGERPRINT_BITS)
 
 _LARGEST_FRAGMENT = rdMolStandardize.LargestFragmentChooser(preferOrganic=True)
 
@@ -74,7 +74,7 @@ def standardize_smiles_column(df: pd.DataFrame, column: str = "smiles") -> pd.Da
     return df
 
 
-def featurize(structure: str | Chem.Mol, n_bits: int = 2048) -> Data:
+def featurize(structure: str | Chem.Mol, n_bits: int = FINGERPRINT_BITS) -> Data:
     if n_bits not in ALLOWED_N_BITS:
         raise ValueError(f"n_bits must be one of {ALLOWED_N_BITS}, got {n_bits}")
 
@@ -86,7 +86,7 @@ def featurize(structure: str | Chem.Mol, n_bits: int = 2048) -> Data:
 
 
 def featurize_many(
-    structures: pd.Series | Iterable[str | Chem.Mol], n_bits: int = 2048
+    structures: pd.Series | Iterable[str | Chem.Mol], n_bits: int = FINGERPRINT_BITS
 ) -> tuple[list[Data], list]:
     if n_bits not in ALLOWED_N_BITS:
         raise ValueError(f"n_bits must be one of {ALLOWED_N_BITS}, got {n_bits}")

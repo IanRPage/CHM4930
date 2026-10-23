@@ -1,4 +1,5 @@
-"""BACE-1 encoder experiment workflow built on the shared benchmark foundation.
+"""
+BACE-1 encoder experiment workflow built on the shared benchmark foundation.
 
 Exploratory stage files retain their wide metrics and logs, but test measurements
 are reserved for an explicitly selected canonical run. Legacy files are read-only
@@ -6,6 +7,7 @@ history unless their protocol metadata verifies against the current benchmark.
 """
 
 import argparse
+import itertools
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,7 +17,7 @@ import pandas as pd
 import torch
 
 import benchmark as bm
-from baseline.results import RESULTS_PATH
+from featurize.fingerprint import FINGERPRINT_BITS
 from pipeline.cache import write_csv
 from pipeline.combined_loader import COMBINED_CSV_PATH
 from pipeline.preprocess import featurize_many
@@ -23,6 +25,10 @@ from pipeline.split import SPLITS
 
 SWEEP_PROTOCOL = "encoder-validation-only-v1"
 METRICS = {"RMSE": "rmse", "R2": "r2", "ROC-AUC": "roc_auc"}
+
+
+def grid(base, **values):
+    return [base | dict(zip(values, v)) for v in itertools.product(*values.values())]
 
 
 @dataclass
@@ -50,7 +56,7 @@ class BACE1Benchmark:
     def y(self):
         return torch.tensor(self.frame["pIC50_BACE1"].to_numpy(), dtype=torch.float32)
 
-    def features(self, n_bits=2048):
+    def features(self, n_bits=FINGERPRINT_BITS):
         if n_bits not in self._features:
             features, failed = featurize_many(self.frame["smiles"], n_bits)
             if failed or len(features) != len(self.frame):
@@ -103,10 +109,6 @@ class BACE1Benchmark:
         return out
 
 
-def config_json(config):
-    return json.dumps(config, sort_keys=True)
-
-
 def load_sweep_records(path: Path, data: BACE1Benchmark, experiment: str):
     if not path.exists():
         return pd.DataFrame()
@@ -128,7 +130,7 @@ def load_sweep_records(path: Path, data: BACE1Benchmark, experiment: str):
     configs = records["cfg"].map(json.loads)
     if not configs.map(lambda config: isinstance(config, dict)).all():
         raise ValueError(f"{path}: configuration must be a JSON object")
-    records["cfg"] = configs.map(config_json)
+    records["cfg"] = configs.map(bm.config_json)
     records["val_RMSE"] = pd.to_numeric(records["val_RMSE"], errors="raise")
     if not np.isfinite(records["val_RMSE"]).all():
         raise ValueError(f"{path}: validation RMSE must be finite")
@@ -144,7 +146,9 @@ def load_sweep_records(path: Path, data: BACE1Benchmark, experiment: str):
 
 
 def select_configuration(records: pd.DataFrame, seeds):
-    """Select minimum mean validation RMSE using the same complete seed set."""
+    """
+    Select minimum mean validation RMSE using the same complete seed set.
+    """
     if not seeds or len(set(seeds)) != len(seeds):
         raise ValueError("selection seeds must be a nonempty unique list")
     if records.empty:
@@ -168,7 +172,7 @@ def select_configuration(records: pd.DataFrame, seeds):
 
 
 def canonical_rows(data, config, measurements, *, encoder, selection):
-    params = config_json(
+    params = bm.config_json(
         {
             "benchmark": data.metadata,
             "seed": bm.TRAINING_SEED,
@@ -202,16 +206,6 @@ def canonical_rows(data, config, measurements, *, encoder, selection):
         for name in ("val", "test")
         for wide, metric in METRICS.items()
     ]
-
-
-def verify_export(data, path=RESULTS_PATH):
-    """Check provenance and refuse an export that would discard existing RF rows."""
-    bm.verify_benchmark_metadata(data.metadata, data.full, data.data_path)
-    if path.exists():
-        existing = pd.read_csv(path)
-        rf = existing[existing["model"].isin(["rf_bioactivity", "rf_toxicity"])]
-        if not rf["data_sha256"].eq(data.metadata["data_sha256"]).all():
-            raise ValueError("export would discard RF results from another snapshot")
 
 
 def run_cli(argv, *, stages, output_dir, experiment, encoder, normalize_config, run):
@@ -277,9 +271,9 @@ def run_cli(argv, *, stages, output_dir, experiment, encoder, normalize_config, 
             )
             config, selection = select_configuration(records, args.selection_seeds)
         config = normalize_config(config)
-        verify_export(data)
+        bm.verify_export(data.metadata, data.full, data.data_path)
         print(
-            config_json(
+            bm.config_json(
                 {"benchmark": data.metadata, "config": config, "selection": selection}
             )
         )
@@ -291,7 +285,7 @@ def run_cli(argv, *, stages, output_dir, experiment, encoder, normalize_config, 
         )
         print(pd.DataFrame(rows)[["split", "metric", "value"]].to_string(index=False))
         if args.write_results:
-            verify_export(data)
+            bm.verify_export(data.metadata, data.full, data.data_path)
             bm.record_results(rows, model=experiment, data_path=data.data_path)
         return rows
 
@@ -300,7 +294,7 @@ def run_cli(argv, *, stages, output_dir, experiment, encoder, normalize_config, 
         for name in names
     }
     print(
-        config_json(
+        bm.config_json(
             {"benchmark": data.metadata, "mode": "exploratory", "stages": names}
         )
     )
@@ -317,7 +311,7 @@ def run_cli(argv, *, stages, output_dir, experiment, encoder, normalize_config, 
         configs, seeds = stages[name]
         runs = [(cfg, seed) for cfg in configs for seed in seeds]
         for position, (cfg, seed) in enumerate(runs, 1):
-            key = (config_json(cfg), seed)
+            key = (bm.config_json(cfg), seed)
             if key in done:
                 continue
             measurements = run(cfg, seed, data)
@@ -325,7 +319,7 @@ def run_cli(argv, *, stages, output_dir, experiment, encoder, normalize_config, 
                 [
                     {
                         **measurements,
-                        "benchmark": config_json(data.metadata),
+                        "benchmark": bm.config_json(data.metadata),
                         "sweep_protocol": SWEEP_PROTOCOL,
                         "experiment": experiment,
                     }

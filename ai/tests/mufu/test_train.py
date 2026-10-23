@@ -5,10 +5,10 @@ import numpy as np
 import torch
 
 from mufu.contract import ACTIVE_COLUMNS, PIC50_COLUMNS, TOX_COLUMNS
-from mufu.dataset import collate
-from mufu.task_loss import TaskLoss
+from mufu.data.dataset import collate
+from mufu.loss.task_loss import TaskLoss
+from mufu.loss.uncertainty_weighting import UncertaintyWeighting
 from mufu.train import TrainConfig, fit, make_optimizer, predict, train_step
-from mufu.uncertainty_weighting import UncertaintyWeighting
 
 
 def test_fit_decreases_loss_on_tiny_dataset(model, labeled_dataset):

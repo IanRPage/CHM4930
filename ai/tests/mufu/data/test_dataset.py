@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 from featurize.fingerprint import mol_to_ecfp4
 from mufu import contract as c
-from mufu.dataset import MuFuDataset, collate, split_datasets, to_device
+from mufu.data.dataset import MuFuDataset, collate, split_datasets, to_device
 from pipeline.combined_loader import load_combined
 
 

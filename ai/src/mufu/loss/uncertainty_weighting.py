@@ -1,3 +1,7 @@
+"""
+Learned homoscedastic uncertainty weighting for multi-task loss balancing.
+"""
+
 import torch
 from torch import nn
 
@@ -6,8 +10,8 @@ from mufu.contract import (
     TASK_SPECS,
     TASKS,
     TaskLosses,
-    _check_keys,
-    _check_tensor,
+    check_keys,
+    check_tensor,
 )
 
 LOG_VAR_MIN = -5.0
@@ -43,14 +47,14 @@ class UncertaintyWeighting(nn.Module):
         )
 
     def forward(self, task_losses: TaskLosses) -> torch.Tensor:
-        _check_keys("task_losses", set(task_losses), set(TASKS))
+        check_keys("task_losses", set(task_losses), set(TASKS))
 
         terms: list[torch.Tensor] = []
         for task in TASKS:
             loss = task_losses[task]
             if loss is None:
                 continue
-            _check_tensor(task, loss, (), "float")
+            check_tensor(task, loss, (), "float")
             if not torch.isfinite(loss):
                 raise ValueError(f"{task}: loss is NaN or Inf")
             if loss < 0:

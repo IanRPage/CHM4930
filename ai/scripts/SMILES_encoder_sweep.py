@@ -1,13 +1,13 @@
-"""Standalone frozen MolFormer plus a trainable BACE-1 regression head.
+"""
+Standalone frozen MolFormer plus a trainable BACE-1 regression head.
 
-Use an immutable Hugging Face commit SHA in PRETRAINED_REVISION. All splitting,
-selection, scoring, and explicit export use the shared benchmark workflow.
+`PRETRAINED_REVISION` defaults to `DEFAULT_REVISION` (override with a 40-character
+commit SHA). All splitting, selection, scoring, and explicit export use the shared
+benchmark workflow.
 
-    python scripts/SMILES_encoder_sweep.py --stage-config pretrained.json
+    python scripts/SMILES_encoder_sweep.py 1
     python scripts/SMILES_encoder_sweep.py --benchmark --config chosen.json --dry-run
     python scripts/SMILES_encoder_sweep.py --benchmark --select-from outputs/encoders/SMILES/sweep/1-head.csv --write-results
-
-Imports and dry runs do not load Transformers or pretrained weights.
 """
 
 import copy
@@ -23,15 +23,20 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from benchmark import evaluate_predictions, set_training_seed
-from encoder_benchmark import config_json, run_cli
+from benchmark import config_json, evaluate_predictions, set_training_seed
+from encoder_benchmark import run_cli
+from encoders.smiles_encoder import (
+    DEFAULT_MODEL_NAME,
+    DEFAULT_REVISION,
+    SmilesEncoder,
+)
 from pipeline.cache import DATA_DIR
 
 OUT = DATA_DIR.parent / "outputs" / "encoders" / "SMILES" / "sweep"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DEFAULT = {
-    "MODEL_NAME": "ibm-research/MoLFormer-XL-both-10pct",
-    "PRETRAINED_REVISION": None,
+    "MODEL_NAME": DEFAULT_MODEL_NAME,
+    "PRETRAINED_REVISION": DEFAULT_REVISION,
     "FREEZE": True,
     "MAX_LENGTH": 202,
     "ENCODER_BATCH_SIZE": 32,
@@ -78,9 +83,6 @@ def normalize_config(config):
 
 
 def make_encoder(cfg):
-    # Keep the benchmark CLI and mocked tests usable without this optional dependency.
-    from encoders.smiles_encoder import SmilesEncoder
-
     return SmilesEncoder(
         model_name=cfg["MODEL_NAME"],
         freeze=cfg["FREEZE"],

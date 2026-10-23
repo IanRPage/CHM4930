@@ -16,11 +16,11 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from mufu.contract import COLUMN_GROUPS, MuFuBatch, MuFuOutputs
-from mufu.dataset import MuFuDataset, collate, to_device
+from mufu.data.dataset import MuFuDataset, collate, to_device
+from mufu.data.sampler import AlternatingBatchSampler, MixedBatchSampler
+from mufu.loss.task_loss import TaskLoss
+from mufu.loss.uncertainty_weighting import UncertaintyWeighting
 from mufu.model import MuFu
-from mufu.sampler import AlternatingBatchSampler, MixedBatchSampler
-from mufu.task_loss import TaskLoss
-from mufu.uncertainty_weighting import UncertaintyWeighting
 
 
 @dataclass(frozen=True)

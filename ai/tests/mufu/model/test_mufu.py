@@ -3,10 +3,10 @@ import torch
 from conftest import DEVICES
 
 from mufu.contract import MODALITIES, validate_batch
-from mufu.dataset import collate, to_device
-from mufu.modality_dropout import sample_modality_mask
-from mufu.task_loss import TaskLoss
-from mufu.uncertainty_weighting import UncertaintyWeighting
+from mufu.data.dataset import collate, to_device
+from mufu.loss.task_loss import TaskLoss
+from mufu.loss.uncertainty_weighting import UncertaintyWeighting
+from mufu.model.modality_dropout import sample_modality_mask
 
 
 def test_eval_keeps_all_modalities_without_sampling(model, dataset):
@@ -31,7 +31,7 @@ def test_training_masks_fingerprint_gradients_per_molecule(model, dataset, monke
         masks.append(mask)
         return mask
 
-    monkeypatch.setattr("mufu.model.sample_modality_mask", sample_partial_mask)
+    monkeypatch.setattr("mufu.model.mufu.sample_modality_mask", sample_partial_mask)
     batch = collate([dataset[i] for i in range(len(dataset))])
     batch["fingerprint"].requires_grad_()
     model.train()
