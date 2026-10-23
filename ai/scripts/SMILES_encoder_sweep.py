@@ -24,7 +24,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from benchmark import config_json, evaluate_predictions, set_training_seed
-from encoders.benchmark import run_cli
+from encoder_benchmark import run_cli
 from encoders.smiles_encoder import (
     DEFAULT_MODEL_NAME,
     DEFAULT_REVISION,

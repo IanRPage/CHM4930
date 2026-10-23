@@ -75,6 +75,9 @@ def test_metadata_is_stable_json_and_ignores_row_order_and_index(snapshot_csv):
     assert metadata["bio_targets"] == ["BACE1", "EGFR"]
     assert len(metadata["tox_tasks"]) == 14
     bm.verify_benchmark_metadata(metadata, reordered, snapshot_csv)
+    assert bm.config_json({"b": 1, "a": 2}) == '{"a": 2, "b": 1}'
+    with pytest.raises(ValueError, match="discard RF results"):
+        bm.verify_export(metadata, full, snapshot_csv)
     observed = full["pIC50_BACE1"].notna()
     np.testing.assert_array_equal(
         full.loc[observed, "active_BACE1"],

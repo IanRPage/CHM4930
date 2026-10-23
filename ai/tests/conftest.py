@@ -7,7 +7,6 @@ import torch
 
 import benchmark as bm
 from baseline import results
-from encoders import benchmark as eb
 from pipeline.combined_loader import COMBINED_CSV_PATH
 
 CYCLOALKANE_SMILES = ["C1" + "C" * (n - 1) + "1" for n in range(3, 23)]
@@ -50,19 +49,14 @@ def isolate_benchmark_runtime(monkeypatch):
 
 
 @pytest.fixture(scope="session")
-def frozen_bace1():
+def frozen_benchmark():
     before = {
         path: path.read_bytes() for path in (COMBINED_CSV_PATH, results.RESULTS_PATH)
     }
-    loaded = eb.BACE1Benchmark.load()
+    loaded = bm.load_benchmark()
     yield loaded
     for path, contents in before.items():
         assert path.read_bytes() == contents
-
-
-@pytest.fixture(scope="session")
-def frozen_benchmark(frozen_bace1):
-    return frozen_bace1.full
 
 
 @pytest.fixture
@@ -81,8 +75,3 @@ def snapshot_csv(tmp_path):
     path = tmp_path / "combined.csv"
     df.to_csv(path, index=False, lineterminator="\n")
     return path
-
-
-@pytest.fixture
-def bace1_data(snapshot_csv):
-    return eb.BACE1Benchmark.load(snapshot_csv)

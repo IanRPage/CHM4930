@@ -17,10 +17,10 @@ ai/
 │   ├── featurize/      # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
 │   ├── mufu/           # MuFu multimodal dataset, model, loss, and training components
 │   ├── pipeline/       # dataset loaders and structure to model input preprocessing
-│   ├── encoders/       # where each of MuFu's encoders and their benchmark runner live
+│   ├── encoders/       # where each of MuFu's encoders are implemented
 │   ├── benchmark.py    # shared split, seeding, and scoring every model uses
 │   └── evaluation.py   # regression, classification, and multi-task evaluation metrics
-├── tests/              # pytest suite (mirrors src/)
+├── tests/              # pytest suite (mirrors src/ and scripts/)
 ├── checkpoints/        # saved model weights
 ├── outputs/            # generated artifacts (figures, logs, metrics, etc.)
 ├── environment.yml     # conda environment config
@@ -205,8 +205,8 @@ directory, run:
 pytest
 ```
 
-`pytest.ini` points pytest at `tests/` and adds `src/` to the import path, so
-tests can `import` modules from `src` directly.
+`pytest.ini` points pytest at `tests/` and adds `src/` and `scripts/` to the
+import path, so tests can `import` modules from either directly.
 
 Tests marked `network` call external services (ChEMBL and MoleculeNet), so
 they're skipped by default. To run `network` tests, do:

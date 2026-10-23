@@ -10,9 +10,9 @@ import torch
 from torch import nn
 
 import benchmark as bm
+import encoder_benchmark as eb
 import encoders.smiles_encoder as smiles_module
 from baseline import results
-from encoders import benchmark as eb
 from pipeline.preprocess import featurize
 
 AI_DIR = Path(__file__).resolve().parents[2]

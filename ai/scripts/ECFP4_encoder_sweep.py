@@ -26,7 +26,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from benchmark import config_json, evaluate_predictions, set_training_seed
-from encoders.benchmark import grid, run_cli
+from encoder_benchmark import grid, run_cli
 from encoders.fingerprint_encoder import FingerprintEncoder
 from featurize.fingerprint import FINGERPRINT_BITS
 from pipeline.cache import DATA_DIR
