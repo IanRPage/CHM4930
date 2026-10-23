@@ -103,6 +103,16 @@ def test_rejects_non_bool_mask():
         LateFusion()(make_projected(), mask)
 
 
+def test_rejects_empty_modality_row():
+    mask = torch.ones(4, len(MODALITIES), dtype=torch.bool)
+    mask[1] = False
+
+    with pytest.raises(
+        ValueError, match="mask: each sample must retain at least one modality"
+    ):
+        LateFusion()(make_projected(), mask)
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
 def test_cpu_mask_with_cuda_inputs():
     fusion = LateFusion().cuda()

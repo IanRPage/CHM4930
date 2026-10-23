@@ -1,4 +1,5 @@
-"""Staged FingerprintEncoder experiments on the shared frozen BACE-1 cohort.
+"""
+Staged FingerprintEncoder experiments on the shared frozen BACE-1 cohort.
 
 Stage CSVs/logs retain their existing paths. Exploration scores train/val only;
 test is reserved for a selected canonical seed-42 run. Legacy stage files without
@@ -12,7 +13,6 @@ Stages can still be run independently, including with NVIDIA MPS.
 """
 
 import copy
-import itertools
 import sys
 import time
 from pathlib import Path
@@ -26,8 +26,9 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from benchmark import config_json, evaluate_predictions, set_training_seed
-from encoders.benchmark import run_cli
+from encoders.benchmark import grid, run_cli
 from encoders.fingerprint_encoder import FingerprintEncoder
+from featurize.fingerprint import FINGERPRINT_BITS
 from pipeline.cache import DATA_DIR
 
 OUT = DATA_DIR.parent / "outputs" / "encoders" / "ECFP4" / "sweep"
@@ -109,12 +110,8 @@ def fit_baseline(cfg, seed, data, *, evaluate_test=False):
     return data.score(lambda idx: model.predict(X[idx]), evaluate_test=evaluate_test)
 
 
-def grid(base, **values):
-    return [base | dict(zip(values, v)) for v in itertools.product(*values.values())]
-
-
 DEFAULT = {
-    "N_BITS": 2048,
+    "N_BITS": FINGERPRINT_BITS,
     "HIDDEN_DIMS": (1024, 512),
     "DROPOUT": 0.2,
     "FINAL_ACTIVATION": True,

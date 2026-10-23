@@ -1,6 +1,7 @@
-"""Random forest toxicity baseline on ECFP4 fingerprints.
+"""
+Random forest toxicity baseline on ECFP4 fingerprints.
 
-Run from ``ai/`` with ``PYTHONPATH=src``:
+Run from `ai/` with `PYTHONPATH=src`:
 
     python -m baseline.baseline_toxicity
 """
@@ -31,7 +32,6 @@ def positive_probabilities(model, X):
 
 
 def fit_endpoint(X, y, train_idx, val_idx):
-    """Fit using observed training/validation indices; never inspect test labels."""
     if len(train_idx) == 0:
         return None, "skipped: no observed training labels"
     if np.unique(y[train_idx]).size < 2:

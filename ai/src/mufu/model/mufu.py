@@ -17,7 +17,8 @@ from mufu.model.projection import ModalityProjection
 
 
 class MuFu(nn.Module):
-    """Combine three encoder modules, projection, fusion, and prediction heads.
+    """
+    Combine three encoder modules, projection, fusion, and prediction heads.
 
     Construct the encoders separately to choose their weights and settings. Each
     encoder must be an nn.Module with an out_dim attribute. Inputs need only

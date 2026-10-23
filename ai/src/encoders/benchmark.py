@@ -1,4 +1,5 @@
-"""BACE-1 encoder experiment workflow built on the shared benchmark foundation.
+"""
+BACE-1 encoder experiment workflow built on the shared benchmark foundation.
 
 Exploratory stage files retain their wide metrics and logs, but test measurements
 are reserved for an explicitly selected canonical run. Legacy files are read-only
@@ -6,6 +7,7 @@ history unless their protocol metadata verifies against the current benchmark.
 """
 
 import argparse
+import itertools
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +17,7 @@ import pandas as pd
 import torch
 
 import benchmark as bm
+from featurize.fingerprint import FINGERPRINT_BITS
 from pipeline.cache import write_csv
 from pipeline.combined_loader import COMBINED_CSV_PATH
 from pipeline.preprocess import featurize_many
@@ -22,6 +25,10 @@ from pipeline.split import SPLITS
 
 SWEEP_PROTOCOL = "encoder-validation-only-v1"
 METRICS = {"RMSE": "rmse", "R2": "r2", "ROC-AUC": "roc_auc"}
+
+
+def grid(base, **values):
+    return [base | dict(zip(values, v)) for v in itertools.product(*values.values())]
 
 
 @dataclass
@@ -49,7 +56,7 @@ class BACE1Benchmark:
     def y(self):
         return torch.tensor(self.frame["pIC50_BACE1"].to_numpy(), dtype=torch.float32)
 
-    def features(self, n_bits=2048):
+    def features(self, n_bits=FINGERPRINT_BITS):
         if n_bits not in self._features:
             features, failed = featurize_many(self.frame["smiles"], n_bits)
             if failed or len(features) != len(self.frame):
@@ -139,7 +146,9 @@ def load_sweep_records(path: Path, data: BACE1Benchmark, experiment: str):
 
 
 def select_configuration(records: pd.DataFrame, seeds):
-    """Select minimum mean validation RMSE using the same complete seed set."""
+    """
+    Select minimum mean validation RMSE using the same complete seed set.
+    """
     if not seeds or len(set(seeds)) != len(seeds):
         raise ValueError("selection seeds must be a nonempty unique list")
     if records.empty:

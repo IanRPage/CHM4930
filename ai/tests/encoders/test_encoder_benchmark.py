@@ -17,7 +17,6 @@ from pipeline.preprocess import featurize
 
 AI_DIR = Path(__file__).resolve().parents[2]
 SCRIPTS = ["ECFP4_encoder_sweep", "gnn_encoder_sweep", "SMILES_encoder_sweep"]
-REVISION = "a" * 40
 
 
 def import_script(name: str):
@@ -320,7 +319,7 @@ def test_best_epoch_restored_before_test_scoring(
     monkeypatch.setattr(module, "DEVICE", torch.device("cpu"))
     base = {"EPOCHS": 2, "BATCH_SIZE": 4}
     if script == "SMILES_encoder_sweep":
-        base |= {"PRETRAINED_REVISION": REVISION, "ENCODER_BATCH_SIZE": 3}
+        base["ENCODER_BATCH_SIZE"] = 3
     else:
         base |= {"HIDDEN_DIMS": [8], "DROPOUT": 0.0}
     if script == "ECFP4_encoder_sweep":
@@ -383,7 +382,7 @@ def test_gnn_training_batch_sampler_and_deterministic_context(bace1_data, monkey
 def test_smiles_requires_pinned_frozen_valid_configuration(bad):
     module = import_script("SMILES_encoder_sweep")
     with pytest.raises(ValueError):
-        module.normalize_config({"PRETRAINED_REVISION": REVISION, **bad})
+        module.normalize_config(bad)
 
 
 def test_smiles_head_training_preserves_order_frozen_weights_and_checks_revision(
@@ -398,7 +397,6 @@ def test_smiles_head_training_preserves_order_frozen_weights_and_checks_revision
     )
     cfg = module.normalize_config(
         {
-            "PRETRAINED_REVISION": REVISION,
             "EPOCHS": 2,
             "BATCH_SIZE": 4,
             "ENCODER_BATCH_SIZE": 3,

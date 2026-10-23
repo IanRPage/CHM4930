@@ -40,9 +40,8 @@ class LateFusion(nn.Module):
             fused = torch.cat([projected[m] for m in MODALITIES], dim=1)
         else:
             check_tensor("mask", mask, (size, len(MODALITIES)), "bool")
-            # The following two lines can be used for future modality ablation experiment, add another validation
-            # if not mask.any(dim=1).all():
-            #    raise ValueError("mask: each sample must retain at least one modality")
+            if not mask.any(dim=1).all():
+                raise ValueError("mask: each sample must retain at least one modality")
             mask = mask.to(device=projected[MODALITIES[0]].device)
             fused = torch.cat(
                 [projected[m] * mask[:, i : i + 1] for i, m in enumerate(MODALITIES)],

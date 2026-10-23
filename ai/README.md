@@ -173,9 +173,8 @@ python scripts/gnn_encoder_sweep.py --benchmark --select-from <stage.csv> --writ
   `--selection-seeds` (default `0 1 2`). Test is never used for selection
 - `results.csv` is only written with `--write-results`. `--dry-run` checks the
   config without training
-- the SMILES script needs a pinned 40-character MolFormer commit SHA:
-  `{"PRETRAINED_REVISION": "<sha>"}` via `--stage-config` (exploratory) or
-  `--config` (canonical)
+- `PRETRAINED_REVISION` in the SMILES script defaults to `DEFAULT_REVISION` (override
+  with a 40-character MolFormer commit SHA via `--stage-config` or `--config`)
 
 ### MuFu
 

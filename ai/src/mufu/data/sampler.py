@@ -31,6 +31,8 @@ class MixedBatchSampler(Sampler[list[int]]):
         self.dataset = dataset
         self.batch_size = batch_size
         self.bio_fraction = bio_fraction
+        self.n_bio = n_bio
+        self.n_tox = n_tox
 
         self.bio_only = []
         self.tox_only = []
@@ -53,8 +55,8 @@ class MixedBatchSampler(Sampler[list[int]]):
             )
 
         for task, pool_size, quota in (
-            ("bio", len(self.bio_only) + len(self.both), n_bio),
-            ("tox", len(self.tox_only) + len(self.both), n_tox),
+            ("bio", len(self.bio_only) + len(self.both), self.n_bio),
+            ("tox", len(self.tox_only) + len(self.both), self.n_tox),
         ):
             if pool_size < quota:
                 raise ValueError(
@@ -62,15 +64,13 @@ class MixedBatchSampler(Sampler[list[int]]):
                 )
 
     def __len__(self) -> int:
-        n_bio = int(self.batch_size * self.bio_fraction)
-        n_tox = self.batch_size - n_bio
         bio_rem = len(self.bio_only)
         tox_rem = len(self.tox_only)
         both_rem = len(self.both)
         batches = 0
         while bio_rem > 0 or tox_rem > 0 or both_rem > 0:
-            bio_take = min(n_bio, bio_rem)
-            tox_take = min(n_tox, tox_rem)
+            bio_take = min(self.n_bio, bio_rem)
+            tox_take = min(self.n_tox, tox_rem)
             bio_rem -= bio_take
             tox_rem -= tox_take
             both_rem -= min(self.batch_size - bio_take - tox_take, both_rem)
@@ -86,9 +86,6 @@ class MixedBatchSampler(Sampler[list[int]]):
         random.shuffle(tox_only)
         random.shuffle(both)
 
-        n_bio = int(self.batch_size * self.bio_fraction)
-        n_tox = self.batch_size - n_bio
-
         # Keep both separate for initial draws; count its labels toward either quota.
         bio_labels = set(self.bio_only + self.both)
         tox_labels = set(self.tox_only + self.both)
@@ -101,8 +98,8 @@ class MixedBatchSampler(Sampler[list[int]]):
         while bio_i < len(bio_only) or tox_i < len(tox_only) or both_i < len(both):
             batch = []
 
-            bio_take = bio_only[bio_i : bio_i + n_bio]
-            tox_take = tox_only[tox_i : tox_i + n_tox]
+            bio_take = bio_only[bio_i : bio_i + self.n_bio]
+            tox_take = tox_only[tox_i : tox_i + self.n_tox]
 
             batch.extend(bio_take)
             batch.extend(tox_take)
@@ -119,7 +116,7 @@ class MixedBatchSampler(Sampler[list[int]]):
                 both_i += len(both_take)
 
             # Reuse examples across batches when needed, never within a batch.
-            for eligible, quota in ((bio_labels, n_bio), (tox_labels, n_tox)):
+            for eligible, quota in ((bio_labels, self.n_bio), (tox_labels, self.n_tox)):
                 selected = set(batch)
                 missing = max(0, quota - len(selected & eligible))
                 if missing > 0:
@@ -185,7 +182,7 @@ class AlternatingBatchSampler(Sampler[list[int]]):
 
         rounds = self._num_rounds()
 
-        for each in range(rounds):
+        for _ in range(rounds):
             for task, pool in enumerate(pools):
                 if positions[task] == len(pool):
                     random.shuffle(pool)
