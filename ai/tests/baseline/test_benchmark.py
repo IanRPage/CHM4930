@@ -126,13 +126,38 @@ def test_evaluate_toxicity_excludes_omitted_endpoints_from_macros(split_df):
     assert rows.loc[("macro_overall", "test"), "value"] == pytest.approx(0.5)
 
 
-def test_evaluate_rejects_nan_on_labeled_row(split_df):
+def test_evaluate_checks_optional_smiles_alignment(split_df):
+    rows = benchmark.evaluate_split_predictions(
+        split_df,
+        {
+            "val": {
+                "smiles": ["C", "CC", "CCC"],
+                "pIC50_BACE1": [5.0, 7.0, np.nan],
+            }
+        },
+    )
+    assert len(rows) == 3
+
+    with pytest.raises(ValueError, match="prediction SMILES do not match"):
+        benchmark.evaluate_split_predictions(
+            split_df,
+            {
+                "val": {
+                    "smiles": ["CC", "C", "CCC"],
+                    "pIC50_BACE1": [5.0, 7.0, np.nan],
+                }
+            },
+        )
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_evaluate_rejects_nonfinite_score_on_labeled_row(split_df, bad):
     predictions = {
         "val": {
-            "pIC50_BACE1": [5.0, np.nan, np.nan],
+            "pIC50_BACE1": [5.0, bad, np.inf],
         }
     }
-    with pytest.raises(ValueError, match="NaN on labeled row"):
+    with pytest.raises(ValueError, match="non-finite score on labeled row"):
         benchmark.evaluate_split_predictions(split_df, predictions)
 
 
@@ -205,9 +230,17 @@ def test_run_benchmark_rejects_empty_seeds(split_df, paths):
 
 def test_load_benchmark_split_delegates_to_combined_and_scaffold(monkeypatch):
     sentinel = pd.DataFrame({"smiles": ["CCO"]})
-    monkeypatch.setattr(benchmark, "load_combined", lambda: sentinel)
+    monkeypatch.setattr(benchmark, "load_combined", lambda **_: sentinel)
     monkeypatch.setattr(
         benchmark, "scaffold_split", lambda df: df.assign(split=["train"])
     )
     out = benchmark.load_benchmark_split()
     assert out["split"].tolist() == ["train"]
+
+
+def test_split_sha256_is_order_independent_and_changes_with_membership(split_df):
+    reordered = split_df.iloc[::-1].set_axis(range(10, 16))
+    assert benchmark.split_sha256(split_df) == benchmark.split_sha256(reordered)
+    changed = split_df.copy()
+    changed.loc[0, "split"] = "train"
+    assert benchmark.split_sha256(split_df) != benchmark.split_sha256(changed)

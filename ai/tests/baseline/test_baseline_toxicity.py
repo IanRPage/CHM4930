@@ -100,7 +100,7 @@ def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
     monkeypatch, capsys, combined, fake_forests, recorded
 ):
     original = combined.copy(deep=True)
-    monkeypatch.setattr(benchmark, "load_combined", lambda: combined)
+    monkeypatch.setattr(benchmark, "load_combined", lambda **_: combined)
 
     def split_full_table(df):
         pd.testing.assert_frame_equal(df, original)
@@ -183,7 +183,7 @@ def test_main_skips_untrainable_endpoint_and_excludes_it_from_macros(
     # Give T2 only class 1 in train, but two classes in test so an accidental
     # inclusion in macro_overall would change the macro score.
     combined["T2"] = [np.nan, np.nan, 1, 1, np.nan, 0, 1, 0, 1]
-    monkeypatch.setattr(benchmark, "load_combined", lambda: combined)
+    monkeypatch.setattr(benchmark, "load_combined", lambda **_: combined)
     monkeypatch.setattr(
         benchmark,
         "scaffold_split",
@@ -252,7 +252,7 @@ def test_main_all_untrainable_reports_nan(
     monkeypatch, capsys, combined, fake_forests, training_label
 ):
     combined[bt.TOX_TASKS] = training_label
-    monkeypatch.setattr(benchmark, "load_combined", lambda: combined)
+    monkeypatch.setattr(benchmark, "load_combined", lambda **_: combined)
     monkeypatch.setattr(
         benchmark,
         "scaffold_split",

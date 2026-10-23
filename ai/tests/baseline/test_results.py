@@ -1,3 +1,4 @@
+import hashlib
 import subprocess
 
 import numpy as np
@@ -151,6 +152,16 @@ def test_data_sha256_tracks_the_snapshot_bytes(paths):
     assert pd.read_csv(path).loc[0, "data_sha256"] == first
     data.write_text("smiles\nCCN\n")
     assert results.file_sha256(data) != first
+
+
+def test_lf_and_crlf_checksums_match_without_rewriting_files(tmp_path):
+    lf = b"smiles,pIC50_BACE1\nCCO,6.0\nCCN,5.0\n"
+    expected = hashlib.sha256(lf).hexdigest()
+    for name, contents in (("lf.csv", lf), ("crlf.csv", lf.replace(b"\n", b"\r\n"))):
+        path = tmp_path / name
+        path.write_bytes(contents)
+        assert results.file_sha256(path) == expected
+        assert path.read_bytes() == contents
 
 
 def test_git_commit_falls_back_when_git_is_unavailable(monkeypatch):

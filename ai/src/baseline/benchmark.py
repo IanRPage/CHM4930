@@ -8,6 +8,8 @@ dataset label masks, records per-seed rows to `ai/data/baseline/results.csv`, an
 the seed-aggregated summary table.
 """
 
+import hashlib
+import json
 import random
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -51,8 +53,13 @@ def seed_everything(seed: int) -> torch.Generator:
     return torch.Generator().manual_seed(seed)
 
 
-def load_benchmark_split() -> pd.DataFrame:
-    return scaffold_split(load_combined())
+def load_benchmark_split(data_path: Path = COMBINED_CSV_PATH) -> pd.DataFrame:
+    return scaffold_split(load_combined(path=data_path))
+
+
+def split_sha256(df: pd.DataFrame) -> str:
+    pairs = df.sort_values("smiles")[["smiles", "split"]].to_numpy().tolist()
+    return hashlib.sha256(json.dumps(pairs).encode()).hexdigest()
 
 
 def _validated_scores(
@@ -68,8 +75,8 @@ def _validated_scores(
             f"{split}/{column}: expected 1D array of length {expected_len}, "
             f"got shape {arr.shape}"
         )
-    if np.isnan(arr[labeled_mask]).any():
-        raise ValueError(f"{split}/{column}: contains NaN on labeled row(s)")
+    if not np.isfinite(arr[labeled_mask]).all():
+        raise ValueError(f"{split}/{column}: non-finite score on labeled row(s)")
     return arr
 
 
@@ -82,11 +89,16 @@ def evaluate_split_predictions(
     for split, split_preds in predictions.items():
         if split not in SPLITS:
             raise ValueError(f"unknown split {split!r}; expected one of {SPLITS}")
-        unknown = set(split_preds) - VALID_PREDICTION_COLS
+        unknown = set(split_preds) - VALID_PREDICTION_COLS - {"smiles"}
         if unknown:
             raise ValueError(f"{split}: unknown prediction column(s) {sorted(unknown)}")
 
         split_df = df[df["split"] == split]
+        if (
+            "smiles" in split_preds
+            and list(split_preds["smiles"]) != split_df["smiles"].tolist()
+        ):
+            raise ValueError(f"{split}: prediction SMILES do not match split SMILES")
         n_rows = len(split_df)
 
         for target in TARGETS:
