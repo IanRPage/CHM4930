@@ -1,15 +1,7 @@
 """
 Staged FingerprintEncoder experiments on the shared frozen BACE-1 cohort.
 
-Stage CSVs/logs retain their existing paths. Exploration scores train/val only;
-test is reserved for a selected canonical seed-42 run. Legacy stage files without
-matching benchmark metadata cannot be resumed.
-
     python scripts/ECFP4_encoder_sweep.py 3 4
-    python scripts/ECFP4_encoder_sweep.py --benchmark --config chosen.json --dry-run
-    python scripts/ECFP4_encoder_sweep.py --benchmark --config chosen.json --write-results
-
-Stages can still be run independently, including with NVIDIA MPS.
 """
 
 import copy
@@ -223,7 +215,6 @@ def main(argv=None):
         stages=STAGES,
         output_dir=OUT,
         experiment="ecfp4_encoder",
-        encoder=lambda cfg: f"fingerprint_encoder-{cfg['N_BITS']}",
         normalize_config=normalize_config,
         run=run,
     )

@@ -1,13 +1,7 @@
 """
 Standalone frozen MolFormer plus a trainable BACE-1 regression head.
 
-`PRETRAINED_REVISION` defaults to `DEFAULT_REVISION` (override with a 40-character
-commit SHA). All splitting, selection, scoring, and explicit export use the shared
-benchmark workflow.
-
     python scripts/SMILES_encoder_sweep.py 1
-    python scripts/SMILES_encoder_sweep.py --benchmark --config chosen.json --dry-run
-    python scripts/SMILES_encoder_sweep.py --benchmark --select-from outputs/encoders/SMILES/sweep/1-head.csv --write-results
 """
 
 import copy
@@ -202,7 +196,6 @@ def main(argv=None):
         stages=STAGES,
         output_dir=OUT,
         experiment="smiles_encoder",
-        encoder=lambda cfg: "smiles_encoder",
         normalize_config=normalize_config,
         run=run,
     )

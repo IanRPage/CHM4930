@@ -1,9 +1,5 @@
 """
 BACE-1 encoder experiment workflow built on the shared benchmark foundation.
-
-Exploratory stage files retain their wide metrics and logs, but test measurements
-are reserved for an explicitly selected canonical run. Legacy files are read-only
-history unless their protocol metadata verifies against the current benchmark.
 """
 
 import argparse
@@ -171,75 +167,16 @@ def select_configuration(records: pd.DataFrame, seeds):
     }
 
 
-def canonical_rows(data, config, measurements, *, encoder, selection):
-    params = bm.config_json(
-        {
-            "benchmark": data.metadata,
-            "seed": bm.TRAINING_SEED,
-            "config": config,
-            "best_epoch": measurements.get("best_epoch"),
-            "selection": selection,
-            "score_source": "predicted_pic50",
-            "device": measurements.get("device"),
-            "deterministic_algorithms": measurements.get("deterministic_algorithms"),
-            **(
-                {"pretrained": measurements["pretrained"]}
-                if "pretrained" in measurements
-                else {}
-            ),
-        }
-    )
-    return [
-        {
-            "encoder": encoder,
-            "dataset": "bace1",
-            "endpoint": "pIC50_BACE1",
-            "split": name,
-            "metric": metric,
-            "value": measurements[f"{name}_{wide}"],
-            "n_labeled": len(data.indices[name]),
-            "n_positive": int(
-                data.frame.iloc[data.indices[name]]["active_BACE1"].eq(1).sum()
-            ),
-            "params": params,
-        }
-        for name in ("val", "test")
-        for wide, metric in METRICS.items()
-    ]
-
-
-def run_cli(argv, *, stages, output_dir, experiment, encoder, normalize_config, run):
+def run_cli(argv, *, stages, output_dir, experiment, normalize_config, run):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("stages", nargs="*", help="exploratory stage numbers or names")
-    parser.add_argument(
-        "--benchmark", action="store_true", help="canonical seed-42 run"
-    )
-    source = parser.add_mutually_exclusive_group()
-    source.add_argument("--config", type=Path, help="fixed configuration JSON")
-    source.add_argument(
-        "--select-from", type=Path, nargs="+", help="compatible stage CSVs"
-    )
-    parser.add_argument("--selection-seeds", type=int, nargs="+", default=[0, 1, 2])
     parser.add_argument("--output-dir", type=Path, default=output_dir)
     parser.add_argument(
         "--stage-config",
         type=Path,
         help="JSON configuration overrides for exploratory stages",
     )
-    parser.add_argument(
-        "--write-results", action="store_true", help="explicitly export results.csv"
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true", help="inspect without training or writes"
-    )
     args = parser.parse_args(argv)
-    if args.benchmark:
-        if args.stages or args.stage_config or not (args.config or args.select_from):
-            parser.error(
-                "--benchmark requires --config or --select-from, without stages or --stage-config"
-            )
-    elif args.config or args.select_from or args.write_results:
-        parser.error("configuration selection and --write-results require --benchmark")
     by_number = {name.split("-")[0]: name for name in stages}
     names = [by_number.get(arg, arg) for arg in args.stages] or list(stages)
     if unknown := set(names) - set(stages):
@@ -257,38 +194,6 @@ def run_cli(argv, *, stages, output_dir, experiment, encoder, normalize_config, 
         }
 
     data = BACE1Benchmark.load()
-    if args.benchmark:
-        if args.config:
-            config = json.loads(args.config.read_text())
-            selection = {"method": "fixed_config", "source": str(args.config)}
-        else:
-            records = pd.concat(
-                [
-                    load_sweep_records(path, data, experiment)
-                    for path in args.select_from
-                ],
-                ignore_index=True,
-            )
-            config, selection = select_configuration(records, args.selection_seeds)
-        config = normalize_config(config)
-        bm.verify_export(data.metadata, data.full, data.data_path)
-        print(
-            bm.config_json(
-                {"benchmark": data.metadata, "config": config, "selection": selection}
-            )
-        )
-        if args.dry_run:
-            return []
-        measurements = run(config, bm.TRAINING_SEED, data, evaluate_test=True)
-        rows = canonical_rows(
-            data, config, measurements, encoder=encoder(config), selection=selection
-        )
-        print(pd.DataFrame(rows)[["split", "metric", "value"]].to_string(index=False))
-        if args.write_results:
-            bm.verify_export(data.metadata, data.full, data.data_path)
-            bm.record_results(rows, model=experiment, data_path=data.data_path)
-        return rows
-
     histories = {
         name: load_sweep_records(args.output_dir / f"{name}.csv", data, experiment)
         for name in names
@@ -298,8 +203,6 @@ def run_cli(argv, *, stages, output_dir, experiment, encoder, normalize_config, 
             {"benchmark": data.metadata, "mode": "exploratory", "stages": names}
         )
     )
-    if args.dry_run:
-        return []
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for name in names:
         records = histories[name]

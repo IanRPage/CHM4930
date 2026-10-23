@@ -1,13 +1,7 @@
 """
 Staged GNNEncoder experiments on the shared frozen BACE-1 cohort.
 
-Stage CSVs/logs retain their existing paths. Exploration scores train/val only;
-test is reserved for a selected canonical seed-42 run. Legacy stage files without
-matching benchmark metadata cannot be resumed.
-
     python scripts/gnn_encoder_sweep.py 1
-    python scripts/gnn_encoder_sweep.py --benchmark --config chosen.json --dry-run
-    python scripts/gnn_encoder_sweep.py --benchmark --config chosen.json --write-results
 """
 
 import copy
@@ -323,7 +317,6 @@ def main(argv=None):
         stages=STAGES,
         output_dir=OUT,
         experiment="gnn_encoder",
-        encoder=lambda cfg: "gnn_encoder",
         normalize_config=normalize_config,
         run=run,
     )

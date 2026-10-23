@@ -12,7 +12,6 @@ from torch import nn
 import benchmark as bm
 import encoder_benchmark as eb
 import encoders.smiles_encoder as smiles_module
-from baseline import results
 from pipeline.preprocess import featurize
 
 AI_DIR = Path(__file__).resolve().parents[2]
@@ -255,60 +254,6 @@ def test_run_cli_exploratory_resume_and_legacy_rejection(
     assert calls == [(cfg, 0)]
     assert (path.read_bytes(), log.read_bytes()) == saved
     assert pd.read_csv(path)["test_RMSE"].isna().all()
-
-
-def test_run_cli_canonical_selection_dry_run_and_export(
-    frozen_bace1, bace1_data, tmp_path, monkeypatch
-):
-    module = import_script("ECFP4_encoder_sweep")
-    monkeypatch.setattr(eb.BACE1Benchmark, "load", lambda: frozen_bace1)
-    calls = []
-    monkeypatch.setattr(
-        module,
-        "run",
-        lambda cfg, seed, cohort, *, evaluate_test=False: (
-            calls.append((cfg["LR"], seed, evaluate_test)) or measurements(cfg, seed)
-        ),
-    )
-
-    stage_csv = tmp_path / "stage.csv"
-    records(frozen_bace1, "ecfp4_encoder").to_csv(stage_csv, index=False)
-    module.main(["--benchmark", "--select-from", str(stage_csv)])
-    assert calls == [(0.001, 42, True)]
-
-    calls.clear()
-    chosen = tmp_path / "chosen.json"
-    chosen.write_text('{"EPOCHS": 2}')
-    assert (
-        module.main(
-            ["--benchmark", "--config", str(chosen), "--dry-run", "--write-results"]
-        )
-        == []
-    )
-    assert calls == []
-
-    results_copy = tmp_path / "results.csv"
-    results_copy.write_bytes(results.RESULTS_PATH.read_bytes())
-    before = pd.read_csv(results_copy)
-    record = bm.record_results
-    monkeypatch.setattr(
-        bm,
-        "record_results",
-        lambda rows, **kw: record(rows, path=results_copy, **kw),
-    )
-    rows = module.main(["--benchmark", "--config", str(chosen), "--write-results"])
-    assert len(rows) == 6
-    after = pd.read_csv(results_copy)
-    rf = after[after["model"].isin(["rf_bioactivity", "rf_toxicity"])].reset_index(
-        drop=True
-    )
-    pd.testing.assert_frame_equal(before, rf, rtol=1e-14, atol=1e-14)
-    assert len(after) == 52
-
-    with pytest.raises(ValueError, match="discard RF results"):
-        bm.verify_export(
-            bace1_data.metadata, bace1_data.full, bace1_data.data_path, results_copy
-        )
 
 
 @pytest.mark.parametrize("script", SCRIPTS)
