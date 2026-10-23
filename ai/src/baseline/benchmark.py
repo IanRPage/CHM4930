@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
 
 from baseline.results import (
     RESULTS_PATH,
@@ -41,14 +42,13 @@ TOX_DATASET_BY_TASK = {
 }
 
 
-def seed_everything(seed: int) -> None:
+def seed_everything(seed: int) -> torch.Generator:
     random.seed(seed)
     np.random.seed(seed)
-    import torch
-
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+    return torch.Generator().manual_seed(seed)
 
 
 def load_benchmark_split() -> pd.DataFrame:
@@ -101,52 +101,51 @@ def evaluate_split_predictions(
             n_labeled = int(mask.sum())
             n_positive = int(np.sum(y_cls == 1))
 
-            pic50_scores = (
-                _validated_scores(
+            if pic50_col in split_preds:
+                pic50_scores = _validated_scores(
                     split_preds[pic50_col], n_rows, mask, split, pic50_col
                 )
-                if pic50_col in split_preds
-                else None
-            )
-            active_scores = (
-                _validated_scores(
-                    split_preds[active_col], n_rows, mask, split, active_col
-                )
-                if active_col in split_preds
-                else pic50_scores
-            )
-
-            if pic50_scores is not None:
                 reg = evaluation_metrics(
                     y_reg, pic50_scores[mask], task_type="regression"
                 )
-                for metric in ("rmse", "r2"):
+                cls = evaluation_metrics(
+                    y_cls, pic50_scores[mask], task_type="classification"
+                )
+                for metric, value in (
+                    ("rmse", reg["rmse"]),
+                    ("r2", reg["r2"]),
+                    ("roc_auc", cls["roc_auc"]),
+                ):
                     rows.append(
                         {
                             "dataset": target.lower(),
                             "endpoint": pic50_col,
                             "split": split,
                             "metric": metric,
-                            "value": reg[metric],
+                            "value": value,
                             "n_labeled": n_labeled,
                             "n_positive": n_positive,
                         }
                     )
 
-            cls = evaluation_metrics(
-                y_cls, active_scores[mask], task_type="classification"
-            )
-            rows.append(
-                {
-                    "dataset": target.lower(),
-                    "endpoint": pic50_col,
-                    "split": split,
-                    "metric": "roc_auc",
-                    "value": cls["roc_auc"],
-                    "n_labeled": n_labeled,
-                    "n_positive": n_positive,
-                }
-            )
+            if active_col in split_preds:
+                active_scores = _validated_scores(
+                    split_preds[active_col], n_rows, mask, split, active_col
+                )
+                cls = evaluation_metrics(
+                    y_cls, active_scores[mask], task_type="classification"
+                )
+                rows.append(
+                    {
+                        "dataset": target.lower(),
+                        "endpoint": active_col,
+                        "split": split,
+                        "metric": "roc_auc",
+                        "value": cls["roc_auc"],
+                        "n_labeled": n_labeled,
+                        "n_positive": n_positive,
+                    }
+                )
 
         predicted_tox = [task for task in TOX_TASKS if task in split_preds]
         if predicted_tox:

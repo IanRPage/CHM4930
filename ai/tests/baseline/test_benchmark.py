@@ -37,23 +37,26 @@ def split_df():
 
 
 def test_seed_everything_makes_random_numpy_and_torch_draws_repeat():
-    benchmark.seed_everything(123)
+    gen_first = benchmark.seed_everything(123)
     py_first = [random.random() for _ in range(3)]
     np_first = np.random.rand(3)
     torch_first = torch.rand(3)
+    perm_first = torch.randperm(20, generator=gen_first)
 
-    benchmark.seed_everything(123)
+    gen_second = benchmark.seed_everything(123)
     py_second = [random.random() for _ in range(3)]
     np_second = np.random.rand(3)
     torch_second = torch.rand(3)
+    perm_second = torch.randperm(20, generator=gen_second)
 
     assert py_first == py_second
     np.testing.assert_array_equal(np_first, np_second)
     assert torch.equal(torch_first, torch_second)
+    assert torch.equal(perm_first, perm_second)
 
 
 def test_evaluate_bioactivity_with_and_without_explicit_active_scores(split_df):
-    # BACE1 relies on pIC50 fallback for roc_auc; EGFR provides inverted active_EGFR
+    # BACE1 has pIC50 only; EGFR provides both pIC50 and inverted active_EGFR on val
     predictions = {
         "val": {
             "pIC50_BACE1": [5.0, 7.0, np.nan],
@@ -76,14 +79,17 @@ def test_evaluate_bioactivity_with_and_without_explicit_active_scores(split_df):
     assert rows.loc[("pIC50_BACE1", "val", "rmse"), "n_labeled"] == 2
     assert rows.loc[("pIC50_BACE1", "val", "rmse"), "n_positive"] == 1
 
-    # Explicit active_EGFR overrides pIC50_EGFR for ROC-AUC
+    # pIC50-derived ROC-AUC under pIC50_EGFR, classifier head ROC-AUC under active_EGFR
     assert rows.loc[("pIC50_EGFR", "val", "rmse"), "value"] == pytest.approx(0.0)
-    assert rows.loc[("pIC50_EGFR", "val", "roc_auc"), "value"] == pytest.approx(0.0)
+    assert rows.loc[("pIC50_EGFR", "val", "roc_auc"), "value"] == pytest.approx(1.0)
+    assert rows.loc[("active_EGFR", "val", "roc_auc"), "value"] == pytest.approx(0.0)
+    assert ("active_EGFR", "val", "rmse") not in rows.index
 
-    # Active-only predictions produce roc_auc without rmse/r2
-    assert ("pIC50_EGFR", "test", "roc_auc") in rows.index
+    # Active-only predictions produce roc_auc under active_EGFR without pIC50_EGFR rows
+    assert ("active_EGFR", "test", "roc_auc") in rows.index
+    assert ("pIC50_EGFR", "test", "roc_auc") not in rows.index
     assert ("pIC50_EGFR", "test", "rmse") not in rows.index
-    assert rows.loc[("pIC50_EGFR", "test", "roc_auc"), "value"] == pytest.approx(1.0)
+    assert rows.loc[("active_EGFR", "test", "roc_auc"), "value"] == pytest.approx(1.0)
 
 
 def test_evaluate_toxicity_excludes_omitted_endpoints_from_macros(split_df):
