@@ -164,6 +164,26 @@ baselines through `src/baseline/benchmark.py`:
   `summarize_seeds()` table. It refuses to drop other models' rows from an older
   snapshot unless `allow_drop_stale=True`
 
+### MuFu training
+
+From `ai/`, run the baseline over all five shared seeds `(0, 1, 2, 3, 4)`:
+
+```sh
+python scripts/train_mufu.py
+```
+
+Or use `notebooks/MuFu_Training.ipynb` for loss plots and MuFu/RF metric comparisons.
+Edit training settings and `model_name` in the script or notebook settings cell.
+
+Outputs:
+
+- `checkpoints/mufu_seed_<seed>.pt`: best checkpoint for each seed.
+- `outputs/mufu/seed_<seed>_loss.csv`: epoch, train loss, and validation loss.
+- `data/baseline/results.csv`: per-seed validation/test metrics.
+
+Datasets are prepared once; each seed trains a fresh model. Rerunning replaces
+that seed's outputs. Review `data/baseline/results.csv` after training.
+
 ### Encoder sweeps
 
 `scripts/ECFP4_encoder_sweep.py`, `gnn_encoder_sweep.py`, and

@@ -121,6 +121,8 @@ def fit(
     model: MuFu,
     datasets: Mapping[str, MuFuDataset],
     config: TrainConfig | None = None,
+    *,
+    verbose: bool = False,
 ) -> TrainResult:
     cfg = config or TrainConfig()
     device = torch.device(
@@ -177,6 +179,13 @@ def fit(
         )
         val_loss = evaluate_val_loss(model, datasets["val"], task_loss, cfg.batch_size)
         val_losses.append(val_loss)
+
+        if verbose:
+            print(
+                f"Epoch {epoch}/{cfg.epochs} | "
+                f"train={train_losses[-1]:.4f} | val={val_loss:.4f}",
+                flush=True,
+            )
 
         if best_state is None or val_loss < best_val_loss:
             best_val_loss = val_loss
