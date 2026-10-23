@@ -22,7 +22,7 @@ from baseline.benchmark import (
     params_json,
     seed_everything,
 )
-from encoder_benchmark import grid, run_cli
+from encoder_benchmark import grid, run_cli, validation_rmse
 from encoders.gnn_encoder import GNNEncoder
 from pipeline.cache import DATA_DIR
 
@@ -124,10 +124,7 @@ def train_gnn(cfg, seed, data, *, evaluate_test=False):
             nn.functional.mse_loss(pred, batch.y).backward()
             optimizer.step()
         val_pred = predict(model, val, cfg["BATCH_SIZE"], graphs)
-        rows = evaluate_split_predictions(
-            data.frame, {"val": {"pIC50_BACE1": val_pred}}
-        )
-        val_rmse = next(r["value"] for r in rows if r["metric"] == "rmse")
+        val_rmse = validation_rmse(data, val_pred, evaluate=evaluate_split_predictions)
         if val_rmse < best_rmse:
             best_rmse = val_rmse
             best_state = copy.deepcopy(model.state_dict())

@@ -101,6 +101,20 @@ class BACE1Benchmark:
         return out
 
 
+def validation_rmse(frame, preds, *, evaluate=evaluate_split_predictions) -> float:
+    if hasattr(frame, "frame"):
+        frame = frame.frame
+    finite = (
+        torch.isfinite(preds).all()
+        if isinstance(preds, torch.Tensor)
+        else np.isfinite(preds).all()
+    )
+    if not finite:
+        return float("inf")
+    rows = evaluate(frame, {"val": {"pIC50_BACE1": preds}})
+    return next(r["value"] for r in rows if r["metric"] == "rmse")
+
+
 def load_sweep_records(path: Path, data: BACE1Benchmark, experiment: str):
     if not path.exists():
         return pd.DataFrame()

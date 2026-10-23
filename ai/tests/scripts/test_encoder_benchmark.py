@@ -379,3 +379,43 @@ def test_smiles_head_training_preserves_order_frozen_weights_and_checks_revision
     monkeypatch.setattr(module, "make_encoder", wrong_revision)
     with pytest.raises(ValueError, match="revision does not match"):
         module.run(cfg, 42, bace1_data)
+
+
+@pytest.mark.parametrize(
+    "bad_preds",
+    [
+        torch.tensor([float("nan"), 1.0]),
+        torch.tensor([float("inf"), 1.0]),
+        np.array([np.nan, 2.0]),
+        np.array([-np.inf, 2.0]),
+    ],
+)
+def test_validation_rmse_returns_inf_on_non_finite_predictions(bace1_data, bad_preds):
+    assert eb.validation_rmse(bace1_data, bad_preds) == float("inf")
+    assert eb.validation_rmse(bace1_data.frame, bad_preds) == float("inf")
+
+
+def test_diverged_epoch_with_non_finite_val_predictions_is_skipped(
+    bace1_data, monkeypatch
+):
+    module = import_script("ECFP4_encoder_sweep")
+    cfg = module.normalize_config(
+        {"EPOCHS": 2, "BATCH_SIZE": 4, "HIDDEN_DIMS": [8], "N_BITS": 1024}
+    )
+
+    real_validation_rmse = module.validation_rmse
+    calls = []
+
+    def mocked_validation_rmse(data, preds, **kwargs):
+        calls.append(len(calls))
+        if len(calls) == 1:
+            return real_validation_rmse(
+                data, torch.full_like(preds, float("nan")), **kwargs
+            )
+        return real_validation_rmse(data, preds, **kwargs)
+
+    monkeypatch.setattr(module, "validation_rmse", mocked_validation_rmse)
+    trained = module.run(cfg, 42, bace1_data, evaluate_test=False)
+    assert len(calls) == 2
+    assert trained["best_epoch"] == 2
+    assert np.isfinite(trained["val_RMSE"])

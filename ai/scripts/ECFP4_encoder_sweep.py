@@ -22,7 +22,7 @@ from baseline.benchmark import (
     params_json,
     seed_everything,
 )
-from encoder_benchmark import grid, run_cli
+from encoder_benchmark import grid, run_cli, validation_rmse
 from encoders.fingerprint_encoder import FingerprintEncoder
 from featurize.fingerprint import FINGERPRINT_BITS
 from pipeline.cache import DATA_DIR
@@ -71,10 +71,7 @@ def train_mlp(cfg, seed, data, *, evaluate_test=False):
                 model(X_train[idx]).squeeze(-1), y_train[idx]
             ).backward()
             optimizer.step()
-        rows = evaluate_split_predictions(
-            data.frame, {"val": {"pIC50_BACE1": predict(val)}}
-        )
-        rmse = next(r["value"] for r in rows if r["metric"] == "rmse")
+        rmse = validation_rmse(data, predict(val), evaluate=evaluate_split_predictions)
         if rmse < best_rmse:
             best_rmse, best_state, best_epoch = (
                 rmse,

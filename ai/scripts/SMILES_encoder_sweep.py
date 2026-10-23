@@ -25,7 +25,7 @@ from baseline.benchmark import (
     params_json,
     seed_everything,
 )
-from encoder_benchmark import run_cli
+from encoder_benchmark import run_cli, validation_rmse
 from encoders.smiles_encoder import (
     DEFAULT_MODEL_NAME,
     DEFAULT_REVISION,
@@ -157,10 +157,7 @@ def train_head(cfg, seed, data, *, evaluate_test=False):
                 head(X_train[idx]).squeeze(-1), y_train[idx]
             ).backward()
             optimizer.step()
-        rows = evaluate_split_predictions(
-            data.frame, {"val": {"pIC50_BACE1": predict(val)}}
-        )
-        rmse = next(r["value"] for r in rows if r["metric"] == "rmse")
+        rmse = validation_rmse(data, predict(val), evaluate=evaluate_split_predictions)
         if rmse < best_rmse:
             best_rmse, best_state, best_epoch = (
                 rmse,
