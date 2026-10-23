@@ -5,16 +5,11 @@ import pandas as pd
 import pytest
 import torch
 
-import benchmark as bm
+from baseline import benchmark as bm
 from baseline import results
 from pipeline.combined_loader import COMBINED_CSV_PATH
 
 CYCLOALKANE_SMILES = ["C1" + "C" * (n - 1) + "1" for n in range(3, 23)]
-
-
-@pytest.fixture
-def cycloalkane_smiles():
-    return list(CYCLOALKANE_SMILES)
 
 
 @pytest.fixture(autouse=True)
@@ -53,7 +48,7 @@ def frozen_benchmark():
     before = {
         path: path.read_bytes() for path in (COMBINED_CSV_PATH, results.RESULTS_PATH)
     }
-    loaded = bm.load_benchmark()
+    loaded = bm.load_benchmark_split()
     yield loaded
     for path, contents in before.items():
         assert path.read_bytes() == contents

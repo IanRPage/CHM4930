@@ -1,13 +1,10 @@
 """
 Standalone frozen MolFormer plus a trainable BACE-1 regression head.
 
-`PRETRAINED_REVISION` defaults to `DEFAULT_REVISION` (override with a 40-character
-commit SHA). All splitting, selection, scoring, and explicit export use the shared
-benchmark workflow.
+`PRETRAINED_REVISION` defaults to `DEFAULT_REVISION` (override with a
+40-character commit SHA).
 
     python scripts/SMILES_encoder_sweep.py 1
-    python scripts/SMILES_encoder_sweep.py --benchmark --config chosen.json --dry-run
-    python scripts/SMILES_encoder_sweep.py --benchmark --select-from outputs/encoders/SMILES/sweep/1-head.csv --write-results
 """
 
 import copy
@@ -23,8 +20,12 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 
-from benchmark import config_json, evaluate_predictions, set_training_seed
-from encoder_benchmark import run_cli
+from baseline.benchmark import (
+    evaluate_split_predictions,
+    params_json,
+    seed_everything,
+)
+from encoder_benchmark import run_cli, validation_rmse
 from encoders.smiles_encoder import (
     DEFAULT_MODEL_NAME,
     DEFAULT_REVISION,
@@ -92,7 +93,7 @@ def make_encoder(cfg):
 
 
 def train_head(cfg, seed, data, *, evaluate_test=False):
-    generator = set_training_seed(seed)
+    generator = seed_everything(seed)
     encoder = make_encoder(cfg).to(DEVICE).eval()
     resolved = getattr(encoder.model.config, "_commit_hash", None)
     if resolved is not None and resolved != cfg["PRETRAINED_REVISION"]:
@@ -156,9 +157,7 @@ def train_head(cfg, seed, data, *, evaluate_test=False):
                 head(X_train[idx]).squeeze(-1), y_train[idx]
             ).backward()
             optimizer.step()
-        rmse = evaluate_predictions(
-            data.frame.iloc[val]["pIC50_BACE1"], predict(val), "regression"
-        )["rmse"]
+        rmse = validation_rmse(data, predict(val), evaluate=evaluate_split_predictions)
         if rmse < best_rmse:
             best_rmse, best_state, best_epoch = (
                 rmse,
@@ -186,7 +185,7 @@ def run(cfg, seed, data, *, evaluate_test=False):
     start = time.time()
     result = train_head(cfg, seed, data, evaluate_test=evaluate_test)
     return {
-        "cfg": config_json(cfg),
+        "cfg": params_json(cfg),
         "seed": seed,
         **cfg,
         **result,
@@ -202,7 +201,6 @@ def main(argv=None):
         stages=STAGES,
         output_dir=OUT,
         experiment="smiles_encoder",
-        encoder=lambda cfg: "smiles_encoder",
         normalize_config=normalize_config,
         run=run,
     )

@@ -13,12 +13,11 @@ ai/
 ├── notebooks/          # exploration / scratchpads
 ├── scripts/            # helpful utility scripts
 ├── src/                # main code
-│   ├── baseline/       # random forest baselines and their results recorder
+│   ├── baseline/       # random forest baselines, shared benchmark, and results recorder
 │   ├── featurize/      # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
 │   ├── mufu/           # MuFu multimodal dataset, model, loss, and training components
 │   ├── pipeline/       # dataset loaders and structure to model input preprocessing
 │   ├── encoders/       # where each of MuFu's encoders are implemented
-│   ├── benchmark.py    # shared split, seeding, and scoring every model uses
 │   └── evaluation.py   # regression, classification, and multi-task evaluation metrics
 ├── tests/              # pytest suite (mirrors src/ and scripts/)
 ├── checkpoints/        # saved model weights
@@ -122,79 +121,66 @@ change the snapshot is:
 PYTHONPATH=src python -m pipeline.combined_loader --refresh
 ```
 
-Don't run that casually. It invalidates every recorded result, so re-run both
-baselines and commit the new snapshot together with the new results.
+Don't run that casually. It invalidates every recorded result, so delete
+`data/baseline/results.csv`, re-run both baselines, and commit the new snapshot
+together with the new results.
 
-Each run replaces its own rows in `data/baseline/results.csv`, one row per model
-× endpoint × split × metric. Each row is tagged with the snapshot's SHA-256 (taken
-with LF line endings, so Windows checkouts match) and the git commit it ran on.
-Current test set performance:
+Each run replaces its own `(model, encoder, seed)` rows in
+`data/baseline/results.csv`, one row per model × endpoint × split × seed × metric
+across `SEEDS = (0, 1, 2, 3, 4)` (aggregate across seeds with
+`baseline.results.summarize_seeds()`). Each row is tagged with the snapshot's
+SHA-256 (taken with LF line endings, so Windows checkouts match)
+and the git commit it ran on. Current test set performance (mean over 5 seeds):
 
 | Model            | Task                  | Test result                                  |
 | ---------------- | --------------------- | -------------------------------------------- |
 | `rf_bioactivity` | BACE-1 pIC50          | RMSE 0.81, R² 0.59, ROC-AUC 0.88 (pIC50 ≥ 6) |
-| `rf_bioactivity` | EGFR pIC50            | RMSE 0.87, R² 0.51, ROC-AUC 0.88 (pIC50 ≥ 6) |
-| `rf_toxicity`    | Tox21 (12 endpoints)  | macro ROC-AUC 0.72                           |
+| `rf_bioactivity` | EGFR pIC50            | RMSE 0.88, R² 0.50, ROC-AUC 0.88 (pIC50 ≥ 6) |
+| `rf_toxicity`    | Tox21 (12 endpoints)  | macro ROC-AUC 0.71                           |
 | `rf_toxicity`    | ClinTox (2 endpoints) | macro ROC-AUC 0.65                           |
 
 NOTE: See `data/baseline/results.csv` for per-task numbers. Some test sets have
 very few examples of one class, so read their ROC-AUC loosely. For example,
-NR-AR has 11 actives out of 704 (val 0.83, test 0.55), and FDA_APPROVED has only
-6 unapproved compounds out of 144 (val 0.84, test 0.56).
+NR-AR has 11 actives out of 704 (val 0.82, test 0.56), and FDA_APPROVED has only
+6 unapproved compounds out of 144 (val 0.83, test 0.58).
 
 ## Benchmarks
 
-Every model is scored on the same split, rows, and metrics as the RF baselines.
-`src/benchmark.py` has the shared pieces:
+Every model is scored on the same split, rows, seeds, and metrics as the RF
+baselines through `src/baseline/benchmark.py`:
 
-- `load_benchmark()`: the frozen table with its scaffold split
-- `set_training_seed()`: seeds Python, NumPy, and Torch (default 42) and returns a
-  seeded generator for DataLoaders
-- `evaluate_predictions()`: shared metrics, with missing labels masked
-- `benchmark_metadata()`: hashes of the dataset and split assignments. Store it in
-  result `params` so a result can be checked against the snapshot it came from
+- `SEEDS = (0, 1, 2, 3, 4)`: the shared training seeds every model runs across
+- `load_benchmark_split()`: loads `data/baseline/combined.csv` and applies the
+  shared Bemis-Murcko scaffold split
+- `seed_everything(seed)`: seeds Python, NumPy, and Torch and returns a seeded
+  `torch.Generator` for DataLoaders
+- `evaluate_split_predictions(df, predictions)`: scores aligned per-split
+  predictions with the dataset label masks (recording pIC50-derived `roc_auc`
+  under `pIC50_<T>`, classifier-head `roc_auc` under `active_<T>`, and checking
+  `smiles` order when provided)
+- `run_benchmark(fit_predict, model, encoder, params)`: runs
+  `fit_predict(df, seed)` across `SEEDS`, evaluates `"val"` and `"test"`, writes
+  per-seed rows to `data/baseline/results.csv`, and returns the
+  `summarize_seeds()` table. It refuses to drop other models' rows from an older
+  snapshot unless `allow_drop_stale=True`
 
 ### Encoder sweeps
 
 `scripts/ECFP4_encoder_sweep.py`, `gnn_encoder_sweep.py`, and
-`SMILES_encoder_sweep.py` train each encoder with a pIC50 head on the BACE-1 rows
-of the shared split (6,469 / 808 / 810), the same molecules as `rf_bioactivity`.
+`SMILES_encoder_sweep.py` run exploratory hyperparameter stages on the BACE-1
+rows of the shared split (6,469 / 808 / 810), the same molecules as
+`rf_bioactivity`:
 
 ```sh
-python scripts/gnn_encoder_sweep.py 1 2                                  # exploratory stages (train/val only)
-python scripts/gnn_encoder_sweep.py --benchmark --config chosen.json     # canonical seed-42 run, prints val/test
-python scripts/gnn_encoder_sweep.py --benchmark --select-from <stage.csv> --write-results
+python scripts/ECFP4_encoder_sweep.py 1 2
+python scripts/gnn_encoder_sweep.py 1
+python scripts/SMILES_encoder_sweep.py 1
 ```
 
-- stage CSVs and logs go to `--output-dir` (default `outputs/encoders/<encoder>/sweep/`)
-  and resume where they left off. Old files without matching benchmark metadata
-  can't be resumed, so point new runs at a new directory
-- `--select-from` picks the config with the lowest mean val RMSE over
-  `--selection-seeds` (default `0 1 2`). Test is never used for selection
-- `results.csv` is only written with `--write-results`. `--dry-run` checks the
-  config without training
-- `PRETRAINED_REVISION` in the SMILES script defaults to `DEFAULT_REVISION` (override
-  with a 40-character MolFormer commit SHA via `--stage-config` or `--config`)
-
-### MuFu
-
-`mufu.benchmark.evaluate_mufu()` scores a trained MuFu on val/test and records it in
-`results.csv` as `mufu_full`. It needs to be told how the model was trained, or it
-only runs val diagnostics:
-
-```python
-training = {
-    "trained": True,
-    "training_steps": steps,
-    "training_seed": 42,
-    "selection_split": "val",
-    "benchmark": benchmark_metadata(full),
-}
-evaluate_mufu(model, training=training, splits=("val", "test"), write_results=True)
-```
-
-Or pass `checkpoint=Path(...)`, a `torch.save` of
-`{"model_state_dict": ..., "training": training}`.
+Stage CSVs and logs go to `--output-dir` (default
+`outputs/encoders/<encoder>/sweep/`), tagged with `data_sha256` and
+`split_sha256` so interrupted stages verify the snapshot and split before
+resuming.
 
 ## Testing
 

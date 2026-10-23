@@ -6,21 +6,17 @@ Run from `ai/` with `PYTHONPATH=src`:
     python -m baseline.baseline_toxicity
 """
 
-import json
-
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
-from baseline.results import record_results
+from baseline.benchmark import SEEDS, load_benchmark_split, run_benchmark
 from evaluation import evaluation_metrics
 from featurize.fingerprint import FINGERPRINT_BITS, mol_to_ecfp4
-from pipeline.combined_loader import TOX_TASKS, load_combined
+from pipeline.combined_loader import TOX_TASKS
 from pipeline.preprocess import summarize_labels, to_mol
-from pipeline.split import scaffold_split
 from pipeline.toxicity_loader import DATASETS
 
 N_ESTIMATORS = 500
-RANDOM_STATE = 42
 MAX_FEATURES_OPTIONS = ["sqrt", "log2", 0.1, 0.3]
 
 
@@ -31,7 +27,9 @@ def positive_probabilities(model, X):
     return model.predict_proba(X)[:, positive_column]
 
 
-def fit_endpoint(X, y, train_idx, val_idx):
+def fit_endpoint(X, y, train_idx, val_idx, seed=None):
+    if seed is None:
+        seed = SEEDS[0]
     if len(train_idx) == 0:
         return None, "skipped: no observed training labels"
     if np.unique(y[train_idx]).size < 2:
@@ -45,7 +43,7 @@ def fit_endpoint(X, y, train_idx, val_idx):
             n_estimators=N_ESTIMATORS,
             max_features=max_features,
             n_jobs=-1,
-            random_state=RANDOM_STATE,
+            random_state=seed,
         )
         model.fit(X[train_idx], y[train_idx])
         val_auc = evaluation_metrics(
@@ -64,121 +62,104 @@ def fit_endpoint(X, y, train_idx, val_idx):
     return best_model, status
 
 
-def result_row(endpoint, split, value, params, n_labeled=np.nan, n_positive=np.nan):
-    dataset = next(
-        (name for name, config in DATASETS.items() if endpoint in config["tasks"]),
-        endpoint.removeprefix("macro_"),
-    )
-    return {
-        "encoder": f"ecfp4-{FINGERPRINT_BITS}",
-        "dataset": dataset,
-        "endpoint": endpoint,
-        "split": split,
-        "metric": "roc_auc",
-        "value": value,
-        "n_labeled": n_labeled,
-        "n_positive": n_positive,
-        "params": json.dumps(params),
-    }
+def _lookup_auc(summary, endpoint, split):
+    if summary.empty:
+        return float("nan")
+    match = summary[(summary["endpoint"] == endpoint) & (summary["split"] == split)]
+    if match.empty:
+        return float("nan")
+    return float(match["value"].iloc[0])
 
 
 def main():
-    df = scaffold_split(load_combined())
-    df = df.loc[df[TOX_TASKS].notna().any(axis=1)].reset_index(drop=True)
+    df = load_benchmark_split()
+    tox_df = df.loc[df[TOX_TASKS].notna().any(axis=1)].reset_index(drop=True)
     X = (
-        np.stack([mol_to_ecfp4(to_mol(s), FINGERPRINT_BITS) for s in df["smiles"]])
-        if len(df)
+        np.stack([mol_to_ecfp4(to_mol(s), FINGERPRINT_BITS) for s in tox_df["smiles"]])
+        if len(tox_df)
         else np.empty((0, FINGERPRINT_BITS), dtype=np.uint8)
     )
-    y = df[TOX_TASKS].to_numpy(dtype=float)
-    observed = df[TOX_TASKS].notna().to_numpy()
-    split = df["split"].to_numpy()
+    y = tox_df[TOX_TASKS].to_numpy(dtype=float)
+    observed = tox_df[TOX_TASKS].notna().to_numpy()
+    split = tox_df["split"].to_numpy()
     indices = {name: np.flatnonzero(split == name) for name in ("train", "val", "test")}
-    predictions = {
-        name: np.full((len(indices[name]), len(TOX_TASKS)), np.nan)
-        for name in ("val", "test")
-    }
-    trained = np.zeros(len(TOX_TASKS), dtype=bool)
-    selections = []
 
     for name, idx in indices.items():
         print(f"\n{name}: {len(idx)} molecules with at least one toxicity label")
-        print(summarize_labels(df.iloc[idx], TOX_TASKS).round(4).to_string())
+        print(summarize_labels(tox_df.iloc[idx], TOX_TASKS).round(4).to_string())
 
+    selected = {}
+    selections = []
     for j, task in enumerate(TOX_TASKS):
         train_idx, val_idx = (
             indices[name][observed[indices[name], j]] for name in ("train", "val")
         )
-        model, status = fit_endpoint(X, y[:, j], train_idx, val_idx)
-        selections.append(
-            (task, model.max_features if model is not None else None, status)
-        )
-        if model is None:
-            continue
-        trained[j] = True
-        for name, scores in predictions.items():
-            scores[:, j] = positive_probabilities(model, X[indices[name]])
+        model, status = fit_endpoint(X, y[:, j], train_idx, val_idx, seed=SEEDS[0])
+        choice = model.max_features if model is not None else None
+        selections.append((task, choice, status))
+        if choice is not None:
+            selected[task] = choice
 
-    metrics = {}
-    rows = []
-    for name, scores in predictions.items():
-        idx = indices[name]
-        # Untrained endpoints have no predictions and must not enter macro means.
-        mask = observed[idx] & trained
-        metrics[name] = evaluation_metrics(y[idx], scores, "multitask", mask=mask)
-        groups = {"overall": list(range(len(TOX_TASKS)))}
-        groups.update(
-            {
-                dataset: [TOX_TASKS.index(task) for task in config["tasks"]]
-                for dataset, config in DATASETS.items()
-            }
-        )
-        for group, columns in groups.items():
-            result = (
-                metrics[name]
-                if group == "overall"
-                else evaluation_metrics(
-                    y[idx][:, columns],
-                    scores[:, columns],
-                    "multitask",
-                    mask=mask[:, columns],
-                )
+    split_masks = {
+        name: {
+            task: df.loc[df["split"] == name, task].notna().to_numpy()
+            for task in selected
+        }
+        for name in ("val", "test")
+    }
+
+    def fit_predict(split_df, seed):
+        predictions = {"val": {}, "test": {}}
+        for j, task in enumerate(TOX_TASKS):
+            if task not in selected:
+                continue
+            train_idx = indices["train"][observed[indices["train"], j]]
+            model = RandomForestClassifier(
+                n_estimators=N_ESTIMATORS,
+                max_features=selected[task],
+                n_jobs=-1,
+                random_state=seed,
             )
-            rows.append(
-                result_row(
-                    f"macro_{group}",
-                    name,
-                    result["mean_roc_auc"],
-                    {"n_estimators": N_ESTIMATORS},
-                )
-            )
-            count = np.isfinite(result["per_task_roc_auc"]).sum()
+            model.fit(X[train_idx], y[train_idx, j])
+            for name in ("val", "test"):
+                eval_idx = indices[name][observed[indices[name], j]]
+                mask = split_masks[name][task]
+                scores = np.full(len(mask), np.nan, dtype=float)
+                scores[mask] = positive_probabilities(model, X[eval_idx])
+                predictions[name][task] = scores
+        return predictions
+
+    params = {"max_features": selected, "n_estimators": N_ESTIMATORS}
+    summary = run_benchmark(
+        fit_predict,
+        model="rf_toxicity",
+        encoder=f"ecfp4-{FINGERPRINT_BITS}",
+        params=params,
+        seeds=SEEDS,
+        df=df,
+    )
+
+    groups = {"overall": list(TOX_TASKS)}
+    groups.update({dataset: list(cfg["tasks"]) for dataset, cfg in DATASETS.items()})
+    for name in ("val", "test"):
+        for group, tasks in groups.items():
+            macro_auc = _lookup_auc(summary, f"macro_{group}", name)
+            task_aucs = [_lookup_auc(summary, t, name) for t in tasks]
+            count = int(np.isfinite(task_aucs).sum())
             print(
-                f"{name} {group}: macro ROC-AUC={result['mean_roc_auc']:.4f} "
-                f"({count}/{len(columns)} evaluable endpoints)"
+                f"{name} {group}: macro ROC-AUC={macro_auc:.4f} "
+                f"({count}/{len(tasks)} evaluable endpoints)"
             )
 
     print("\nEndpoint results (FDA_APPROVED predicts approval status):")
-    for j, (task, max_features, status) in enumerate(selections):
+    for task, max_features, status in selections:
+        val_auc = _lookup_auc(summary, task, "val")
+        test_auc = _lookup_auc(summary, task, "test")
         print(
             f"{task}: max_features={max_features}, "
-            f"val ROC-AUC={metrics['val']['per_task_roc_auc'][j]:.4f}, "
-            f"test ROC-AUC={metrics['test']['per_task_roc_auc'][j]:.4f}; {status}"
+            f"val ROC-AUC={val_auc:.4f}, "
+            f"test ROC-AUC={test_auc:.4f}; {status}"
         )
-        for name in predictions:
-            labeled = indices[name][observed[indices[name], j]]
-            rows.append(
-                result_row(
-                    task,
-                    name,
-                    metrics[name]["per_task_roc_auc"][j],
-                    {"max_features": max_features, "n_estimators": N_ESTIMATORS},
-                    n_labeled=len(labeled),
-                    n_positive=int(np.sum(y[labeled, j] == 1)),
-                )
-            )
-
-    record_results(rows, model="rf_toxicity")
 
 
 if __name__ == "__main__":

@@ -1,15 +1,7 @@
 """
 Staged FingerprintEncoder experiments on the shared frozen BACE-1 cohort.
 
-Stage CSVs/logs retain their existing paths. Exploration scores train/val only;
-test is reserved for a selected canonical seed-42 run. Legacy stage files without
-matching benchmark metadata cannot be resumed.
-
     python scripts/ECFP4_encoder_sweep.py 3 4
-    python scripts/ECFP4_encoder_sweep.py --benchmark --config chosen.json --dry-run
-    python scripts/ECFP4_encoder_sweep.py --benchmark --config chosen.json --write-results
-
-Stages can still be run independently, including with NVIDIA MPS.
 """
 
 import copy
@@ -25,8 +17,12 @@ from sklearn.linear_model import Ridge
 from torch import nn
 from torch.utils.data import DataLoader
 
-from benchmark import config_json, evaluate_predictions, set_training_seed
-from encoder_benchmark import grid, run_cli
+from baseline.benchmark import (
+    evaluate_split_predictions,
+    params_json,
+    seed_everything,
+)
+from encoder_benchmark import grid, run_cli, validation_rmse
 from encoders.fingerprint_encoder import FingerprintEncoder
 from featurize.fingerprint import FINGERPRINT_BITS
 from pipeline.cache import DATA_DIR
@@ -40,7 +36,7 @@ def train_mlp(cfg, seed, data, *, evaluate_test=False):
     y = data.y
     X = data.fingerprints(cfg["N_BITS"]).to(DEVICE)
     X_train, y_train = X[train], y[train].to(DEVICE)
-    generator = set_training_seed(seed)
+    generator = seed_everything(seed)
     encoder = FingerprintEncoder(
         cfg["N_BITS"],
         cfg["HIDDEN_DIMS"],
@@ -75,9 +71,7 @@ def train_mlp(cfg, seed, data, *, evaluate_test=False):
                 model(X_train[idx]).squeeze(-1), y_train[idx]
             ).backward()
             optimizer.step()
-        rmse = evaluate_predictions(
-            data.frame.iloc[val]["pIC50_BACE1"], predict(val), "regression"
-        )["rmse"]
+        rmse = validation_rmse(data, predict(val), evaluate=evaluate_split_predictions)
         if rmse < best_rmse:
             best_rmse, best_state, best_epoch = (
                 rmse,
@@ -199,7 +193,7 @@ def run(cfg, seed, data, *, evaluate_test=False):
         cfg, seed, data, evaluate_test=evaluate_test
     )
     return {
-        "cfg": config_json(cfg),
+        "cfg": params_json(cfg),
         "seed": seed,
         **cfg,
         **res,
@@ -223,7 +217,6 @@ def main(argv=None):
         stages=STAGES,
         output_dir=OUT,
         experiment="ecfp4_encoder",
-        encoder=lambda cfg: f"fingerprint_encoder-{cfg['N_BITS']}",
         normalize_config=normalize_config,
         run=run,
     )

@@ -1,3 +1,4 @@
+import hashlib
 import subprocess
 
 import numpy as np
@@ -15,12 +16,13 @@ def paths(tmp_path, monkeypatch):
     return tmp_path / "baseline" / "results.csv", data
 
 
-def row(endpoint, split="test", value=0.5, **extra):
+def row(endpoint, split="test", seed=0, value=0.5, **extra):
     return {
         "encoder": "ecfp4-2048",
         "dataset": "tox21",
         "endpoint": endpoint,
         "split": split,
+        "seed": seed,
         "metric": "roc_auc",
         "value": value,
         "n_labeled": 10,
@@ -36,7 +38,18 @@ def test_rows_get_every_column_in_order(paths):
     written = pd.read_csv(path)
     assert written.columns.tolist() == results.COLUMNS
     assert written.loc[0, "model"] == "m"
+    assert written.loc[0, "seed"] == 0
     assert written.loc[0, "git_commit"] == "abc1234"
+
+
+def test_params_json_is_key_order_independent():
+    first = results.params_json(
+        {"n_estimators": 500, "max_features": {"EGFR": "sqrt", "BACE1": 0.1}}
+    )
+    second = results.params_json(
+        {"max_features": {"BACE1": 0.1, "EGFR": "sqrt"}, "n_estimators": 500}
+    )
+    assert first == second
 
 
 def test_rerun_replaces_only_that_models_rows(paths):
@@ -50,30 +63,113 @@ def test_rerun_replaces_only_that_models_rows(paths):
     assert written["model"].tolist() == ["a", "b"]
 
 
-def test_other_models_rows_from_an_old_snapshot_are_dropped(paths, caplog):
+def test_other_models_stale_rows_are_dropped_only_with_opt_in(paths, caplog):
     path, data = paths
     results.record_results([row("T1")], model="a", path=path, data_path=data)
     results.record_results([row("T1")], model="b", path=path, data_path=data)
+    before = path.read_bytes()
     data.write_text("smiles\nCCN\n")
-    results.record_results([row("T1")], model="a", path=path, data_path=data)
 
+    with pytest.raises(ValueError, match="different snapshot"):
+        results.record_results([row("T1")], model="a", path=path, data_path=data)
+    assert path.read_bytes() == before
+
+    results.record_results(
+        [row("T1")], model="a", path=path, data_path=data, allow_drop_stale=True
+    )
     written = pd.read_csv(path)
     assert written["model"].tolist() == ["a"]
     assert written["data_sha256"].tolist() == [results.file_sha256(data)]
     assert "['b']" in caplog.text
 
 
-def test_rows_are_sorted_and_nan_values_kept(paths):
+def test_rerun_replaces_only_matching_encoder_and_seed_rows(paths):
     path, data = paths
-    rows = [row("T2", "val"), row("T1", "val", value=np.nan), row("T1", "test")]
+    rows = [row("T1", seed=s, encoder=e) for e in ("gnn", "ecfp") for s in (0, 1)]
+    results.record_results(rows, model="m", path=path, data_path=data)
+    results.record_results(
+        [row("T1", seed=0, value=0.9, encoder="ecfp")],
+        model="m",
+        path=path,
+        data_path=data,
+    )
+
+    written = pd.read_csv(path).set_index(["encoder", "seed"])["value"]
+    assert written.to_dict() == {
+        ("ecfp", 0): 0.9,
+        ("ecfp", 1): 0.5,
+        ("gnn", 0): 0.5,
+        ("gnn", 1): 0.5,
+    }
+
+
+def test_rows_are_sorted_by_seed_and_nan_values_kept(paths):
+    path, data = paths
+    rows = [
+        row("T2", "val", seed=0),
+        row("T1", "val", seed=0, value=np.nan),
+        row("T1", "test", seed=1),
+        row("T1", "test", seed=0),
+    ]
     results.record_results(rows, model="m", path=path, data_path=data)
     written = pd.read_csv(path)
-    assert written[["endpoint", "split"]].values.tolist() == [
-        ["T1", "test"],
-        ["T1", "val"],
-        ["T2", "val"],
+    assert written[["endpoint", "split", "seed"]].values.tolist() == [
+        ["T1", "test", 0],
+        ["T1", "test", 1],
+        ["T1", "val", 0],
+        ["T2", "val", 0],
     ]
-    assert np.isnan(written.loc[1, "value"])
+    assert np.isnan(written.loc[2, "value"])
+
+
+def test_summarize_seeds_computes_mean_ddof1_std_and_keeps_nan_keys(paths):
+    path, data = paths
+    rows = [
+        row("T1", "test", seed=0, value=0.6),
+        row("T1", "test", seed=1, value=0.8),
+        row("T1", "test", seed=2, value=1.0),
+        row("T1", "test", seed=3, value=np.nan),
+        row(
+            "macro_tox21",
+            "test",
+            seed=0,
+            value=0.5,
+            n_labeled=np.nan,
+            n_positive=np.nan,
+        ),
+        row(
+            "macro_tox21",
+            "test",
+            seed=1,
+            value=0.9,
+            n_labeled=np.nan,
+            n_positive=np.nan,
+        ),
+    ]
+    written = results.record_results(rows, model="m", path=path, data_path=data)
+    summary = results.summarize_seeds(written).set_index("endpoint")
+
+    assert list(summary.columns) == [
+        c for c in results.SUMMARY_COLUMNS if c != "endpoint"
+    ]
+    assert summary.loc["T1", "value"] == pytest.approx(0.8)
+    assert summary.loc["T1", "std"] == pytest.approx(0.2)
+    assert summary.loc["T1", "n_seeds"] == 3
+
+    assert summary.loc["macro_tox21", "value"] == pytest.approx(0.7)
+    assert summary.loc["macro_tox21", "std"] == pytest.approx(
+        np.std([0.5, 0.9], ddof=1)
+    )
+    assert summary.loc["macro_tox21", "n_seeds"] == 2
+    assert np.isnan(summary.loc["macro_tox21", "n_labeled"])
+    assert np.isnan(summary.loc["macro_tox21", "n_positive"])
+
+
+def test_summarize_seeds_empty_dataframe():
+    empty = pd.DataFrame(columns=results.COLUMNS)
+    summary = results.summarize_seeds(empty)
+    assert list(summary.columns) == results.SUMMARY_COLUMNS
+    assert summary.empty
 
 
 def test_data_sha256_tracks_the_snapshot_bytes(paths):
@@ -84,6 +180,16 @@ def test_data_sha256_tracks_the_snapshot_bytes(paths):
     assert pd.read_csv(path).loc[0, "data_sha256"] == first
     data.write_text("smiles\nCCN\n")
     assert results.file_sha256(data) != first
+
+
+def test_lf_and_crlf_checksums_match_without_rewriting_files(tmp_path):
+    lf = b"smiles,pIC50_BACE1\nCCO,6.0\nCCN,5.0\n"
+    expected = hashlib.sha256(lf).hexdigest()
+    for name, contents in (("lf.csv", lf), ("crlf.csv", lf.replace(b"\n", b"\r\n"))):
+        path = tmp_path / name
+        path.write_bytes(contents)
+        assert results.file_sha256(path) == expected
+        assert path.read_bytes() == contents
 
 
 def test_git_commit_falls_back_when_git_is_unavailable(monkeypatch):

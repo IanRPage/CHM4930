@@ -9,10 +9,9 @@ import pytest
 import torch
 from torch import nn
 
-import benchmark as bm
 import encoder_benchmark as eb
 import encoders.smiles_encoder as smiles_module
-from baseline import results
+from baseline import benchmark as bm
 from pipeline.preprocess import featurize
 
 AI_DIR = Path(__file__).resolve().parents[2]
@@ -30,7 +29,7 @@ def import_script(name: str):
 
 def measurements(config=None, seed=42):
     return {
-        "cfg": bm.config_json(config or {}),
+        "cfg": bm.params_json(config or {}),
         "seed": seed,
         "best_epoch": 1,
         "secs": 0.1,
@@ -52,7 +51,8 @@ def records(data, experiment="ecfp4_encoder", configs=None, seeds=(0, 1, 2)):
                 **measurements(config, seed),
                 "val_RMSE": 1.0 + position,
                 "test_RMSE": 100.0 - position,
-                "benchmark": bm.config_json(data.metadata),
+                "data_sha256": data.data_sha256,
+                "split_sha256": data.split_sha256,
                 "sweep_protocol": eb.SWEEP_PROTOCOL,
                 "experiment": experiment,
             }
@@ -164,9 +164,9 @@ def test_scoring_alignment_and_optional_test_evaluation(bace1_data, evaluate_tes
     )
     assert scored["test_RMSE"] == 0 if evaluate_test else np.isnan(scored["test_RMSE"])
 
-    with pytest.raises(ValueError, match="prediction row index"):
+    with pytest.raises(ValueError, match="expected 1D array of length"):
         bace1_data.score(
-            lambda idx: bace1_data.frame.iloc[idx]["pIC50_BACE1"].iloc[::-1]
+            lambda idx: bace1_data.frame.iloc[idx[:-1]]["pIC50_BACE1"].to_numpy()
         )
 
 
@@ -193,7 +193,8 @@ def test_configuration_selection_requires_complete_seeds_and_ignores_test(bace1_
 @pytest.mark.parametrize(
     ("column", "value", "message"),
     [
-        ("benchmark", "mismatch", "data_sha256"),
+        ("data_sha256", "old", "data_sha256"),
+        ("split_sha256", "old", "split_sha256"),
         ("sweep_protocol", "old", "protocol"),
         ("experiment", "gnn_encoder", "experiment"),
         ("seed", -1, "training seeds"),
@@ -209,10 +210,8 @@ def test_load_sweep_records_normalizes_and_rejects_incompatible_files(
     path = tmp_path / "stage.csv"
     table.to_csv(path, index=False)
     loaded = eb.load_sweep_records(path, bace1_data, "ecfp4_encoder")
-    assert loaded["cfg"].eq(bm.config_json({"EPOCHS": 10, "LR": 0.01})).all()
+    assert loaded["cfg"].eq(bm.params_json({"EPOCHS": 10, "LR": 0.01})).all()
 
-    if column == "benchmark":
-        value = bm.config_json(bace1_data.metadata | {"data_sha256": "old"})
     table.loc[0, column] = value
     table.to_csv(path, index=False)
     with pytest.raises(ValueError, match=message):
@@ -257,60 +256,6 @@ def test_run_cli_exploratory_resume_and_legacy_rejection(
     assert pd.read_csv(path)["test_RMSE"].isna().all()
 
 
-def test_run_cli_canonical_selection_dry_run_and_export(
-    frozen_bace1, bace1_data, tmp_path, monkeypatch
-):
-    module = import_script("ECFP4_encoder_sweep")
-    monkeypatch.setattr(eb.BACE1Benchmark, "load", lambda: frozen_bace1)
-    calls = []
-    monkeypatch.setattr(
-        module,
-        "run",
-        lambda cfg, seed, cohort, *, evaluate_test=False: (
-            calls.append((cfg["LR"], seed, evaluate_test)) or measurements(cfg, seed)
-        ),
-    )
-
-    stage_csv = tmp_path / "stage.csv"
-    records(frozen_bace1, "ecfp4_encoder").to_csv(stage_csv, index=False)
-    module.main(["--benchmark", "--select-from", str(stage_csv)])
-    assert calls == [(0.001, 42, True)]
-
-    calls.clear()
-    chosen = tmp_path / "chosen.json"
-    chosen.write_text('{"EPOCHS": 2}')
-    assert (
-        module.main(
-            ["--benchmark", "--config", str(chosen), "--dry-run", "--write-results"]
-        )
-        == []
-    )
-    assert calls == []
-
-    results_copy = tmp_path / "results.csv"
-    results_copy.write_bytes(results.RESULTS_PATH.read_bytes())
-    before = pd.read_csv(results_copy)
-    record = bm.record_results
-    monkeypatch.setattr(
-        bm,
-        "record_results",
-        lambda rows, **kw: record(rows, path=results_copy, **kw),
-    )
-    rows = module.main(["--benchmark", "--config", str(chosen), "--write-results"])
-    assert len(rows) == 6
-    after = pd.read_csv(results_copy)
-    rf = after[after["model"].isin(["rf_bioactivity", "rf_toxicity"])].reset_index(
-        drop=True
-    )
-    pd.testing.assert_frame_equal(before, rf, rtol=1e-14, atol=1e-14)
-    assert len(after) == 52
-
-    with pytest.raises(ValueError, match="discard RF results"):
-        bm.verify_export(
-            bace1_data.metadata, bace1_data.full, bace1_data.data_path, results_copy
-        )
-
-
 @pytest.mark.parametrize("script", SCRIPTS)
 def test_best_epoch_restored_before_test_scoring(
     script, bace1_data, mocked_smiles_encoder, monkeypatch
@@ -327,11 +272,12 @@ def test_best_epoch_restored_before_test_scoring(
     cfg = module.normalize_config(base)
     val_predictions = []
 
-    def validation_metric(labels, predictions, task_type):
-        val_predictions.append(predictions.clone())
-        return {"rmse": 0.1 if len(val_predictions) == 1 else 100.0}
+    def validation_metric(df, predictions):
+        val_predictions.append(predictions["val"]["pIC50_BACE1"].clone())
+        rmse = 0.1 if len(val_predictions) == 1 else 100.0
+        return [{"metric": "rmse", "value": rmse}]
 
-    monkeypatch.setattr(module, "evaluate_predictions", validation_metric)
+    monkeypatch.setattr(module, "evaluate_split_predictions", validation_metric)
     original_score = bace1_data.score
 
     def score_selected(predict, *, evaluate_test=False):
@@ -433,3 +379,43 @@ def test_smiles_head_training_preserves_order_frozen_weights_and_checks_revision
     monkeypatch.setattr(module, "make_encoder", wrong_revision)
     with pytest.raises(ValueError, match="revision does not match"):
         module.run(cfg, 42, bace1_data)
+
+
+@pytest.mark.parametrize(
+    "bad_preds",
+    [
+        torch.tensor([float("nan"), 1.0]),
+        torch.tensor([float("inf"), 1.0]),
+        np.array([np.nan, 2.0]),
+        np.array([-np.inf, 2.0]),
+    ],
+)
+def test_validation_rmse_returns_inf_on_non_finite_predictions(bace1_data, bad_preds):
+    assert eb.validation_rmse(bace1_data, bad_preds) == float("inf")
+    assert eb.validation_rmse(bace1_data.frame, bad_preds) == float("inf")
+
+
+def test_diverged_epoch_with_non_finite_val_predictions_is_skipped(
+    bace1_data, monkeypatch
+):
+    module = import_script("ECFP4_encoder_sweep")
+    cfg = module.normalize_config(
+        {"EPOCHS": 2, "BATCH_SIZE": 4, "HIDDEN_DIMS": [8], "N_BITS": 1024}
+    )
+
+    real_validation_rmse = module.validation_rmse
+    calls = []
+
+    def mocked_validation_rmse(data, preds, **kwargs):
+        calls.append(len(calls))
+        if len(calls) == 1:
+            return real_validation_rmse(
+                data, torch.full_like(preds, float("nan")), **kwargs
+            )
+        return real_validation_rmse(data, preds, **kwargs)
+
+    monkeypatch.setattr(module, "validation_rmse", mocked_validation_rmse)
+    trained = module.run(cfg, 42, bace1_data, evaluate_test=False)
+    assert len(calls) == 2
+    assert trained["best_epoch"] == 2
+    assert np.isfinite(trained["val_RMSE"])
