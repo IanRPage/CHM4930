@@ -7,36 +7,30 @@ setting changes before a final run so results.csv records a clean git commit.
 """
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import torch
 
-from baseline.benchmark import SEEDS, load_benchmark_split
+from baseline.benchmark import SEEDS, load_benchmark_split, run_benchmark
 from encoders.smiles_encoder import SmilesEncoder
 from mufu.data.dataset import split_datasets
-from mufu.experiment import benchmark_params, make_fit_predict, run_mufu_benchmark
-from mufu.train import TrainConfig
+from mufu.experiment import (
+    DEFAULT_CONFIG,
+    ENCODER,
+    benchmark_params,
+    make_fit_predict,
+)
 
 AI_DIR = Path(__file__).resolve().parents[1]
-ENCODER = "molformer-ecfp4-gine"
 
 # Training settings
 model_name = "mufu"
 seeds = SEEDS  # Shared baseline seeds: 0, 1, 2, 3, 4.
-config = TrainConfig(
-    lr=1e-3,
-    weight_decay=1e-4,
-    batch_size=64,
-    epochs=50,
-    patience=10,
-    min_delta=1e-3,
-    sampler="mixed",
-    bio_fraction=0.5,
-    num_workers=0,
-    device="cuda" if torch.cuda.is_available() else "cpu",
-)
+# override fields here
+config = replace(DEFAULT_CONFIG, device="cuda" if torch.cuda.is_available() else "cpu")
 
 
 if __name__ == "__main__":
@@ -63,9 +57,9 @@ if __name__ == "__main__":
         history_dir=AI_DIR / "outputs" / model_name,
         verbose=True,
     )
-    summary = run_mufu_benchmark(
+    summary = run_benchmark(
         fit_predict,
-        model_name=model_name,
+        model=model_name,
         encoder=ENCODER,
         params=benchmark_params(config, smiles_encoder),
         seeds=seeds,

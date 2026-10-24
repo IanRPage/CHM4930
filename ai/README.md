@@ -160,8 +160,8 @@ baselines through `src/baseline/benchmark.py`:
   `smiles` order when provided)
 - `run_benchmark(fit_predict, model, encoder, params)`: runs
   `fit_predict(df, seed)` across `SEEDS`, evaluates `"val"` and `"test"`, writes
-  per-seed rows to `data/baseline/results.csv`, and returns the
-  `summarize_seeds()` table. It refuses to drop other models' rows from an older
+  each seed's rows to `data/baseline/results.csv` as soon as it finishes, and
+  returns the `summarize_seeds()` table. It refuses to drop other models' rows from an older
   snapshot unless `allow_drop_stale=True`
 
 ### MuFu training
@@ -173,7 +173,8 @@ python scripts/train_mufu.py
 ```
 
 Or use `notebooks/MuFu_Training.ipynb` for loss plots and MuFu/RF metric comparisons.
-Both share `src/mufu/experiment.py`. Edit the `TrainConfig` and `model_name` in the
+Both share `src/mufu/experiment.py`, which holds `DEFAULT_CONFIG` and `ENCODER`.
+Override settings with `replace(DEFAULT_CONFIG, ...)` and set `model_name` in the
 script or notebook settings cell, and commit setting changes before a final run so
 `results.csv` records a clean git commit instead of `<sha>-dirty`.
 

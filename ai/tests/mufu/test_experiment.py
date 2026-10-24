@@ -1,9 +1,7 @@
 import json
 import random
 
-import numpy as np
 import pandas as pd
-import pytest
 import torch
 from conftest import SmallSmilesEncoder
 
@@ -14,7 +12,7 @@ from mufu.train import TrainConfig
 
 
 def test_benchmark_params_drops_runtime_fields_and_adds_model_settings():
-    cfg = TrainConfig(lr=5e-4, device="cuda", num_workers=4, checkpoint_path="x.pt")
+    cfg = TrainConfig(lr=5e-4, device="cuda", num_workers=4)
 
     params = experiment.benchmark_params(cfg, SmallSmilesEncoder())
 
@@ -65,44 +63,3 @@ def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
     history = pd.read_csv(tmp_path / "outputs" / "seed_3_loss.csv")
     assert list(history.columns) == ["epoch", "train_loss", "val_loss"]
     assert len(history) == 2
-
-
-def test_run_mufu_benchmark_records_finished_seeds_before_a_crash(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setattr(results, "git_commit", lambda: "abc1234")
-    path = tmp_path / "results.csv"
-    data_path = tmp_path / "combined.csv"
-    data_path.write_text("smiles\nCCO\n")
-    df = pd.DataFrame(
-        {
-            "smiles": ["C", "CC", "CCC", "CCCC"],
-            "split": ["val", "val", "test", "test"],
-            "pIC50_BACE1": [5.0, 7.0, 4.0, 8.0],
-            "active_BACE1": [0.0, 1.0, 0.0, 1.0],
-        }
-    )
-
-    def fit_predict(df, seed):
-        if seed == 1:
-            raise RuntimeError("crash")
-        return {
-            "val": {"pIC50_BACE1": np.array([5.0, 7.0])},
-            "test": {"pIC50_BACE1": np.array([4.0, 8.0])},
-        }
-
-    with pytest.raises(RuntimeError, match="crash"):
-        experiment.run_mufu_benchmark(
-            fit_predict,
-            model_name="mufu",
-            encoder="enc",
-            params={"lr": 1e-3},
-            seeds=(0, 1),
-            df=df,
-            path=path,
-            data_path=data_path,
-        )
-
-    written = pd.read_csv(path)
-    assert set(written["seed"]) == {0}
-    assert set(written["model"]) == {"mufu"}

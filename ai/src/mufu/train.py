@@ -8,7 +8,6 @@ across epochs and would rescale the weighted total independent of error.
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 import torch
@@ -34,7 +33,6 @@ class TrainConfig:
     sampler: str = "mixed"
     bio_fraction: float = 0.5
     num_workers: int = 0
-    checkpoint_path: Path | None = None
     device: torch.device | str | None = None
 
 
@@ -47,7 +45,7 @@ class TrainResult:
     weighting: UncertaintyWeighting
 
 
-def _cpu_state(module: nn.Module) -> dict[str, torch.Tensor]:
+def cpu_state(module: nn.Module) -> dict[str, torch.Tensor]:
     return {k: v.detach().cpu().clone() for k, v in module.state_dict().items()}
 
 
@@ -193,9 +191,8 @@ def fit(
             best_epoch = epoch
             epochs_without_improve = 0
             best_state = {
-                "model": _cpu_state(model),
-                "weighting": _cpu_state(weighting),
-                "epoch": epoch,
+                "model": cpu_state(model),
+                "weighting": cpu_state(weighting),
             }
         else:
             epochs_without_improve += 1
@@ -205,10 +202,6 @@ def fit(
     if best_state is not None:
         model.load_state_dict(best_state["model"])
         weighting.load_state_dict(best_state["weighting"])
-        if cfg.checkpoint_path is not None:
-            path = Path(cfg.checkpoint_path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            torch.save(best_state, path)
 
     return TrainResult(
         best_epoch=best_epoch,
