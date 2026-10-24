@@ -84,7 +84,14 @@ def git_commit() -> str:
 
     try:
         commit = git("rev-parse", "--short", "HEAD")
-        dirty = git("status", "--porcelain", "--untracked-files=no")
+        dirty = git(
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+            "--",
+            ":/",
+            f":(exclude){RESULTS_PATH}",
+        )
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
     return f"{commit}-dirty" if dirty else commit
