@@ -160,37 +160,34 @@ baselines through `src/baseline/benchmark.py`:
   `smiles` order when provided)
 - `run_benchmark(fit_predict, model, encoder, params)`: runs
   `fit_predict(df, seed)` across `SEEDS`, evaluates `"val"` and `"test"`, writes
-  each seed's rows to `data/baseline/results.csv` as soon as it finishes, and
-  returns the `summarize_seeds()` table. It refuses to drop other models' rows from an older
+  each seed's rows to `data/baseline/results.csv` as it finishes, and returns the
+  `summarize_seeds()` table. It refuses to drop other models' rows from an older
   snapshot unless `allow_drop_stale=True`
 
 ### MuFu training
 
-From `ai/`, run the baseline over all five shared seeds `(0, 1, 2, 3, 4)`:
+From `ai/`, train MuFu on all five shared seeds:
 
 ```sh
 python scripts/train_mufu.py
 ```
 
-Or use `notebooks/MuFu_Training.ipynb` for loss plots and MuFu/RF metric comparisons.
-Both share `src/mufu/experiment.py`, which holds `DEFAULT_CONFIG` and `ENCODER`.
-Override settings with `replace(DEFAULT_CONFIG, ...)` and set `model_name` in the
-script or notebook settings cell, and commit setting changes before a final run so
-`results.csv` records a clean git commit instead of `<sha>-dirty`.
+`notebooks/MuFu_Training.ipynb` runs the same training and adds loss plots and a
+MuFu vs RF comparison. Both use `src/mufu/experiment.py`.
 
-Outputs:
+To change settings, edit `config` (`replace(DEFAULT_CONFIG, ...)`) and `model_name`
+in the script or notebook. Commit your changes before a final run so `results.csv`
+records a clean git commit.
 
-- `checkpoints/mufu_seed_<seed>.pt`: best checkpoint for each seed, with its params,
-  git commit, and data snapshot hash.
-- `outputs/mufu/seed_<seed>_loss.csv`: epoch, train loss, and validation loss.
-- `data/baseline/results.csv`: per-seed validation/test metrics, written as each seed
-  finishes so a crash keeps the seeds already done.
+Training stops early after `patience` epochs without a validation loss improvement
+of at least `min_delta`; `epochs` is the maximum.
 
-Datasets and the frozen MolFormer encoder are prepared once, so its embedding cache
-is shared across seeds; each seed trains a fresh model. `epochs` is a cap: training
-stops after `patience` epochs without a validation loss improvement larger than
-`min_delta`. Rerunning replaces that seed's outputs. Review
-`data/baseline/results.csv` after training.
+Outputs (a rerun replaces that seed's files):
+
+- `checkpoints/mufu_seed_<seed>.pt`: best model, with its params, git commit, and
+  data hash
+- `outputs/mufu/seed_<seed>_loss.csv`: train and validation loss per epoch
+- `data/baseline/results.csv`: validation and test metrics per seed
 
 ### Encoder sweeps
 

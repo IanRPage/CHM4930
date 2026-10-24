@@ -4,9 +4,8 @@ Shared benchmark setup so every model is evaluated on the same split, rows, and 
 Models provide a `fit_predict(df, seed)` callable that returns a mapping of split name
 (`"val"`, `"test"`) to `{label_column: scores}` aligned with `df[df["split"] == split]`.
 `run_benchmark()` runs `fit_predict` across `SEEDS`, evaluates predictions with the
-dataset label masks, records each seed's rows to `ai/data/baseline/results.csv` as soon as
-it finishes (so a crash keeps the seeds already done), and returns the seed-aggregated
-summary table.
+dataset label masks, records each seed's rows to `ai/data/baseline/results.csv` as it
+finishes, and returns the seed-aggregated summary table.
 """
 
 import hashlib

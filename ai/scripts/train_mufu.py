@@ -1,9 +1,8 @@
 """
-Train MuFu with the existing trainer and shared benchmark.
+Train MuFu on the shared benchmark seeds.
 
 From ai/: python scripts/train_mufu.py
-Edit the training settings below; the default runs all five shared seeds. Commit
-setting changes before a final run so results.csv records a clean git commit.
+Settings are below. Commit changes before a final run so results.csv gets a clean commit.
 """
 
 import sys
@@ -26,9 +25,9 @@ from mufu.experiment import (
 
 AI_DIR = Path(__file__).resolve().parents[1]
 
-# Training settings
+# training settings
 model_name = "mufu"
-seeds = SEEDS  # Shared baseline seeds: 0, 1, 2, 3, 4.
+seeds = SEEDS  # 0, 1, 2, 3, 4
 # override fields here
 config = replace(DEFAULT_CONFIG, device="cuda" if torch.cuda.is_available() else "cpu")
 

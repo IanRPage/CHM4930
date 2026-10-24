@@ -1,9 +1,9 @@
 """
-Run MuFu through the shared benchmark (`baseline.benchmark.run_benchmark`).
+Run MuFu through the shared benchmark.
 
-`make_fit_predict` builds the per-seed callable from prepared datasets and one shared
-SMILES encoder, so a frozen encoder's embedding cache carries across seeds.
-`DEFAULT_CONFIG` and `ENCODER` are the settings the script and notebook both start from.
+`make_fit_predict` builds the `fit_predict` that `run_benchmark` calls per seed, reusing
+one SMILES encoder so its embedding cache carries across seeds. `DEFAULT_CONFIG` and
+`ENCODER` are the script and notebook defaults.
 """
 
 from collections.abc import Callable, Mapping
@@ -64,8 +64,7 @@ def make_fit_predict(
 ) -> Callable[[pd.DataFrame, int], dict]:
     params = benchmark_params(cfg, smiles_encoder)
 
-    # df unused. datasets built from it once, run_benchmark checks returned
-    # SMILES against each split
+    # df unused, datasets already built from it and run_benchmark checks smiles
     def fit_predict(df: pd.DataFrame, seed: int) -> dict:
         model = MuFu(smiles_encoder, FingerprintEncoder(), GNNEncoder())
         result = fit(model, datasets, cfg, verbose=verbose)
