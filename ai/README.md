@@ -173,16 +173,23 @@ python scripts/train_mufu.py
 ```
 
 Or use `notebooks/MuFu_Training.ipynb` for loss plots and MuFu/RF metric comparisons.
-Edit training settings and `model_name` in the script or notebook settings cell.
+Both share `src/mufu/experiment.py`. Edit the `TrainConfig` and `model_name` in the
+script or notebook settings cell, and commit setting changes before a final run so
+`results.csv` records a clean git commit instead of `<sha>-dirty`.
 
 Outputs:
 
-- `checkpoints/mufu_seed_<seed>.pt`: best checkpoint for each seed.
+- `checkpoints/mufu_seed_<seed>.pt`: best checkpoint for each seed, with its params,
+  git commit, and data snapshot hash.
 - `outputs/mufu/seed_<seed>_loss.csv`: epoch, train loss, and validation loss.
-- `data/baseline/results.csv`: per-seed validation/test metrics.
+- `data/baseline/results.csv`: per-seed validation/test metrics, written as each seed
+  finishes so a crash keeps the seeds already done.
 
-Datasets are prepared once; each seed trains a fresh model. Rerunning replaces
-that seed's outputs. Review `data/baseline/results.csv` after training.
+Datasets and the frozen MolFormer encoder are prepared once, so its embedding cache
+is shared across seeds; each seed trains a fresh model. `epochs` is a cap: training
+stops after `patience` epochs without a validation loss improvement larger than
+`min_delta`. Rerunning replaces that seed's outputs. Review
+`data/baseline/results.csv` after training.
 
 ### Encoder sweeps
 
