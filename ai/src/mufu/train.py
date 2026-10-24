@@ -3,7 +3,8 @@ Training and prediction loop for MuFu (`fit` and `predict`).
 
 Early stopping tracks the unweighted sum of split-level validation task losses
 rather than the uncertainty-weighted objective, since learned `log_vars` drift
-across epochs and would rescale the weighted total independent of error.
+across epochs and would rescale the weighted total independent of error. It also
+drops `pos_weight`, which would let confident misses on rare positives dominate.
 """
 
 from collections.abc import Mapping
@@ -146,6 +147,7 @@ def fit(
     )
     model.to(device)
     task_loss = TaskLoss.from_dataset(datasets["train"]).to(device)
+    val_task_loss = TaskLoss().to(device)
     weighting = UncertaintyWeighting().to(device)
     optimizer = make_optimizer(model, weighting, cfg)
 
@@ -176,7 +178,9 @@ def fit(
             if step_losses
             else float("nan")
         )
-        val_loss = evaluate_val_loss(model, datasets["val"], task_loss, cfg.batch_size)
+        val_loss = evaluate_val_loss(
+            model, datasets["val"], val_task_loss, cfg.batch_size
+        )
         val_losses.append(val_loss)
 
         if verbose:

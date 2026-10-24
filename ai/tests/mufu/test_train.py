@@ -63,6 +63,24 @@ def test_fit_restores_best_val_state_and_early_stops(
         assert torch.equal(model.state_dict()[key], tensor)
 
 
+def test_fit_stops_on_val_loss_without_pos_weight(model, labeled_dataset, monkeypatch):
+    val_losses_used = []
+
+    def fake_evaluate_val_loss(m, val_dataset, task_loss, batch_size):
+        val_losses_used.append(task_loss)
+        return 1.0
+
+    monkeypatch.setattr("mufu.train.evaluate_val_loss", fake_evaluate_val_loss)
+    cfg = TrainConfig(batch_size=4, epochs=2, patience=2, device="cpu")
+
+    fit(model, {"train": labeled_dataset, "val": labeled_dataset}, cfg)
+
+    assert TaskLoss.from_dataset(labeled_dataset).tox_pos_weight is not None
+    for task_loss in val_losses_used:
+        assert task_loss.bio_pos_weight is None
+        assert task_loss.tox_pos_weight is None
+
+
 def test_make_optimizer_excludes_log_vars_from_weight_decay(model):
     weighting = UncertaintyWeighting()
     cfg = TrainConfig(lr=2e-3, weight_decay=0.05)

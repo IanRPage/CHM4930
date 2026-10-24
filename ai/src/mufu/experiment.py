@@ -62,6 +62,8 @@ def make_fit_predict(
     data_path: Path = COMBINED_CSV_PATH,
     verbose: bool = False,
 ) -> Callable[[pd.DataFrame, int], dict]:
+    if any(p.requires_grad for p in smiles_encoder.parameters()):
+        raise ValueError("smiles_encoder must be frozen; it's shared across seeds")
     params = benchmark_params(cfg, smiles_encoder)
 
     # df unused, datasets already built from it and run_benchmark checks smiles
