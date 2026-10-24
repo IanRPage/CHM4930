@@ -146,9 +146,9 @@ def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
     assert "test tox21: macro ROC-AUC=0.0000 (1/1 evaluable endpoints)" in out
     assert "test clintox: macro ROC-AUC=nan (0/1 evaluable endpoints)" in out
 
-    [(model, rows)] = recorded
-    assert model == "rf_toxicity"
-    rows = pd.DataFrame(rows).set_index(["endpoint", "split", "seed"])
+    assert [model for model, _ in recorded] == ["rf_toxicity"] * len(TEST_SEEDS)
+    rows = pd.DataFrame([row for _, seed_rows in recorded for row in seed_rows])
+    rows = rows.set_index(["endpoint", "split", "seed"])
     assert len(rows) == 10 * len(TEST_SEEDS)
     assert (rows["metric"] == "roc_auc").all()
     assert (rows["encoder"] == "ecfp4-2048").all()
@@ -196,8 +196,8 @@ def test_main_skips_untrainable_endpoint_and_excludes_it_from_macros(
     )
     bt.main()
 
-    [(_, rows)] = recorded
-    rows = pd.DataFrame(rows).set_index(["endpoint", "split", "seed"])
+    rows = pd.DataFrame([row for _, seed_rows in recorded for row in seed_rows])
+    rows = rows.set_index(["endpoint", "split", "seed"])
     assert "T2" not in rows.index.get_level_values("endpoint")
     assert rows.loc[("macro_overall", "val", 0), "value"] == pytest.approx(1.0)
     assert np.isnan(rows.loc[("macro_clintox", "val", 0), "value"])
