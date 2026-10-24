@@ -30,6 +30,7 @@ class TrainConfig:
     batch_size: int = 64
     epochs: int = 50
     patience: int = 10
+    min_delta: float = 0.0
     sampler: str = "mixed"
     bio_fraction: float = 0.5
     num_workers: int = 0
@@ -187,7 +188,7 @@ def fit(
                 flush=True,
             )
 
-        if best_state is None or val_loss < best_val_loss:
+        if best_state is None or val_loss < best_val_loss - cfg.min_delta:
             best_val_loss = val_loss
             best_epoch = epoch
             epochs_without_improve = 0

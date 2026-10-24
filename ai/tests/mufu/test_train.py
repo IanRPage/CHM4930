@@ -22,9 +22,7 @@ def test_fit_decreases_loss_on_tiny_dataset(model, labeled_dataset):
         device="cpu",
     )
 
-    result = fit(
-        model, {"train": labeled_dataset, "val": labeled_dataset}, cfg, verbose=True
-    )
+    result = fit(model, {"train": labeled_dataset, "val": labeled_dataset}, cfg)
 
     assert len(result.train_losses) == 20
     assert len(result.val_losses) == 20
@@ -144,3 +142,34 @@ def test_predict_output_keys_shapes_and_probabilities(model, dataset):
         assert preds[col].dtype == float
     for col in (*ACTIVE_COLUMNS, *TOX_COLUMNS):
         assert ((0.0 <= preds[col]) & (preds[col] <= 1.0)).all()
+
+
+def test_fit_min_delta_ignores_tiny_improvements(model, labeled_dataset, monkeypatch):
+    torch.manual_seed(0)
+    random.seed(0)
+    scripted_val_losses = iter([2.0, 1.9995, 1.9993, 1.9991, 1.9])
+    monkeypatch.setattr(
+        "mufu.train.evaluate_val_loss", lambda *args: next(scripted_val_losses)
+    )
+    cfg = TrainConfig(batch_size=4, epochs=5, patience=3, min_delta=1e-3, device="cpu")
+
+    result = fit(model, {"train": labeled_dataset, "val": labeled_dataset}, cfg)
+
+    assert result.best_epoch == 1
+    assert result.best_val_loss == 2.0
+    assert len(result.val_losses) == 4
+
+
+def test_fit_verbose_prints_one_line_per_epoch(model, labeled_dataset, capsys):
+    torch.manual_seed(0)
+    random.seed(0)
+    cfg = TrainConfig(batch_size=4, epochs=3, patience=3, device="cpu")
+
+    fit(model, {"train": labeled_dataset, "val": labeled_dataset}, cfg, verbose=True)
+
+    lines = capsys.readouterr().out.splitlines()
+    assert [line.split(" |")[0] for line in lines] == [
+        "Epoch 1/3",
+        "Epoch 2/3",
+        "Epoch 3/3",
+    ]
