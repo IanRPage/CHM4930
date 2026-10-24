@@ -172,8 +172,9 @@ From `ai/`, train MuFu on all five shared seeds:
 python scripts/train_mufu.py
 ```
 
-`notebooks/MuFu_Training.ipynb` runs the same training and adds loss plots and a
-MuFu vs RF comparison. Both use `src/mufu/experiment.py`.
+`notebooks/MuFu_Training.ipynb` shows loss plots and a MuFu vs RF comparison from saved
+results, and can run the same training with `RUN_TRAINING = True`. Both use
+`src/mufu/experiment.py`.
 
 To change settings, edit `config` (`replace(DEFAULT_CONFIG, ...)`) and `model_name`
 in the script or notebook. Commit your changes before a final run so `results.csv`
