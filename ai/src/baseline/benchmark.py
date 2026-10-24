@@ -21,6 +21,7 @@ import torch
 
 from baseline.results import (
     RESULTS_PATH,
+    git_commit,
     params_json,
     record_results,
     summarize_seeds,
@@ -253,6 +254,7 @@ def run_benchmark(
         df = load_benchmark_split(data_path)
 
     encoded_params = params_json(params)
+    commit = git_commit()
     for seed in seeds:
         seed_everything(seed)
         predictions = fit_predict(df, seed)
@@ -273,6 +275,7 @@ def run_benchmark(
             path=path,
             data_path=data_path,
             allow_drop_stale=allow_drop_stale,
+            commit=commit,
         )
 
     return summarize_seeds(
