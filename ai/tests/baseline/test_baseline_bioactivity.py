@@ -122,9 +122,12 @@ def test_main_records_val_and_test_rows_per_target_and_seed(
 ):
     bb.main()
 
-    [(model, rows)] = recorded
-    assert model == "rf_bioactivity"
-    rows = pd.DataFrame(rows)
+    # one record_results call per seed, each holding only that seed's rows
+    assert [model for model, _ in recorded] == ["rf_bioactivity"] * len(TEST_SEEDS)
+    assert [{row["seed"] for row in rows} for _, rows in recorded] == [
+        {seed} for seed in TEST_SEEDS
+    ]
+    rows = pd.DataFrame([row for _, seed_rows in recorded for row in seed_rows])
     # 2 targets * 2 splits * 3 metrics * 2 seeds = 24 rows
     assert len(rows) == 12 * len(TEST_SEEDS)
     rows = rows[rows["endpoint"] == f"pIC50_{target}"].set_index(

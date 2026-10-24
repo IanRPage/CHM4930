@@ -31,8 +31,8 @@ def test_fit_decreases_loss_on_tiny_dataset(model, labeled_dataset):
     assert result.best_val_loss == min(result.val_losses)
 
 
-def test_fit_restores_best_val_checkpoint_and_early_stops(
-    model, labeled_dataset, tmp_path, monkeypatch
+def test_fit_restores_best_val_state_and_early_stops(
+    model, labeled_dataset, monkeypatch
 ):
     torch.manual_seed(0)
     random.seed(0)
@@ -45,14 +45,12 @@ def test_fit_restores_best_val_checkpoint_and_early_stops(
         return next(scripted_val_losses)
 
     monkeypatch.setattr("mufu.train.evaluate_val_loss", fake_evaluate_val_loss)
-    ckpt_path = tmp_path / "checkpoints" / "best.pt"
     cfg = TrainConfig(
         lr=5e-3,
         batch_size=4,
         epochs=10,
         patience=2,
         sampler="alternating",
-        checkpoint_path=ckpt_path,
         device="cpu",
     )
 
@@ -61,16 +59,26 @@ def test_fit_restores_best_val_checkpoint_and_early_stops(
     assert result.best_epoch == 2
     assert result.best_val_loss == 1.0
     assert result.val_losses == [2.0, 1.0, 1.5, 1.8]
-    assert ckpt_path.exists()
-
-    saved = torch.load(ckpt_path, weights_only=True)
-    assert set(saved) == {"model", "weighting", "epoch"}
-    assert saved["epoch"] == 2
     for key, tensor in epoch_snapshots[1].items():
         assert torch.equal(model.state_dict()[key], tensor)
-        assert torch.equal(saved["model"][key], tensor)
-    for key, tensor in saved["weighting"].items():
-        assert torch.equal(result.weighting.state_dict()[key], tensor)
+
+
+def test_fit_stops_on_val_loss_without_pos_weight(model, labeled_dataset, monkeypatch):
+    val_losses_used = []
+
+    def fake_evaluate_val_loss(m, val_dataset, task_loss, batch_size):
+        val_losses_used.append(task_loss)
+        return 1.0
+
+    monkeypatch.setattr("mufu.train.evaluate_val_loss", fake_evaluate_val_loss)
+    cfg = TrainConfig(batch_size=4, epochs=2, patience=2, device="cpu")
+
+    fit(model, {"train": labeled_dataset, "val": labeled_dataset}, cfg)
+
+    assert TaskLoss.from_dataset(labeled_dataset).tox_pos_weight is not None
+    for task_loss in val_losses_used:
+        assert task_loss.bio_pos_weight is None
+        assert task_loss.tox_pos_weight is None
 
 
 def test_make_optimizer_excludes_log_vars_from_weight_decay(model):
@@ -142,3 +150,34 @@ def test_predict_output_keys_shapes_and_probabilities(model, dataset):
         assert preds[col].dtype == float
     for col in (*ACTIVE_COLUMNS, *TOX_COLUMNS):
         assert ((0.0 <= preds[col]) & (preds[col] <= 1.0)).all()
+
+
+def test_fit_min_delta_ignores_tiny_improvements(model, labeled_dataset, monkeypatch):
+    torch.manual_seed(0)
+    random.seed(0)
+    scripted_val_losses = iter([2.0, 1.9995, 1.9993, 1.9991, 1.9])
+    monkeypatch.setattr(
+        "mufu.train.evaluate_val_loss", lambda *args: next(scripted_val_losses)
+    )
+    cfg = TrainConfig(batch_size=4, epochs=5, patience=3, min_delta=1e-3, device="cpu")
+
+    result = fit(model, {"train": labeled_dataset, "val": labeled_dataset}, cfg)
+
+    assert result.best_epoch == 1
+    assert result.best_val_loss == 2.0
+    assert len(result.val_losses) == 4
+
+
+def test_fit_verbose_prints_one_line_per_epoch(model, labeled_dataset, capsys):
+    torch.manual_seed(0)
+    random.seed(0)
+    cfg = TrainConfig(batch_size=4, epochs=3, patience=3, device="cpu")
+
+    fit(model, {"train": labeled_dataset, "val": labeled_dataset}, cfg, verbose=True)
+
+    lines = capsys.readouterr().out.splitlines()
+    assert [line.split(" |")[0] for line in lines] == [
+        "Epoch 1/3",
+        "Epoch 2/3",
+        "Epoch 3/3",
+    ]

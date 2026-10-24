@@ -200,13 +200,17 @@ def test_git_commit_falls_back_when_git_is_unavailable(monkeypatch):
     assert results.git_commit() == "unknown"
 
 
-def test_git_commit_marks_a_dirty_tree(monkeypatch):
+def test_git_commit_marks_a_dirty_tree_ignoring_results_csv(monkeypatch):
     outputs = {"rev-parse": "abc1234", "status": " M file.py"}
+    status_args = []
 
     def run(args, **kwargs):
+        if args[1] == "status":
+            status_args.append(args)
         return subprocess.CompletedProcess(args, 0, stdout=outputs[args[1]] + "\n")
 
     monkeypatch.setattr(subprocess, "run", run)
     assert results.git_commit() == "abc1234-dirty"
     outputs["status"] = ""
     assert results.git_commit() == "abc1234"
+    assert all(f":(exclude){results.RESULTS_PATH}" in a for a in status_args)

@@ -160,9 +160,35 @@ baselines through `src/baseline/benchmark.py`:
   `smiles` order when provided)
 - `run_benchmark(fit_predict, model, encoder, params)`: runs
   `fit_predict(df, seed)` across `SEEDS`, evaluates `"val"` and `"test"`, writes
-  per-seed rows to `data/baseline/results.csv`, and returns the
+  each seed's rows to `data/baseline/results.csv` as it finishes, and returns the
   `summarize_seeds()` table. It refuses to drop other models' rows from an older
   snapshot unless `allow_drop_stale=True`
+
+### MuFu training
+
+From `ai/`, train MuFu on all five shared seeds:
+
+```sh
+python scripts/train_mufu.py
+```
+
+`notebooks/MuFu_Training.ipynb` shows loss plots and a MuFu vs RF comparison from saved
+results, and can run the same training with `RUN_TRAINING = True`. Both use
+`src/mufu/experiment.py`.
+
+To change settings, edit `config` (`replace(DEFAULT_CONFIG, ...)`) and `model_name`
+in the script or notebook. Commit your changes before a final run so `results.csv`
+records a clean git commit.
+
+Training stops early after `patience` epochs without a validation loss improvement
+of at least `min_delta`; `epochs` is the maximum.
+
+Outputs (a rerun replaces that seed's files):
+
+- `checkpoints/mufu_seed_<seed>.pt`: best model, with its params, git commit, and
+  data hash
+- `outputs/mufu/seed_<seed>_loss.csv`: train and validation loss per epoch
+- `data/baseline/results.csv`: validation and test metrics per seed
 
 ### Encoder sweeps
 

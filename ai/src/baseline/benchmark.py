@@ -4,8 +4,8 @@ Shared benchmark setup so every model is evaluated on the same split, rows, and 
 Models provide a `fit_predict(df, seed)` callable that returns a mapping of split name
 (`"val"`, `"test"`) to `{label_column: scores}` aligned with `df[df["split"] == split]`.
 `run_benchmark()` runs `fit_predict` across `SEEDS`, evaluates predictions with the
-dataset label masks, records per-seed rows to `ai/data/baseline/results.csv`, and returns
-the seed-aggregated summary table.
+dataset label masks, records each seed's rows to `ai/data/baseline/results.csv` as it
+finishes, and returns the seed-aggregated summary table.
 """
 
 import hashlib
@@ -20,6 +20,7 @@ import torch
 
 from baseline.results import (
     RESULTS_PATH,
+    git_commit,
     params_json,
     record_results,
     summarize_seeds,
@@ -252,7 +253,7 @@ def run_benchmark(
         df = load_benchmark_split(data_path)
 
     encoded_params = params_json(params)
-    rows: list[dict] = []
+    commit = git_commit()
     for seed in seeds:
         seed_everything(seed)
         predictions = fit_predict(df, seed)
@@ -263,23 +264,19 @@ def run_benchmark(
                 f"missing {missing}"
             )
         eval_preds = {split: predictions[split] for split in ("val", "test")}
-        for row in evaluate_split_predictions(df, eval_preds):
-            rows.append(
-                {
-                    **row,
-                    "seed": int(seed),
-                    "encoder": encoder,
-                    "params": encoded_params,
-                }
-            )
+        rows = [
+            {**row, "seed": int(seed), "encoder": encoder, "params": encoded_params}
+            for row in evaluate_split_predictions(df, eval_preds)
+        ]
+        recorded = record_results(
+            rows,
+            model=model,
+            path=path,
+            data_path=data_path,
+            allow_drop_stale=allow_drop_stale,
+            commit=commit,
+        )
 
-    recorded = record_results(
-        rows,
-        model=model,
-        path=path,
-        data_path=data_path,
-        allow_drop_stale=allow_drop_stale,
-    )
     return summarize_seeds(
         recorded[(recorded["model"] == model) & (recorded["encoder"] == encoder)]
     )

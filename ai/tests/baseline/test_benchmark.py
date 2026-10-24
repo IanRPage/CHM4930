@@ -304,6 +304,32 @@ def test_run_benchmark_passes_allow_drop_stale(split_df, paths):
     assert set(pd.read_csv(path)["model"]) == {"stub"}
 
 
+def test_run_benchmark_records_finished_seeds_before_a_crash(split_df, paths):
+    path, data_path = paths
+
+    def fit_predict(df, seed):
+        if seed == 1:
+            raise RuntimeError("crash")
+        return {
+            "val": {"pIC50_BACE1": [5.0, 7.0, np.nan]},
+            "test": {"pIC50_BACE1": [4.0, 8.0, np.nan]},
+        }
+
+    with pytest.raises(RuntimeError, match="crash"):
+        benchmark.run_benchmark(
+            fit_predict,
+            model="stub",
+            encoder="enc",
+            params={},
+            seeds=(0, 1),
+            df=split_df,
+            path=path,
+            data_path=data_path,
+        )
+
+    assert set(pd.read_csv(path)["seed"]) == {0}
+
+
 def test_load_benchmark_split_delegates_to_combined_and_scaffold(monkeypatch):
     sentinel = pd.DataFrame({"smiles": ["CCO"]})
     monkeypatch.setattr(benchmark, "load_combined", lambda **_: sentinel)

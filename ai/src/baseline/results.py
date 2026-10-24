@@ -84,7 +84,14 @@ def git_commit() -> str:
 
     try:
         commit = git("rev-parse", "--short", "HEAD")
-        dirty = git("status", "--porcelain", "--untracked-files=no")
+        dirty = git(
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+            "--",
+            ":/",
+            f":(exclude){RESULTS_PATH}",
+        )
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
     return f"{commit}-dirty" if dirty else commit
@@ -97,12 +104,13 @@ def record_results(
     data_path: Path = COMBINED_CSV_PATH,
     *,
     allow_drop_stale: bool = False,
+    commit: str | None = None,
 ) -> pd.DataFrame:
     sha = file_sha256(data_path)
     new = pd.DataFrame(rows).assign(
         model=model,
         data_sha256=sha,
-        git_commit=git_commit(),
+        git_commit=git_commit() if commit is None else commit,
         date=datetime.datetime.now(datetime.UTC).date().isoformat(),
     )
     new = new.reindex(columns=COLUMNS)

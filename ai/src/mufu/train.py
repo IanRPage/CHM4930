@@ -3,12 +3,12 @@ Training and prediction loop for MuFu (`fit` and `predict`).
 
 Early stopping tracks the unweighted sum of split-level validation task losses
 rather than the uncertainty-weighted objective, since learned `log_vars` drift
-across epochs and would rescale the weighted total independent of error.
+across epochs and would rescale the weighted total independent of error. It also
+drops `pos_weight`, which would let confident misses on rare positives dominate.
 """
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 import torch
@@ -30,10 +30,10 @@ class TrainConfig:
     batch_size: int = 64
     epochs: int = 50
     patience: int = 10
+    min_delta: float = 0.0
     sampler: str = "mixed"
     bio_fraction: float = 0.5
     num_workers: int = 0
-    checkpoint_path: Path | None = None
     device: torch.device | str | None = None
 
 
@@ -46,7 +46,7 @@ class TrainResult:
     weighting: UncertaintyWeighting
 
 
-def _cpu_state(module: nn.Module) -> dict[str, torch.Tensor]:
+def cpu_state(module: nn.Module) -> dict[str, torch.Tensor]:
     return {k: v.detach().cpu().clone() for k, v in module.state_dict().items()}
 
 
@@ -121,6 +121,8 @@ def fit(
     model: MuFu,
     datasets: Mapping[str, MuFuDataset],
     config: TrainConfig | None = None,
+    *,
+    verbose: bool = False,
 ) -> TrainResult:
     cfg = config or TrainConfig()
     device = torch.device(
@@ -145,6 +147,7 @@ def fit(
     )
     model.to(device)
     task_loss = TaskLoss.from_dataset(datasets["train"]).to(device)
+    val_task_loss = TaskLoss().to(device)
     weighting = UncertaintyWeighting().to(device)
     optimizer = make_optimizer(model, weighting, cfg)
 
@@ -175,17 +178,25 @@ def fit(
             if step_losses
             else float("nan")
         )
-        val_loss = evaluate_val_loss(model, datasets["val"], task_loss, cfg.batch_size)
+        val_loss = evaluate_val_loss(
+            model, datasets["val"], val_task_loss, cfg.batch_size
+        )
         val_losses.append(val_loss)
 
-        if best_state is None or val_loss < best_val_loss:
+        if verbose:
+            print(
+                f"Epoch {epoch}/{cfg.epochs} | "
+                f"train={train_losses[-1]:.4f} | val={val_loss:.4f}",
+                flush=True,
+            )
+
+        if best_state is None or val_loss < best_val_loss - cfg.min_delta:
             best_val_loss = val_loss
             best_epoch = epoch
             epochs_without_improve = 0
             best_state = {
-                "model": _cpu_state(model),
-                "weighting": _cpu_state(weighting),
-                "epoch": epoch,
+                "model": cpu_state(model),
+                "weighting": cpu_state(weighting),
             }
         else:
             epochs_without_improve += 1
@@ -195,10 +206,6 @@ def fit(
     if best_state is not None:
         model.load_state_dict(best_state["model"])
         weighting.load_state_dict(best_state["weighting"])
-        if cfg.checkpoint_path is not None:
-            path = Path(cfg.checkpoint_path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            torch.save(best_state, path)
 
     return TrainResult(
         best_epoch=best_epoch,
