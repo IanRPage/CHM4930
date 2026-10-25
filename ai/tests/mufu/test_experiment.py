@@ -60,6 +60,30 @@ def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
     assert saved["data_sha256"] == results.file_sha256(data_path)
     assert 1 <= saved["epoch"] <= 2
     assert all(t.device.type == "cpu" for t in saved["model"].values())
+    assert not any(k.startswith("smiles_encoder.") for k in saved["model"])
     history = pd.read_csv(tmp_path / "outputs" / "seed_3_loss.csv")
-    assert list(history.columns) == ["epoch", "train_loss", "val_loss"]
+    assert list(history.columns) == [
+        "epoch",
+        "train_loss",
+        "val_loss",
+        "val_pic50_loss",
+        "val_bio_cls_loss",
+        "val_tox_loss",
+    ]
     assert len(history) == 2
+
+    loaded_model, meta = experiment.load_mufu_checkpoint(
+        tmp_path / "checkpoints" / "mufu_test_seed_3.pt", encoder
+    )
+    re_preds = experiment.predict(
+        loaded_model,
+        labeled_dataset,
+        batch_size=cfg.batch_size,
+        family_states=meta["family_states"],
+        calibration=meta["calibration"],
+    )
+    for col in preds["test"]:
+        if col == "smiles":
+            assert re_preds[col] == preds["test"][col]
+        else:
+            assert (re_preds[col] == preds["test"][col]).all()
