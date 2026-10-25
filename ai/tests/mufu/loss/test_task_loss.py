@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 import torch
 
 from mufu import contract as c
@@ -11,6 +12,7 @@ from mufu.loss.task_loss import (
     compute_task_losses,
     masked_mean,
     pic50_loss,
+    transform_pos_weight,
 )
 
 
@@ -106,3 +108,31 @@ def test_task_loss_from_dataset():
     losses = criterion(outputs, batch)
     sum(v for v in losses.values() if v is not None).backward()
     assert all(outputs[k].grad is not None for k in outputs)
+
+
+def test_transform_pos_weight_modes():
+    pw = torch.tensor([0.04, 0.36, 1.0, 9.0, 36.0])
+
+    assert torch.allclose(transform_pos_weight(pw, "raw"), pw)
+    assert torch.allclose(
+        transform_pos_weight(pw, "cap5"),
+        torch.tensor([0.2, 0.36, 1.0, 5.0, 5.0]),
+    )
+    assert torch.allclose(
+        transform_pos_weight(pw, "cap10"),
+        torch.tensor([0.1, 0.36, 1.0, 9.0, 10.0]),
+    )
+    assert torch.allclose(
+        transform_pos_weight(pw, "sqrt"),
+        torch.tensor([0.2, 0.6, 1.0, 3.0, 6.0]),
+    )
+    assert transform_pos_weight(pw, "none") is None
+
+    with pytest.raises(ValueError, match="unknown pos_weight"):
+        transform_pos_weight(pw, "bad")
+
+
+def test_task_loss_from_dataset_none_mode_drops_pos_weight(labeled_dataset):
+    criterion = TaskLoss.from_dataset(labeled_dataset, pos_weight="none")
+    assert criterion.bio_pos_weight is None
+    assert criterion.tox_pos_weight is None
