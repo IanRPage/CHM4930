@@ -18,7 +18,7 @@ class GNNEncoder(nn.Module):
     def __init__(
         self,
         # selected from BACE1 hyperparameter sweep
-        hidden_dims: Sequence[int] = (128, 128),
+        hidden_dims: Sequence[int] = (256, 256, 128),
         dropout: float = 0.1,
     ) -> None:
         super().__init__()
