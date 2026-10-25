@@ -314,6 +314,16 @@ def test_cache_enabled_by_default_for_frozen_encoder(mocked_pretrained):
     assert encoder._embedding_cache == {}
 
 
+def test_freeze_is_read_only(mocked_pretrained):
+    encoder = SmilesEncoder(freeze=True)
+
+    with pytest.raises(AttributeError):
+        encoder.freeze = False
+
+    assert encoder.freeze is True
+    assert encoder.cache_embeddings is True
+
+
 def test_cached_smiles_skips_model_forward(mocked_pretrained):
     encoder = SmilesEncoder()
 
