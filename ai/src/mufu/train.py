@@ -64,6 +64,8 @@ class TrainConfig:
     task_weights: tuple[float, float, float] | None = None
     fp_hidden_dims: tuple[int, ...] = (1024, 512)
     fp_dropout: float = 0.2
+    gnn_hidden_dims: tuple[int, ...] = (256, 256, 128)
+    gnn_dropout: float = 0.1
     calibration: str = "none"
     num_workers: int = 0
     device: torch.device | str | None = None

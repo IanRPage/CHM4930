@@ -68,6 +68,16 @@ def benchmark_params(cfg: TrainConfig, smiles_encoder: Encoder) -> dict:
     }
 
 
+# checkpoints from before gnn_hidden_dims was recorded in params
+def infer_gnn_hidden_dims(state: Mapping[str, torch.Tensor]) -> tuple[int, ...]:
+    dims = []
+    while (key := f"graph_encoder.mp_layers.{len(dims)}.nn.0.weight") in state:
+        dims.append(state[key].shape[0])
+    if not dims:
+        raise ValueError("checkpoint has no graph_encoder.mp_layers weights")
+    return tuple(dims)
+
+
 def load_mufu_checkpoint(
     path: Path,
     smiles_encoder: Encoder,
@@ -78,11 +88,15 @@ def load_mufu_checkpoint(
     params = ckpt.get("params", {})
     fp_hidden_dims = tuple(params.get("fp_hidden_dims", (1024, 512)))
     fp_dropout = float(params.get("fp_dropout", 0.2))
+    gnn_hidden_dims = tuple(
+        params.get("gnn_hidden_dims") or infer_gnn_hidden_dims(ckpt["model"])
+    )
+    gnn_dropout = float(params.get("gnn_dropout", 0.1))
 
     model = MuFu(
         smiles_encoder,
         FingerprintEncoder(hidden_dims=fp_hidden_dims, dropout=fp_dropout),
-        GNNEncoder(),
+        GNNEncoder(hidden_dims=gnn_hidden_dims, dropout=gnn_dropout),
     ).to(device)
     load_non_smiles_state(model, ckpt["model"])
     model.eval()
@@ -119,7 +133,7 @@ def make_fit_predict(
         model = MuFu(
             smiles_encoder,
             FingerprintEncoder(hidden_dims=cfg.fp_hidden_dims, dropout=cfg.fp_dropout),
-            GNNEncoder(),
+            GNNEncoder(hidden_dims=cfg.gnn_hidden_dims, dropout=cfg.gnn_dropout),
         )
         result = fit(model, datasets, cfg, verbose=verbose)
         if verbose:

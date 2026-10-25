@@ -32,7 +32,9 @@ def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
     data_path = tmp_path / "combined.csv"
     data_path.write_text("smiles\nCCO\n")
     datasets = {split: labeled_dataset for split in ("train", "val", "test")}
-    cfg = TrainConfig(batch_size=4, epochs=2, patience=2, device="cpu")
+    cfg = TrainConfig(
+        batch_size=4, epochs=2, patience=2, gnn_hidden_dims=(32, 16), device="cpu"
+    )
     encoder = SmallSmilesEncoder().requires_grad_(False)
     fit_predict = experiment.make_fit_predict(
         datasets,
