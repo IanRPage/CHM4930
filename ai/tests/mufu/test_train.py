@@ -2,13 +2,22 @@ import copy
 import random
 
 import numpy as np
+import pytest
 import torch
 
-from mufu.contract import ACTIVE_COLUMNS, PIC50_COLUMNS, TOX_COLUMNS
+from mufu.contract import ACTIVE_COLUMNS, PIC50_COLUMNS, TASKS, TOX_COLUMNS
 from mufu.data.dataset import collate
-from mufu.loss.task_loss import TaskLoss
+from mufu.loss.task_loss import TaskLoss, compute_task_losses
 from mufu.loss.uncertainty_weighting import UncertaintyWeighting
-from mufu.train import TrainConfig, fit, make_optimizer, predict, train_step
+from mufu.train import (
+    TrainConfig,
+    cpu_state,
+    fit,
+    load_non_smiles_state,
+    make_optimizer,
+    predict,
+    train_step,
+)
 
 
 def test_fit_decreases_loss_on_tiny_dataset(model, labeled_dataset):
@@ -60,7 +69,8 @@ def test_fit_restores_best_val_state_and_early_stops(
     assert result.best_val_loss == 1.0
     assert result.val_losses == [2.0, 1.0, 1.5, 1.8]
     for key, tensor in epoch_snapshots[1].items():
-        assert torch.equal(model.state_dict()[key], tensor)
+        if not key.startswith("smiles_encoder."):
+            assert torch.equal(model.state_dict()[key], tensor)
 
 
 def test_fit_stops_on_val_loss_without_pos_weight(model, labeled_dataset, monkeypatch):
@@ -181,3 +191,145 @@ def test_fit_verbose_prints_one_line_per_epoch(model, labeled_dataset, capsys):
         "Epoch 2/3",
         "Epoch 3/3",
     ]
+
+
+def test_cpu_state_excludes_smiles_encoder_and_load_non_smiles_state_validates(model):
+    snap = cpu_state(model)
+    assert not any(k.startswith("smiles_encoder.") for k in snap)
+    assert any(k.startswith("fingerprint_encoder.") for k in snap)
+
+    with torch.no_grad():
+        for p in model.fingerprint_encoder.parameters():
+            p.add_(5.0)
+    load_non_smiles_state(model, snap)
+    for k, v in snap.items():
+        assert torch.equal(model.state_dict()[k], v)
+
+    incomplete = {k: v for k, v in snap.items() if not k.startswith("fusion.")}
+    with pytest.raises(ValueError, match="missing="):
+        load_non_smiles_state(model, incomplete)
+
+    unexpected = {**snap, "bogus.weight": torch.zeros(1)}
+    with pytest.raises(ValueError, match="unexpected="):
+        load_non_smiles_state(model, unexpected)
+
+
+def test_fit_uses_load_non_smiles_state_to_restore_best_model(
+    model, labeled_dataset, monkeypatch
+):
+    calls = []
+    real_load = load_non_smiles_state
+
+    def spy_load(m, state):
+        calls.append(set(state))
+        return real_load(m, state)
+
+    monkeypatch.setattr("mufu.train.load_non_smiles_state", spy_load)
+    cfg = TrainConfig(batch_size=4, epochs=2, patience=2, device="cpu")
+    fit(model, {"train": labeled_dataset, "val": labeled_dataset}, cfg)
+
+    assert len(calls) == 1
+    assert not any(k.startswith("smiles_encoder.") for k in calls[0])
+
+
+@pytest.mark.parametrize(
+    "kwargs,match",
+    [
+        ({"sampler": "bad"}, "unknown sampler"),
+        ({"checkpoint_mode": "bad"}, "unknown checkpoint_mode"),
+        ({"pos_weight": "bad"}, "unknown pos_weight"),
+        ({"stopping": "bad"}, "unknown stopping"),
+        (
+            {"stopping": "metric", "checkpoint_mode": "single"},
+            "requires checkpoint_mode='task_family'",
+        ),
+        ({"calibration": "bad"}, "unknown calibration"),
+        ({"task_weights": (1.0, 2.0)}, "task_weights: expected 3"),
+    ],
+)
+def test_fit_rejects_invalid_config_options(model, labeled_dataset, kwargs, match):
+    cfg = TrainConfig(batch_size=4, epochs=1, device="cpu", **kwargs)
+    with pytest.raises(ValueError, match=match):
+        fit(model, {"train": labeled_dataset, "val": labeled_dataset}, cfg)
+
+
+def test_train_step_returns_unweighted_loss_and_supports_fixed_task_weights(
+    model, labeled_dataset
+):
+    torch.manual_seed(0)
+    model.eval()
+    batch = collate([labeled_dataset[i] for i in range(len(labeled_dataset))])
+    weighted_loss_fn = TaskLoss(
+        bio_pos_weight=torch.full((2,), 10.0),
+        tox_pos_weight=torch.full((14,), 25.0),
+    )
+    weighting = UncertaintyWeighting()
+    optimizer = make_optimizer(model, weighting, TrainConfig(lr=1e-3, log_var_lr=5e-2))
+    assert optimizer.param_groups[1]["lr"] == 5e-2
+
+    with torch.no_grad():
+        expected_unweighted = sum(
+            v
+            for v in compute_task_losses(model(batch), batch).values()
+            if v is not None
+        )
+        weighted_sum = sum(
+            v for v in weighted_loss_fn(model(batch), batch).values() if v is not None
+        )
+    assert not torch.isclose(expected_unweighted, weighted_sum)
+
+    logged = train_step(
+        model,
+        batch,
+        weighted_loss_fn,
+        weighting,
+        optimizer,
+        task_weights=(1.0, 0.5, 0.25),
+    )
+    assert torch.isclose(logged, expected_unweighted, atol=1e-5)
+    # Fixed task_weights should not update log_vars
+    for p in weighting.log_vars.values():
+        assert p.grad is None
+
+
+def test_task_family_checkpointing_and_non_mutating_predict(model, labeled_dataset):
+    torch.manual_seed(0)
+    random.seed(0)
+    cfg = TrainConfig(
+        batch_size=4,
+        epochs=4,
+        patience=2,
+        checkpoint_mode="task_family",
+        stopping="metric",
+        device="cpu",
+    )
+
+    result = fit(model, {"train": labeled_dataset, "val": labeled_dataset}, cfg)
+
+    assert set(result.val_task_losses) == set(TASKS)
+    assert all(
+        len(v) == len(result.val_losses) for v in result.val_task_losses.values()
+    )
+    assert result.best_epochs is not None
+    assert set(result.best_epochs) == {"bio", "tox"}
+    assert result.best_epoch == result.best_epochs["bio"]
+    assert result.family_states is not None
+    assert set(result.family_states) == {"tox"}
+    assert not any(k.startswith("smiles_encoder.") for k in result.family_states["tox"])
+
+    # Modify tox state to verify predict uses family_states without mutating model in place
+    modified_tox = copy.deepcopy(result.family_states["tox"])
+    modified_tox["toxicity_head.linear.bias"].fill_(50.0)
+    before_state = copy.deepcopy(model.state_dict())
+
+    preds = predict(
+        model,
+        labeled_dataset,
+        batch_size=4,
+        family_states={"tox": modified_tox},
+    )
+
+    for k, v in before_state.items():
+        assert torch.equal(model.state_dict()[k], v), k
+    for col in TOX_COLUMNS:
+        assert np.allclose(preds[col], 1.0)
