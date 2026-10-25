@@ -169,14 +169,20 @@ PICK = DEFAULT | {
 
 FINAL_BASE = {
     "DROPOUT": 0.1,
-    "LR": 1e-3,
+    "LR": 3e-4,
     "BATCH_SIZE": 64,
     "EPOCHS": 100,
-    "OPT": "adam",
+    "OPT": "adamw",
+}
+
+FINAL = FINAL_BASE | {
+    "HIDDEN_DIMS": (256, 256, 128),
+    "WEIGHT_DECAY": 1e-4,
 }
 
 SEEDS = [0, 1, 2]
 FRESH_SEEDS = [3, 4, 5, 6, 7]
+FINAL_SEEDS = list(range(8, 18))
 
 
 # Stages
@@ -284,8 +290,15 @@ STAGES = {
                 "HIDDEN_DIMS": (256, 256, 128),
                 "WEIGHT_DECAY": 1e-4,
             },
+            FINAL_BASE
+            | {
+                "HIDDEN_DIMS": (128, 128),
+                "WEIGHT_DECAY": 1e-4,
+                "OPT": "adam",
+                "LR": 1e-3,
+            },
         ],
-        [0, 1, 2, 3, 4],
+        FINAL_SEEDS,
     ),
 }
 
