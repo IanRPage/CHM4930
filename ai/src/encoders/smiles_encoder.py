@@ -48,7 +48,7 @@ class SmilesEncoder(nn.Module):
         self.model_name = model_name
         self.revision = revision
         self.max_length = max_length
-        self.freeze = freeze
+        self._freeze = freeze
         self.cache_embeddings = cache_embeddings
         self.max_cache_size = max_cache_size
         self._embedding_cache: dict[str, torch.Tensor] = {}
@@ -73,6 +73,10 @@ class SmilesEncoder(nn.Module):
                 parameter.requires_grad = False
 
             self.model.eval()
+
+    @property
+    def freeze(self) -> bool:
+        return self._freeze
 
     def train(self, mode: bool = True):
         super().train(mode)
