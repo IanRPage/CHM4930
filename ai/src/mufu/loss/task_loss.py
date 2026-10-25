@@ -23,6 +23,27 @@ from mufu.contract import (
 )
 from mufu.data.dataset import MuFuDataset
 
+POS_WEIGHT_MODES = ("raw", "cap5", "cap10", "sqrt", "none")
+
+
+# transforms per-column neg/pos ratios according to the configured pos_weight mode
+def transform_pos_weight(
+    pos_weight: torch.Tensor, mode: str = "raw"
+) -> torch.Tensor | None:
+    if mode not in POS_WEIGHT_MODES:
+        raise ValueError(
+            f"unknown pos_weight {mode!r}; expected one of {POS_WEIGHT_MODES}"
+        )
+    if mode == "raw":
+        return pos_weight.clone()
+    if mode == "cap5":
+        return pos_weight.clamp(min=1.0 / 5.0, max=5.0)
+    if mode == "cap10":
+        return pos_weight.clamp(min=1.0 / 10.0, max=10.0)
+    if mode == "sqrt":
+        return torch.sqrt(pos_weight)
+    return None
+
 
 # averages over valid columns per compound, then over compounds with >=1 label
 def masked_mean(losses: torch.Tensor, mask: torch.Tensor) -> torch.Tensor | None:
@@ -61,13 +82,16 @@ def compute_pos_weight(labels: torch.Tensor, mask: torch.Tensor) -> torch.Tensor
 
 
 # computes pos_weight vectors for bio_cls and tox from a training MuFuDataset
-def dataset_pos_weights(dataset: MuFuDataset) -> dict[str, torch.Tensor]:
-    return {
+def dataset_pos_weights(
+    dataset: MuFuDataset, mode: str = "raw"
+) -> dict[str, torch.Tensor | None]:
+    raw = {
         "bio_cls": compute_pos_weight(
             dataset.labels["y_active"], dataset.masks["mask_bio"]
         ),
         "tox": compute_pos_weight(dataset.labels["y_tox"], dataset.masks["mask_tox"]),
     }
+    return {k: transform_pos_weight(v, mode=mode) for k, v in raw.items()}
 
 
 # masked MSE loss for pIC50 regression
@@ -159,8 +183,8 @@ class TaskLoss(nn.Module):
         )
 
     @classmethod
-    def from_dataset(cls, dataset: MuFuDataset) -> "TaskLoss":
-        weights = dataset_pos_weights(dataset)
+    def from_dataset(cls, dataset: MuFuDataset, pos_weight: str = "raw") -> "TaskLoss":
+        weights = dataset_pos_weights(dataset, mode=pos_weight)
         return cls(
             bio_pos_weight=weights["bio_cls"],
             tox_pos_weight=weights["tox"],
