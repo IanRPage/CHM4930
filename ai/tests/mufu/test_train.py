@@ -20,6 +20,10 @@ from mufu.train import (
 )
 
 
+def scripted_losses(total):
+    return None, {"pic50": total, "bio_cls": 0.0, "tox": 0.0}
+
+
 def test_fit_decreases_loss_on_tiny_dataset(model, labeled_dataset):
     torch.manual_seed(0)
     random.seed(0)
@@ -51,7 +55,7 @@ def test_fit_restores_best_val_state_and_early_stops(
 
     def fake_evaluate_val_loss(m, val_dataset, task_loss, batch_size):
         epoch_snapshots.append(copy.deepcopy(m.state_dict()))
-        return next(scripted_val_losses)
+        return scripted_losses(next(scripted_val_losses))
 
     monkeypatch.setattr("mufu.train.evaluate_val_loss", fake_evaluate_val_loss)
     cfg = TrainConfig(
@@ -78,7 +82,7 @@ def test_fit_stops_on_val_loss_without_pos_weight(model, labeled_dataset, monkey
 
     def fake_evaluate_val_loss(m, val_dataset, task_loss, batch_size):
         val_losses_used.append(task_loss)
-        return 1.0
+        return scripted_losses(1.0)
 
     monkeypatch.setattr("mufu.train.evaluate_val_loss", fake_evaluate_val_loss)
     cfg = TrainConfig(batch_size=4, epochs=2, patience=2, device="cpu")
@@ -167,7 +171,8 @@ def test_fit_min_delta_ignores_tiny_improvements(model, labeled_dataset, monkeyp
     random.seed(0)
     scripted_val_losses = iter([2.0, 1.9995, 1.9993, 1.9991, 1.9])
     monkeypatch.setattr(
-        "mufu.train.evaluate_val_loss", lambda *args: next(scripted_val_losses)
+        "mufu.train.evaluate_val_loss",
+        lambda *args: scripted_losses(next(scripted_val_losses)),
     )
     cfg = TrainConfig(batch_size=4, epochs=5, patience=3, min_delta=1e-3, device="cpu")
 
@@ -287,7 +292,6 @@ def test_train_step_returns_unweighted_loss_and_supports_fixed_task_weights(
         task_weights=(1.0, 0.5, 0.25),
     )
     assert torch.isclose(logged, expected_unweighted, atol=1e-5)
-    # Fixed task_weights should not update log_vars
     for p in weighting.log_vars.values():
         assert p.grad is None
 
@@ -317,7 +321,6 @@ def test_task_family_checkpointing_and_non_mutating_predict(model, labeled_datas
     assert set(result.family_states) == {"tox"}
     assert not any(k.startswith("smiles_encoder.") for k in result.family_states["tox"])
 
-    # Modify tox state to verify predict uses family_states without mutating model in place
     modified_tox = copy.deepcopy(result.family_states["tox"])
     modified_tox["toxicity_head.linear.bias"].fill_(50.0)
     before_state = copy.deepcopy(model.state_dict())

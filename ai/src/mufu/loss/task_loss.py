@@ -24,9 +24,10 @@ from mufu.contract import (
 from mufu.data.dataset import MuFuDataset
 
 POS_WEIGHT_MODES = ("raw", "cap5", "cap10", "sqrt", "none")
+POS_WEIGHT_CAPS = {"cap5": 5.0, "cap10": 10.0}
 
 
-# transforms per-column neg/pos ratios according to the configured pos_weight mode
+# capN clamps to [1/N, N], none drops pos_weight
 def transform_pos_weight(
     pos_weight: torch.Tensor, mode: str = "raw"
 ) -> torch.Tensor | None:
@@ -34,15 +35,12 @@ def transform_pos_weight(
         raise ValueError(
             f"unknown pos_weight {mode!r}; expected one of {POS_WEIGHT_MODES}"
         )
-    if mode == "raw":
-        return pos_weight.clone()
-    if mode == "cap5":
-        return pos_weight.clamp(min=1.0 / 5.0, max=5.0)
-    if mode == "cap10":
-        return pos_weight.clamp(min=1.0 / 10.0, max=10.0)
+    if mode in POS_WEIGHT_CAPS:
+        cap = POS_WEIGHT_CAPS[mode]
+        return pos_weight.clamp(min=1.0 / cap, max=cap)
     if mode == "sqrt":
         return torch.sqrt(pos_weight)
-    return None
+    return pos_weight if mode == "raw" else None
 
 
 # averages over valid columns per compound, then over compounds with >=1 label

@@ -102,9 +102,7 @@ def load_mufu_checkpoint(
     model.eval()
 
     cal_state = ckpt.get("calibration")
-    calibration = (
-        CalibrationParams.from_state_dict(cal_state) if cal_state is not None else None
-    )
+    calibration = cal_state and CalibrationParams.from_state_dict(cal_state)
     return model, {
         "family_states": ckpt.get("family_states"),
         "best_epochs": ckpt.get("best_epochs"),
@@ -137,30 +135,24 @@ def make_fit_predict(
         )
         result = fit(model, datasets, cfg, verbose=verbose)
         if verbose:
-            epoch_info = (
-                f"best epochs {result.best_epochs}"
-                if result.best_epochs is not None
-                else f"best epoch {result.best_epoch}"
-            )
             print(
-                f"seed {seed}: {epoch_info} | val loss {result.best_val_loss:.4f}",
+                f"seed {seed}: best epoch {result.best_epochs or result.best_epoch} | "
+                f"val loss {result.best_val_loss:.4f}",
                 flush=True,
             )
 
-        calibration: CalibrationParams | None = None
+        calibration = None
         if cfg.calibration != "none":
-            val_logits = predict_logits(
-                model,
-                datasets["val"],
-                batch_size=cfg.batch_size,
-                family_states=result.family_states,
-            )
-            pos_weights = dataset_pos_weights(datasets["train"], mode=cfg.pos_weight)
             calibration = fit_calibration(
                 cfg.calibration,
-                val_logits,
+                predict_logits(
+                    model,
+                    datasets["val"],
+                    batch_size=cfg.batch_size,
+                    family_states=result.family_states,
+                ),
                 datasets["val"],
-                pos_weights=pos_weights,
+                pos_weights=dataset_pos_weights(datasets["train"], mode=cfg.pos_weight),
             )
 
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
@@ -169,9 +161,7 @@ def make_fit_predict(
                 "model": cpu_state(model),
                 "family_states": result.family_states,
                 "best_epochs": result.best_epochs,
-                "calibration": (
-                    calibration.state_dict() if calibration is not None else None
-                ),
+                "calibration": calibration and calibration.state_dict(),
                 "weighting": cpu_state(result.weighting),
                 "epoch": result.best_epoch,
                 "best_val_loss": result.best_val_loss,

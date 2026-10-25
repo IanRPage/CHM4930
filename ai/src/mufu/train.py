@@ -1,11 +1,11 @@
 """
 Training and prediction loop for MuFu (`fit` and `predict`).
 
-Early stopping tracks validation performance without `pos_weight` (which would let
-confident misses on rare positives dominate) and without uncertainty weighting (since
-learned `log_vars` drift across epochs). Note that logged `train_loss` is measured
-with encoder dropout and modality dropout active, so it remains slightly offset from
-`val_loss` even without `pos_weight`.
+Early stopping ignores `pos_weight` and uncertainty weighting, so rare-positive misses
+and drifting `log_vars` can't dominate it. `train_loss` is logged the same way, but
+with dropout on, so it won't match `val_loss` exactly. In `task_family` mode bio and
+tox each keep a best state and patience; `fit` ends on the bio state and returns the
+tox state in `family_states`, which `predict` uses for `tox_logits`.
 """
 
 import copy
@@ -34,16 +34,14 @@ from mufu.loss.uncertainty_weighting import UncertaintyWeighting
 from mufu.model import MuFu
 from pipeline.toxicity_loader import DATASETS
 
-CHECKPOINT_MODES = ("single", "task_family")
-STOPPING_MODES = ("val_loss", "norm_loss", "metric")
-FAMILY_TASKS: dict[str, tuple[str, ...]] = {
-    "bio": ("pic50", "bio_cls"),
-    "tox": ("tox",),
+CONFIG_OPTIONS = {
+    "sampler": ("mixed", "alternating"),
+    "checkpoint_mode": ("single", "task_family"),
+    "pos_weight": POS_WEIGHT_MODES,
+    "stopping": ("val_loss", "norm_loss", "metric"),
+    "calibration": CALIBRATION_MODES,
 }
-FAMILY_OUTPUT_KEYS: dict[str, tuple[str, ...]] = {
-    "bio": ("pic50", "active_logits"),
-    "tox": ("tox_logits",),
-}
+FAMILY_TASKS = {"bio": ("pic50", "bio_cls"), "tox": ("tox",)}
 TOX21_INDICES = [TOX_COLUMNS.index(t) for t in DATASETS["tox21"]["tasks"]]
 
 
@@ -108,7 +106,6 @@ def load_non_smiles_state(module: nn.Module, state: Mapping[str, torch.Tensor]) 
 def make_optimizer(
     model: MuFu, weighting: UncertaintyWeighting, cfg: TrainConfig
 ) -> torch.optim.AdamW:
-    log_var_lr = cfg.lr if cfg.log_var_lr is None else cfg.log_var_lr
     return torch.optim.AdamW(
         [
             {
@@ -118,7 +115,7 @@ def make_optimizer(
             {
                 "params": list(weighting.log_vars.values()),
                 "weight_decay": 0.0,
-                "lr": log_var_lr,
+                "lr": cfg.lr if cfg.log_var_lr is None else cfg.log_var_lr,
             },
         ],
         lr=cfg.lr,
@@ -137,30 +134,24 @@ def train_step(
     optimizer.zero_grad(set_to_none=True)
     outputs = model(batch)
     task_losses = task_loss(outputs, batch)
-    present = [loss for loss in task_losses.values() if loss is not None]
-    if not present:
+    if all(loss is None for loss in task_losses.values()):
         return None
     if task_weights is None:
         objective = weighting(task_losses)
     else:
-        if len(task_weights) != len(TASKS):
-            raise ValueError(
-                f"task_weights: expected {len(TASKS)} weights for {TASKS}, "
-                f"got {len(task_weights)}"
-            )
-        terms = [
-            float(w) * task_losses[t]
-            for w, t in zip(task_weights, TASKS)
-            if task_losses[t] is not None
-        ]
-        objective = torch.stack(terms).sum()
+        objective = torch.stack(
+            [
+                float(w) * task_losses[t]
+                for w, t in zip(task_weights, TASKS)
+                if task_losses[t] is not None
+            ]
+        ).sum()
     objective.backward()
     optimizer.step()
 
-    detached = {k: v.detach() for k, v in outputs.items()}
-    unweighted = compute_task_losses(detached, batch)
-    unweighted_present = [loss for loss in unweighted.values() if loss is not None]
-    return sum(unweighted_present).detach()
+    with torch.no_grad():
+        unweighted = compute_task_losses(outputs, batch)
+    return sum(loss for loss in unweighted.values() if loss is not None)
 
 
 @torch.no_grad()
@@ -186,92 +177,64 @@ def evaluate_val_loss(
     val_dataset: MuFuDataset,
     task_loss: TaskLoss,
     batch_size: int,
-) -> float:
+) -> tuple[MuFuOutputs, dict[str, float]]:
     outputs = _forward_dataset(model, val_dataset, batch_size)
-    val_batch = {**val_dataset.labels, **val_dataset.masks}
-    losses = task_loss(outputs, val_batch)
-    task_loss._last_outputs = outputs
-    task_loss._last_losses = losses
-    present = [loss for loss in losses.values() if loss is not None]
-    return sum(present).item() if present else float("inf")
+    losses = task_loss(outputs, {**val_dataset.labels, **val_dataset.masks})
+    return outputs, {
+        t: float("nan") if loss is None else loss.item() for t, loss in losses.items()
+    }
 
 
-def _compute_val_metric_signals(
-    outputs: MuFuOutputs, val_dataset: MuFuDataset
-) -> dict[str, float]:
-    y_pic50 = val_dataset.labels["y_pic50"].detach().cpu().numpy()
-    mask_bio = val_dataset.masks["mask_bio"].detach().cpu().numpy()
-    pred_pic50 = outputs["pic50"].detach().cpu().numpy()
+def _sum_losses(
+    losses: Mapping[str, float],
+    tasks: tuple[str, ...],
+    scales: Mapping[str, float] | None = None,
+) -> float:
+    terms = [
+        losses[t] / (1.0 if scales is None else scales[t])
+        for t in tasks
+        if np.isfinite(losses[t])
+    ]
+    return float(sum(terms)) if terms else float("inf")
 
-    rmses: list[float] = []
-    for j in range(N_BIO):
-        valid = mask_bio[:, j]
-        if valid.any():
-            reg = evaluation_metrics(
-                y_pic50[valid, j], pred_pic50[valid, j], task_type="regression"
-            )
-            if np.isfinite(reg["rmse"]):
-                rmses.append(float(reg["rmse"]))
-    bio_rmse = float(np.mean(rmses)) if rmses else float("inf")
 
-    y_tox21 = val_dataset.labels["y_tox"].detach().cpu().numpy()[:, TOX21_INDICES]
-    mask_tox21 = val_dataset.masks["mask_tox"].detach().cpu().numpy()[:, TOX21_INDICES]
-    tox21_probs = (
-        torch.sigmoid(outputs["tox_logits"][:, TOX21_INDICES]).detach().cpu().numpy()
-    )
-    tox21_res = evaluation_metrics(
-        y_tox21, tox21_probs, task_type="multitask", mask=mask_tox21
-    )
-    mean_auc = tox21_res["mean_roc_auc"]
-    tox_signal = -float(mean_auc) if np.isfinite(mean_auc) else float("inf")
+def _metric_signals(outputs: MuFuOutputs, val_dataset: MuFuDataset) -> dict[str, float]:
+    y = val_dataset.labels["y_pic50"].cpu().numpy()
+    mask = val_dataset.masks["mask_bio"].cpu().numpy()
+    pred = outputs["pic50"].numpy()
+    rmses = [
+        evaluation_metrics(
+            y[mask[:, j], j], pred[mask[:, j], j], task_type="regression"
+        )["rmse"]
+        for j in range(N_BIO)
+        if mask[:, j].any()
+    ]
+    rmses = [r for r in rmses if np.isfinite(r)]
 
-    return {"bio": bio_rmse, "tox": tox_signal}
+    auc = evaluation_metrics(
+        val_dataset.labels["y_tox"].cpu().numpy()[:, TOX21_INDICES],
+        torch.sigmoid(outputs["tox_logits"][:, TOX21_INDICES]).numpy(),
+        task_type="multitask",
+        mask=val_dataset.masks["mask_tox"].cpu().numpy()[:, TOX21_INDICES],
+    )["mean_roc_auc"]
+    return {
+        "bio": float(np.mean(rmses)) if rmses else float("inf"),
+        "tox": -float(auc) if np.isfinite(auc) else float("inf"),
+    }
 
 
 def _validate_config(cfg: TrainConfig) -> None:
-    if cfg.sampler not in ("mixed", "alternating"):
-        raise ValueError(
-            f"unknown sampler {cfg.sampler!r}; expected 'mixed' or 'alternating'"
-        )
-    if cfg.checkpoint_mode not in CHECKPOINT_MODES:
-        raise ValueError(
-            f"unknown checkpoint_mode {cfg.checkpoint_mode!r}; "
-            f"expected one of {CHECKPOINT_MODES}"
-        )
-    if cfg.pos_weight not in POS_WEIGHT_MODES:
-        raise ValueError(
-            f"unknown pos_weight {cfg.pos_weight!r}; expected one of {POS_WEIGHT_MODES}"
-        )
-    if cfg.stopping not in STOPPING_MODES:
-        raise ValueError(
-            f"unknown stopping {cfg.stopping!r}; expected one of {STOPPING_MODES}"
-        )
+    for name, allowed in CONFIG_OPTIONS.items():
+        value = getattr(cfg, name)
+        if value not in allowed:
+            raise ValueError(f"unknown {name} {value!r}; expected one of {allowed}")
     if cfg.stopping == "metric" and cfg.checkpoint_mode != "task_family":
         raise ValueError("stopping='metric' requires checkpoint_mode='task_family'")
-    if cfg.calibration not in CALIBRATION_MODES:
-        raise ValueError(
-            f"unknown calibration {cfg.calibration!r}; "
-            f"expected one of {CALIBRATION_MODES}"
-        )
     if cfg.task_weights is not None and len(cfg.task_weights) != len(TASKS):
         raise ValueError(
             f"task_weights: expected {len(TASKS)} weights for {TASKS}, "
             f"got {len(cfg.task_weights)}"
         )
-
-
-def _sum_task_subset(
-    task_losses: Mapping[str, float],
-    tasks: tuple[str, ...],
-    scales: Mapping[str, float] | None = None,
-) -> float:
-    terms = []
-    for t in tasks:
-        val = task_losses.get(t, float("nan"))
-        if np.isfinite(val):
-            scale = 1.0 if scales is None else scales.get(t, 1.0)
-            terms.append(val / scale)
-    return float(sum(terms)) if terms else float("inf")
 
 
 def fit(
@@ -291,7 +254,6 @@ def fit(
         sampler = MixedBatchSampler(datasets["train"], cfg.batch_size, cfg.bio_fraction)
     else:
         sampler = AlternatingBatchSampler(datasets["train"], cfg.batch_size)
-
     train_loader = DataLoader(
         datasets["train"],
         batch_sampler=sampler,
@@ -307,22 +269,15 @@ def fit(
     weighting = UncertaintyWeighting().to(device)
     optimizer = make_optimizer(model, weighting, cfg)
 
+    families = FAMILY_TASKS if cfg.checkpoint_mode == "task_family" else {"all": TASKS}
+    primary = next(iter(families))
+    best_signals = dict.fromkeys(families, float("inf"))
+    best_states: dict[str, dict[str, torch.Tensor]] = {}
+    best_epochs = dict.fromkeys(families, 0)
+    stalled = dict.fromkeys(families, 0)
     best_val_loss = float("inf")
-    best_stop_signal = float("inf")
-    best_epoch = 0
-    best_state: dict | None = None
-    epochs_without_improve = 0
-
-    best_family_signals = {"bio": float("inf"), "tox": float("inf")}
-    best_family_states: dict[str, dict[str, torch.Tensor] | None] = {
-        "bio": None,
-        "tox": None,
-    }
-    best_epochs = {"bio": 0, "tox": 0}
-    best_weighting_state: dict[str, torch.Tensor] | None = None
-    stalled = {"bio": 0, "tox": 0}
-    epoch1_scales: dict[str, float] | None = None
-
+    best_weighting: dict[str, torch.Tensor] = {}
+    epoch1_losses: dict[str, float] = {}
     train_losses: list[float] = []
     val_losses: list[float] = []
     val_task_losses: dict[str, list[float]] = {t: [] for t in TASKS}
@@ -342,164 +297,66 @@ def fit(
             )
             if loss is not None:
                 step_losses.append(loss)
-
         train_losses.append(
             (sum(step_losses) / len(step_losses)).item()
             if step_losses
             else float("nan")
         )
-        val_task_loss._last_losses = None
-        val_task_loss._last_outputs = None
-        val_loss = evaluate_val_loss(
+
+        outputs, losses = evaluate_val_loss(
             model, datasets["val"], val_task_loss, cfg.batch_size
         )
-        val_losses.append(val_loss)
-
-        raw_last_losses = getattr(val_task_loss, "_last_losses", None)
-        if raw_last_losses is not None:
-            step_val_losses = {
-                t: (
-                    float(raw_last_losses[t].item())
-                    if raw_last_losses.get(t) is not None
-                    else float("nan")
-                )
-                for t in TASKS
-            }
-        else:
-            step_val_losses = {
-                "pic50": val_loss,
-                "bio_cls": float("nan"),
-                "tox": float("nan"),
-            }
+        val_losses.append(_sum_losses(losses, TASKS))
         for t in TASKS:
-            val_task_losses[t].append(step_val_losses[t])
-
-        if epoch1_scales is None:
-            epoch1_scales = {
-                t: (
-                    step_val_losses[t]
-                    if np.isfinite(step_val_losses[t]) and step_val_losses[t] > 0.0
-                    else 1.0
-                )
-                for t in TASKS
+            val_task_losses[t].append(losses[t])
+        if not epoch1_losses:
+            epoch1_losses = {
+                t: v if np.isfinite(v) and v > 0.0 else 1.0 for t, v in losses.items()
             }
 
         if verbose:
             print(
                 f"Epoch {epoch}/{cfg.epochs} | "
-                f"train={train_losses[-1]:.4f} | val={val_loss:.4f}",
+                f"train={train_losses[-1]:.4f} | val={val_losses[-1]:.4f}",
                 flush=True,
             )
 
-        if cfg.checkpoint_mode == "single":
-            if cfg.stopping == "val_loss":
-                stop_signal = val_loss
-            else:
-                stop_signal = _sum_task_subset(
-                    step_val_losses, TASKS, scales=epoch1_scales
-                )
-
-            if best_state is None or stop_signal < best_stop_signal - cfg.min_delta:
-                best_stop_signal = stop_signal
-                best_val_loss = val_loss
-                best_epoch = epoch
-                epochs_without_improve = 0
-                best_state = {
-                    "model": cpu_state(model),
-                    "weighting": cpu_state(weighting),
-                }
-            else:
-                epochs_without_improve += 1
-                if epochs_without_improve >= cfg.patience:
-                    break
+        if cfg.stopping == "metric":
+            signals = _metric_signals(outputs, datasets["val"])
         else:
-            bio_unweighted = _sum_task_subset(
-                step_val_losses, FAMILY_TASKS["bio"], scales=None
-            )
-            if cfg.stopping == "val_loss":
-                family_signals = {
-                    fam: _sum_task_subset(step_val_losses, tasks, scales=None)
-                    for fam, tasks in FAMILY_TASKS.items()
-                }
-            elif cfg.stopping == "norm_loss":
-                family_signals = {
-                    fam: _sum_task_subset(step_val_losses, tasks, scales=epoch1_scales)
-                    for fam, tasks in FAMILY_TASKS.items()
-                }
-            else:
-                last_outputs = getattr(val_task_loss, "_last_outputs", None)
-                if last_outputs is None:
-                    last_outputs = _forward_dataset(
-                        model, datasets["val"], cfg.batch_size
-                    )
-                family_signals = _compute_val_metric_signals(
-                    last_outputs, datasets["val"]
-                )
+            scales = epoch1_losses if cfg.stopping == "norm_loss" else None
+            signals = {f: _sum_losses(losses, ts, scales) for f, ts in families.items()}
 
-            snapshot: dict[str, torch.Tensor] | None = None
-            for fam in ("bio", "tox"):
-                sig = family_signals[fam]
-                if (
-                    best_family_states[fam] is None
-                    or sig < best_family_signals[fam] - cfg.min_delta
-                ):
-                    if snapshot is None:
-                        snapshot = cpu_state(model)
-                    best_family_signals[fam] = sig
-                    best_family_states[fam] = snapshot
-                    best_epochs[fam] = epoch
-                    stalled[fam] = 0
-                    if fam == "bio":
-                        best_val_loss = bio_unweighted
-                        best_epoch = epoch
-                        best_weighting_state = cpu_state(weighting)
-                else:
-                    stalled[fam] += 1
+        snapshot = None
+        for fam in families:
+            if fam in best_states and signals[fam] >= best_signals[fam] - cfg.min_delta:
+                stalled[fam] += 1
+                continue
+            snapshot = snapshot or cpu_state(model)
+            best_signals[fam] = signals[fam]
+            best_states[fam] = snapshot
+            best_epochs[fam] = epoch
+            stalled[fam] = 0
+            if fam == primary:
+                best_val_loss = _sum_losses(losses, families[primary])
+                best_weighting = cpu_state(weighting)
+        if all(n >= cfg.patience for n in stalled.values()):
+            break
 
-            if all(count >= cfg.patience for count in stalled.values()):
-                break
-
-    if cfg.checkpoint_mode == "single":
-        if best_state is not None:
-            load_non_smiles_state(model, best_state["model"])
-            weighting.load_state_dict(best_state["weighting"])
-        return TrainResult(
-            best_epoch=best_epoch,
-            best_val_loss=best_val_loss,
-            train_losses=train_losses,
-            val_losses=val_losses,
-            weighting=weighting,
-            val_task_losses=val_task_losses,
-            family_states=None,
-            best_epochs=None,
-        )
-
-    if best_family_states["bio"] is not None:
-        load_non_smiles_state(model, best_family_states["bio"])
-    if best_weighting_state is not None:
-        weighting.load_state_dict(best_weighting_state)
-
-    family_states = (
-        {"tox": best_family_states["tox"]}
-        if best_family_states["tox"] is not None
-        else None
-    )
+    if best_states:
+        load_non_smiles_state(model, best_states[primary])
+        weighting.load_state_dict(best_weighting)
+    family_states = {f: s for f, s in best_states.items() if f != primary}
     return TrainResult(
-        best_epoch=best_epoch,
+        best_epoch=best_epochs[primary],
         best_val_loss=best_val_loss,
         train_losses=train_losses,
         val_losses=val_losses,
         weighting=weighting,
         val_task_losses=val_task_losses,
-        family_states=family_states,
-        best_epochs=dict(best_epochs),
+        family_states=family_states or None,
+        best_epochs=best_epochs if cfg.checkpoint_mode == "task_family" else None,
     )
-
-
-def _clone_model_with_state(model: MuFu, state: Mapping[str, torch.Tensor]) -> MuFu:
-    cloned = copy.deepcopy(model, memo={id(model.smiles_encoder): model.smiles_encoder})
-    load_non_smiles_state(cloned, state)
-    return cloned
 
 
 def predict_logits(
@@ -511,26 +368,15 @@ def predict_logits(
 ) -> MuFuOutputs:
     if len(dataset) == 0:
         raise ValueError("predict needs a non-empty dataset")
-    unknown = set(family_states or ()) - set(FAMILY_OUTPUT_KEYS)
-    if unknown:
-        raise ValueError(
-            f"unknown family_states key(s) {sorted(unknown)}; "
-            f"expected subset of {sorted(FAMILY_OUTPUT_KEYS)}"
+    outputs = _forward_dataset(model, dataset, batch_size)
+    if family_states:
+        tox_model = copy.deepcopy(
+            model, memo={id(model.smiles_encoder): model.smiles_encoder}
         )
-    if not family_states:
-        return _forward_dataset(model, dataset, batch_size)
-
-    bio_model = (
-        _clone_model_with_state(model, family_states["bio"])
-        if "bio" in family_states
-        else model
-    )
-    outputs = _forward_dataset(bio_model, dataset, batch_size)
-    if "tox" in family_states:
-        tox_model = _clone_model_with_state(model, family_states["tox"])
-        tox_outputs = _forward_dataset(tox_model, dataset, batch_size)
-        for key in FAMILY_OUTPUT_KEYS["tox"]:
-            outputs[key] = tox_outputs[key]
+        load_non_smiles_state(tox_model, family_states["tox"])
+        outputs["tox_logits"] = _forward_dataset(tox_model, dataset, batch_size)[
+            "tox_logits"
+        ]
     return outputs
 
 

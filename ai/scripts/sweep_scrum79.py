@@ -1,9 +1,8 @@
 """
-Run the SCRUM-79 3-seed ablations, EGFR diagnostics, and post-hoc calibration checks.
+SCRUM-79 3-seed ablations, EGFR diagnostics, and post-hoc calibration checks.
 
-All sweep runs are isolated under `ai/outputs/scrum79/` and `ai/checkpoints/scrum79/`
-so `ai/data/baseline/results.csv` and `ai/checkpoints/mufu_seed_*.pt` are never
-overwritten during exploration.
+Writes only to `ai/outputs/scrum79/` and `ai/checkpoints/scrum79/`, never to
+`results.csv` or the main checkpoints.
 
 Usage (from `ai/`):
     python scripts/sweep_scrum79.py all
@@ -62,21 +61,51 @@ SWEEP_CKPT_DIR = AI_DIR / "checkpoints" / "scrum79"
 SWEEP_SEEDS: tuple[int, ...] = (0, 1, 2)
 NOISE_FLOOR = 0.006
 
-# Main validation metrics used by the Keep Rule: (dataset, endpoint, metric, direction)
-# direction = -1 means lower is better (RMSE); +1 means higher is better (ROC-AUC)
+# keep-rule metrics, direction -1 means lower is better
 MAIN_METRICS: tuple[tuple[str, str, str, int], ...] = (
     ("bace1", "pIC50_BACE1", "rmse", -1),
     ("egfr", "pIC50_EGFR", "rmse", -1),
     ("tox21", "macro_tox21", "roc_auc", +1),
 )
+ITEM_CANDIDATES: dict[str, list[tuple[str, dict]]] = {
+    "2": [
+        ("mufu_s79_2_pw_cap5", {"pos_weight": "cap5"}),
+        ("mufu_s79_2_pw_cap10", {"pos_weight": "cap10"}),
+        ("mufu_s79_2_pw_sqrt", {"pos_weight": "sqrt"}),
+        ("mufu_s79_2_pw_none", {"pos_weight": "none"}),
+    ],
+    "3": [
+        ("mufu_s79_3_stop_norm_loss", {"stopping": "norm_loss"}),
+        (
+            "mufu_s79_3_stop_metric",
+            {"checkpoint_mode": "task_family", "stopping": "metric"},
+        ),
+    ],
+    "4": [
+        ("mufu_s79_4_tw_lr1e2", {"log_var_lr": 1e-2}),
+        ("mufu_s79_4_tw_lr5e2", {"log_var_lr": 5e-2}),
+        ("mufu_s79_4_tw_fixed_1_025_1", {"task_weights": (1.0, 0.25, 1.0)}),
+        ("mufu_s79_4_tw_fixed_1_05_05", {"task_weights": (1.0, 0.5, 0.5)}),
+    ],
+    "5": [
+        ("mufu_s79_5_fp_drop05", {"fp_dropout": 0.5}),
+        ("mufu_s79_5_fp_drop06", {"fp_dropout": 0.6}),
+        ("mufu_s79_5_fp_512_256", {"fp_hidden_dims": (512, 256)}),
+        (
+            "mufu_s79_5_fp_512_256_drop06",
+            {"fp_hidden_dims": (512, 256), "fp_dropout": 0.6},
+        ),
+    ],
+}
 
 
 def _device() -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
+# SCRUM-76 config the sweep ran from, with the GNN size from before #51
 def base_config() -> TrainConfig:
-    return TrainConfig(device=_device())
+    return TrainConfig(min_delta=1e-3, gnn_hidden_dims=(128, 128), device=_device())
 
 
 def get_completed_seeds(
@@ -171,7 +200,6 @@ def evaluate_keep_rule(
         key = (dataset, endpoint, metric)
         cand_val, cand_std = cand[key]
         ref_val, ref_std = ref[key]
-        # Positive improvement always means candidate is better than reference
         imp = float(direction * (cand_val - ref_val))
         improvements[endpoint] = imp
         details[endpoint] = {
@@ -225,46 +253,6 @@ def select_item_winner(
     return (best_name, best_overrides), verdicts
 
 
-def item2_candidates() -> list[tuple[str, dict]]:
-    return [
-        ("mufu_s79_2_pw_cap5", {"pos_weight": "cap5"}),
-        ("mufu_s79_2_pw_cap10", {"pos_weight": "cap10"}),
-        ("mufu_s79_2_pw_sqrt", {"pos_weight": "sqrt"}),
-        ("mufu_s79_2_pw_none", {"pos_weight": "none"}),
-    ]
-
-
-def item3_candidates() -> list[tuple[str, dict]]:
-    return [
-        ("mufu_s79_3_stop_norm_loss", {"stopping": "norm_loss"}),
-        (
-            "mufu_s79_3_stop_metric",
-            {"checkpoint_mode": "task_family", "stopping": "metric"},
-        ),
-    ]
-
-
-def item4_candidates() -> list[tuple[str, dict]]:
-    return [
-        ("mufu_s79_4_tw_lr1e2", {"log_var_lr": 1e-2}),
-        ("mufu_s79_4_tw_lr5e2", {"log_var_lr": 5e-2}),
-        ("mufu_s79_4_tw_fixed_1_025_1", {"task_weights": (1.0, 0.25, 1.0)}),
-        ("mufu_s79_4_tw_fixed_1_05_05", {"task_weights": (1.0, 0.5, 0.5)}),
-    ]
-
-
-def item5_candidates() -> list[tuple[str, dict]]:
-    return [
-        ("mufu_s79_5_fp_drop05", {"fp_dropout": 0.5}),
-        ("mufu_s79_5_fp_drop06", {"fp_dropout": 0.6}),
-        ("mufu_s79_5_fp_512_256", {"fp_hidden_dims": (512, 256)}),
-        (
-            "mufu_s79_5_fp_512_256_drop06",
-            {"fp_hidden_dims": (512, 256), "fp_dropout": 0.6},
-        ),
-    ]
-
-
 def run_ablation_stages(
     stages: set[str],
     df: pd.DataFrame,
@@ -297,7 +285,6 @@ def run_ablation_stages(
             force=force,
         )
 
-    # Determine anchor config from Item 0 and Item 1
     item1_verdict = evaluate_keep_rule(
         SWEEP_RESULTS_PATH, "mufu_s79_1_task_family", "mufu_s79_0_baseline"
     )
@@ -314,30 +301,22 @@ def run_ablation_stages(
         flush=True,
     )
 
-    stage_specs = [
-        ("2", item2_candidates()),
-        ("3", item3_candidates()),
-        ("4", item4_candidates()),
-        ("5", item5_candidates()),
-    ]
-    for stage_id, candidates in stage_specs:
+    for stage_id, candidates in ITEM_CANDIDATES.items():
         if stage_id not in stages:
             continue
         for model_name, overrides in candidates:
-            cfg = replace(anchor_cfg, **overrides)
             run_variant(
                 model_name,
-                cfg,
+                replace(anchor_cfg, **overrides),
                 df,
                 datasets,
                 smiles_encoder,
                 force=force,
             )
 
-    # Collect winners from Items 2-5
     kept_overrides = dict(anchor_overrides)
     all_verdicts: dict[str, object] = {"item1": item1_verdict}
-    for stage_id, candidates in stage_specs:
+    for stage_id, candidates in ITEM_CANDIDATES.items():
         completed = all(
             get_completed_seeds(m, SWEEP_RESULTS_PATH) >= set(SWEEP_SEEDS)
             for m, _ in candidates
@@ -348,13 +327,9 @@ def run_ablation_stages(
             SWEEP_RESULTS_PATH, candidates, anchor_name
         )
         if stage_id == "3":
-            # Also record comparison of stopping="metric" directly against mufu_s79_1_task_family
-            metric_vs_tf = evaluate_keep_rule(
-                SWEEP_RESULTS_PATH,
-                "mufu_s79_3_stop_metric",
-                "mufu_s79_1_task_family",
+            all_verdicts["item3_metric_vs_task_family"] = evaluate_keep_rule(
+                SWEEP_RESULTS_PATH, "mufu_s79_3_stop_metric", "mufu_s79_1_task_family"
             )
-            all_verdicts["item3_metric_vs_task_family"] = metric_vs_tf
         all_verdicts[f"item{stage_id}"] = {
             "winner": winner[0] if winner else None,
             "winner_overrides": winner[1] if winner else {},
@@ -364,38 +339,28 @@ def run_ablation_stages(
             kept_overrides.update(winner[1])
 
     if "6" in stages:
-        stacked_base = replace(base, **kept_overrides)
-        for label, bio_frac in (
-            ("mufu_s79_6_stack_bio05", 0.5),
-            ("mufu_s79_6_stack_bio065", 0.65),
-            ("mufu_s79_6_stack_bio080", 0.80),
-        ):
+        stacked = {
+            "mufu_s79_6_stack_bio05": 0.5,
+            "mufu_s79_6_stack_bio065": 0.65,
+            "mufu_s79_6_stack_bio080": 0.80,
+        }
+        for label, bio_frac in stacked.items():
             run_variant(
                 label,
-                replace(stacked_base, bio_fraction=bio_frac),
+                replace(base, **kept_overrides, bio_fraction=bio_frac),
                 df,
                 datasets,
                 smiles_encoder,
                 force=force,
             )
-        stack_candidates = [
-            ("mufu_s79_6_stack_bio05", {**kept_overrides, "bio_fraction": 0.5}),
-            ("mufu_s79_6_stack_bio065", {**kept_overrides, "bio_fraction": 0.65}),
-            ("mufu_s79_6_stack_bio080", {**kept_overrides, "bio_fraction": 0.80}),
-        ]
-        # Compare stacked bio_fraction variants against baseline and against stack_bio05
-        all_verdicts["item6_vs_baseline"] = [
-            evaluate_keep_rule(SWEEP_RESULTS_PATH, m, "mufu_s79_0_baseline")
-            for m, _ in stack_candidates
-        ]
-        all_verdicts["item6_vs_anchor"] = [
-            evaluate_keep_rule(SWEEP_RESULTS_PATH, m, anchor_name)
-            for m, _ in stack_candidates
-        ]
-        all_verdicts["item6_bio_frac_vs_stack05"] = [
-            evaluate_keep_rule(SWEEP_RESULTS_PATH, m, "mufu_s79_6_stack_bio05")
-            for m, _ in stack_candidates[1:]
-        ]
+        for key, reference, models in (
+            ("item6_vs_baseline", "mufu_s79_0_baseline", list(stacked)),
+            ("item6_vs_anchor", anchor_name, list(stacked)),
+            ("item6_bio_frac_vs_stack05", "mufu_s79_6_stack_bio05", list(stacked)[1:]),
+        ):
+            all_verdicts[key] = [
+                evaluate_keep_rule(SWEEP_RESULTS_PATH, m, reference) for m in models
+            ]
 
     verdicts_path = SWEEP_DIR / "ablation_verdicts.json"
     verdicts_path.write_text(json.dumps(all_verdicts, indent=2, default=str))
@@ -497,7 +462,6 @@ def run_egfr_investigation(
     SWEEP_DIR.mkdir(parents=True, exist_ok=True)
     report: dict[str, object] = {}
 
-    # 1. Recompute split-level pIC50 and active distributions from combined.csv
     split_stats = []
     for target in ("BACE1", "EGFR"):
         pic50_col = f"pIC50_{target}"
@@ -520,7 +484,6 @@ def run_egfr_investigation(
             )
     report["split_distributions"] = split_stats
 
-    # 2. Check repeat-measurement spread in cached ChEMBL CSVs if present
     repeat_stats = {}
     for name, path in (("BACE1", BACE1_CSV_PATH), ("EGFR", EGFR_CSV_PATH)):
         if path.exists():
@@ -541,7 +504,6 @@ def run_egfr_investigation(
             }
     report["repeat_measurement_spread"] = repeat_stats
 
-    # 3. Check ECFP4 sweep winner from outputs/encoders/ECFP4/sweep/ if available
     ecfp_sweep_dir = AI_DIR / "outputs" / "encoders" / "ECFP4" / "sweep"
     sweep_csvs = sorted(ecfp_sweep_dir.glob("*.csv")) if ecfp_sweep_dir.exists() else []
     if sweep_csvs:
@@ -565,7 +527,6 @@ def run_egfr_investigation(
             "outputs/encoders/ECFP4/sweep/*.csv not present in checkout; recomputed below on BACE1 and EGFR"
         )
 
-    # 4. Single-task ECFP4 MLP (default (1024,512) drop=0.2 vs sweep pick (512,256) drop=0.6) and Tanimoto similarity on BACE1 and EGFR
     from featurize.fingerprint import mol_to_ecfp4
     from pipeline.preprocess import to_mol
 
@@ -721,7 +682,6 @@ def print_sweep_summary(results_path: Path = SWEEP_RESULTS_PATH) -> pd.DataFrame
         return pd.DataFrame()
 
     df = pd.read_csv(results_path)
-    # Include RF reference from main results.csv
     if RESULTS_PATH.exists():
         rf_df = pd.read_csv(RESULTS_PATH)
         rf_df = rf_df[rf_df["model"].isin(["rf_bioactivity", "rf_toxicity"])]
