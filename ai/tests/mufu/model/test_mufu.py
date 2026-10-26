@@ -22,6 +22,17 @@ def test_eval_keeps_all_modalities_without_sampling(model, dataset):
         assert torch.equal(predictions[name], repeated[name])
 
 
+def test_forward_embedded_matches_forward(model, dataset):
+    batch = collate([dataset[i] for i in range(len(dataset))])
+    model.eval()
+    with torch.no_grad():
+        full = model(batch)
+        split = model.forward_embedded(model.smiles_encoder(batch["smiles"]), batch)
+
+    for name in full:
+        assert torch.equal(full[name], split[name])
+
+
 def test_training_masks_fingerprint_gradients_per_molecule(model, dataset, monkeypatch):
     masks = []
 

@@ -3,6 +3,7 @@ End-to-end multimodal fusion model (`MuFu`) combining encoders, projection, fusi
 heads.
 """
 
+import torch
 from torch import nn
 
 from mufu.contract import Encoder, MuFuInputs, MuFuOutputs
@@ -48,8 +49,16 @@ class MuFu(nn.Module):
         self.toxicity_head = ToxicityHead()
 
     def forward(self, inputs: MuFuInputs) -> MuFuOutputs:
+        return self.forward_embedded(self.smiles_encoder(inputs["smiles"]), inputs)
+
+    def forward_embedded(
+        self, smiles_embedding: torch.Tensor, inputs: MuFuInputs
+    ) -> MuFuOutputs:
+        """
+        Run everything after the SMILES encoder, given its precomputed output.
+        """
         embeddings = {
-            "smiles": self.smiles_encoder(inputs["smiles"]),
+            "smiles": smiles_embedding,
             "fingerprint": self.fingerprint_encoder(inputs["fingerprint"]),
             "graph": self.graph_encoder(inputs["graph"]),
         }
