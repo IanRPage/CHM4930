@@ -20,6 +20,11 @@ from mufu.calibration import CalibrationParams, fit_calibration
 from mufu.contract import D_MODEL, MODALITY_DROPOUT_P, Encoder
 from mufu.data.dataset import MuFuDataset
 from mufu.loss.task_loss import dataset_pos_weights
+from mufu.mc_dropout import (
+    empirical_coverage,
+    fit_mc_dropout,
+    predict_with_intervals,
+)
 from mufu.model import MuFu
 from mufu.train import (
     TrainConfig,
@@ -156,6 +161,7 @@ def make_fit_predict(
             )
 
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        ckpt_path = checkpoint_dir / f"{model_name}_seed_{seed}.pt"
         torch.save(
             {
                 "model": cpu_state(model),
@@ -170,7 +176,11 @@ def make_fit_predict(
                 "git_commit": git_commit(),
                 "data_sha256": file_sha256(data_path),
             },
-            checkpoint_dir / f"{model_name}_seed_{seed}.pt",
+            ckpt_path,
+        )
+
+        conformal = fit_mc_dropout(
+            model, datasets["val"], ckpt_path, batch_size=cfg.batch_size
         )
 
         history_dir.mkdir(parents=True, exist_ok=True)
@@ -184,6 +194,13 @@ def make_fit_predict(
                 "val_tox_loss": result.val_task_losses["tox"],
             }
         ).to_csv(history_dir / f"seed_{seed}_loss.csv", index=False)
+        empirical_coverage(
+            predict_with_intervals(
+                model, datasets["test"], conformal, batch_size=cfg.batch_size
+            ),
+            datasets["test"],
+            conformal.coverages,
+        ).to_csv(history_dir / f"seed_{seed}_mc_dropout_coverage.csv", index=False)
 
         return {
             split: predict(

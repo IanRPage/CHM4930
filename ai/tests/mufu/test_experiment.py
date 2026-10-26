@@ -7,7 +7,8 @@ from conftest import SmallSmilesEncoder
 
 from baseline import results
 from mufu import experiment
-from mufu.contract import D_MODEL, MODALITY_DROPOUT_P
+from mufu.contract import D_MODEL, MODALITY_DROPOUT_P, N_BIO
+from mufu.mc_dropout import load_conformal
 from mufu.train import TrainConfig
 
 
@@ -63,6 +64,16 @@ def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
     assert 1 <= saved["epoch"] <= 2
     assert all(t.device.type == "cpu" for t in saved["model"].values())
     assert not any(k.startswith("smiles_encoder.") for k in saved["model"])
+    conformal = load_conformal(tmp_path / "checkpoints" / "mufu_test_seed_3.pt")
+    assert conformal.q.shape == (N_BIO, len(conformal.coverages))
+    coverage = pd.read_csv(tmp_path / "outputs" / "seed_3_mc_dropout_coverage.csv")
+    assert list(coverage.columns) == [
+        "target",
+        "nominal",
+        "empirical",
+        "n",
+        "mean_width",
+    ]
     history = pd.read_csv(tmp_path / "outputs" / "seed_3_loss.csv")
     assert list(history.columns) == [
         "epoch",
