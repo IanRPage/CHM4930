@@ -1,0 +1,38 @@
+name: pr-scope
+
+on:
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scope:
+    name: PR scope
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the PR touches at most one of ai/, backend/, frontend/
+        run: |
+          changed=$(git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD")
+          areas=$(grep -oE '^(ai|backend|frontend)/' <<< "$changed" | sort -u | tr -d /)
+          if [ "$(grep -c . <<< "$areas")" -gt 1 ]; then
+            echo "::error::PR touches multiple areas: $(paste -sd " " <<< "$areas")"
+            for area in $areas; do
+              echo "--- $area/"
+              grep "^$area/" <<< "$changed"
+            done
+            exit 1
+          fi
+          echo "Areas touched: ${areas:-none}"
