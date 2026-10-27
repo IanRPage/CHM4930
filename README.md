@@ -15,7 +15,7 @@ properties of existing chemicals, and hopefully novel ones too. Members:
 CHM4930
 ├── ai/          # model training code, datasets, checkpoints
 ├── backend/     # Express + TypeScript API
-├── frontend/    # UI (TODO)
+├── frontend/    # React + TypeScript web UI
 ⋮
 └── README.md
 ```
