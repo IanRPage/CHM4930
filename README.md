@@ -13,19 +13,20 @@ properties of existing chemicals, and hopefully novel ones too. Members:
 
 ```text
 CHM4930
-├── ai/          # model training code, datasets, checkpoints (see ai/README.md)
-├── backend/     # API / server (TODO)
-├── frontend/    # UI           (TODO)
+├── ai/          # model training code, datasets, checkpoints
+├── backend/     # Express + TypeScript API
+├── frontend/    # UI (TODO)
 ⋮
 └── README.md
 ```
 
-Right now, work is focused in `ai/`, training a model to predict molecular
-properties. See [`ai/README.md`](ai/README.md) for environment setup and the
-directory layout there. `backend/` and `frontend/` are placeholders for once
-we're ready to build something around the trained model.
+Setup for each lives in its own README. Node version is pinned in
+[`.nvmrc`](.nvmrc).
 
 ## Dev Setup
+
+PRs to `main` may touch only one of `ai/`, `backend/`, `frontend/` (enforced by
+`PR scope`). Root files are exempt.
 
 Every PR to `main` runs through
 [super-linter](https://github.com/super-linter/super-linter), which checks
