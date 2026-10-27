@@ -106,7 +106,12 @@ def print_sweep_summary(results_path: Path = SWEEP_RESULTS_PATH) -> pd.DataFrame
     df = pd.read_csv(results_path)
     if RESULTS_PATH.exists():
         rf_df = pd.read_csv(RESULTS_PATH)
+        snapshots = df["data_sha256"].dropna().unique()
+        if len(snapshots) != 1:
+            raise ValueError("sampler results must contain exactly one data_sha256")
+        snapshot = snapshots[0]
         rf_df = rf_df[rf_df["model"].isin(["rf_bioactivity", "rf_toxicity"])]
+        rf_df = rf_df[rf_df["data_sha256"] == snapshot]
         df = pd.concat([df, rf_df], ignore_index=True)
 
     summary = summarize_seeds(df)
