@@ -2,8 +2,8 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
-import { createApp } from "../../src/app.js";
-import { errorHandler } from "../../src/middleware/errorHandler.js";
+import { createApp } from "../../src/app.ts";
+import { errorHandler } from "../../src/middleware/errorHandler.ts";
 
 describe("errorHandler", () => {
   it("hides internal error details behind a 500", async () => {

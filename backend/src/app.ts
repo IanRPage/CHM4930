@@ -1,8 +1,8 @@
 import express from "express";
 
-import { errorHandler } from "./middleware/errorHandler.js";
-import { notFound } from "./middleware/notFound.js";
-import { apiRouter } from "./routes/index.js";
+import { errorHandler } from "./middleware/errorHandler.ts";
+import { notFound } from "./middleware/notFound.ts";
+import { apiRouter } from "./routes/index.ts";
 
 export function createApp() {
   const app = express();

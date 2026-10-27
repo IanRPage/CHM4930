@@ -21,7 +21,8 @@ backend/
 
 ## Conventions
 
-- ESM with `NodeNext` resolution: relative imports use `.js` extensions.
+- ESM with `NodeNext` resolution. Relative imports use `.ts` extensions;
+  `rewriteRelativeImportExtensions` rewrites them to `.js` in `dist/`.
 - Test against `createApp()` with supertest; don't bind ports in tests.
 - Don't try/catch just to forward errors: Express 5 propagates async rejections
   to `errorHandler`. Unknown errors become a generic 500 (logged server-side).
