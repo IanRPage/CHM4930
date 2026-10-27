@@ -190,6 +190,21 @@ Outputs (a rerun replaces that seed's files):
 - `outputs/mufu/seed_<seed>_loss.csv`: train and validation loss per epoch
 - `data/baseline/results.csv`: validation and test metrics per seed
 
+### Sampler A/B test
+
+From `ai/`, run MuFu with mixed and alternating batching on the same five seeds
+and scaffold split used by RF:
+
+```sh
+python scripts/sweep_sampler.py all
+python scripts/sweep_sampler.py summary
+```
+
+Both variants use `DEFAULT_CONFIG`, changing only `sampler`; `bio_fraction` only
+affects mixed batching. Completed seeds are skipped; use `all --force` to rerun.
+Metrics go to `outputs/sampler/`, with separate
+histories per variant and checkpoints in `checkpoints/sampler/`.
+
 ### Encoder sweeps
 
 `scripts/ECFP4_encoder_sweep.py`, `gnn_encoder_sweep.py`, and
