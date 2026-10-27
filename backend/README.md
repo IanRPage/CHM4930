@@ -40,7 +40,7 @@ Older lines are affected by
 
 ```bash
 npm ci
-cp .env.example .env   # optional, PORT defaults to 3000
+cp .env.example .env   # optional, loaded by dev and start
 npm run dev            # tsx watch, GET /api/health -> {"status":"ok"}
 ```
 

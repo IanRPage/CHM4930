@@ -25,8 +25,8 @@ jobs:
 
       - name: Check the PR touches at most one of ai/, backend/, frontend/
         run: |
-          changed=$(git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD")
-          areas=$(grep -oE '^(ai|backend|frontend)/' <<< "$changed" | sort -u | tr -d /)
+          changed=$(git diff --name-only --no-renames "origin/${GITHUB_BASE_REF}...HEAD")
+          areas=$({ grep -oE '^(ai|backend|frontend)/' <<< "$changed" || true; } | sort -u | tr -d /)
           if [ "$(grep -c . <<< "$areas")" -gt 1 ]; then
             echo "::error::PR touches multiple areas: $(paste -sd " " <<< "$areas")"
             for area in $areas; do
