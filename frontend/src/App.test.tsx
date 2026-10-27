@@ -26,6 +26,17 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders a not-found page with a link home for unknown paths", async () => {
+    renderAt("/does-not-exist");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Page not found" }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("link", { name: "Back to home" }));
+    expect(
+      screen.getByRole("heading", { level: 1, name: "MuFu" }),
+    ).toBeInTheDocument();
+  });
+
   it("navigates with the sidebar", async () => {
     renderAt("/");
     await userEvent.click(screen.getByRole("link", { name: "About" }));

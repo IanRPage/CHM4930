@@ -4,6 +4,7 @@ import AboutPage from "./pages/AboutPage.tsx";
 import BatchPredictionPage from "./pages/BatchPredictionPage.tsx";
 import DatasetExplorerPage from "./pages/DatasetExplorerPage.tsx";
 import HomePage from "./pages/HomePage.tsx";
+import NotFoundPage from "./pages/NotFoundPage.tsx";
 import SinglePredictionPage from "./pages/SinglePredictionPage.tsx";
 
 export default function App() {
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="batch" element={<BatchPredictionPage />} />
         <Route path="explorer" element={<DatasetExplorerPage />} />
         <Route path="about" element={<AboutPage />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
   );
