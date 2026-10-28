@@ -2,7 +2,10 @@
 Train MuFu on the shared benchmark seeds.
 
 From ai/: python drivers/train_mufu.py
-Settings are below. Commit changes before a final run so results.csv gets a clean commit.
+After the seeds finish, fits the seed ensemble (see fit_ensemble.py), skipping it if
+any seed checkpoint is missing.
+
+Settings below. Commit changes before a final run so results.csv gets a clean commit.
 """
 
 import sys
@@ -15,6 +18,7 @@ import torch
 
 from baseline.benchmark import SEEDS, load_benchmark_split, run_benchmark
 from encoders.smiles_encoder import SmilesEncoder
+from fit_ensemble import fit_and_report
 from mufu.data.dataset import split_datasets
 from mufu.experiment import (
     DEFAULT_CONFIG,
@@ -28,6 +32,7 @@ AI_DIR = Path(__file__).resolve().parents[1]
 # training settings
 model_name = "mufu"
 seeds = SEEDS  # 0, 1, 2, 3, 4
+ensemble_after_training = True
 # override fields here
 config = replace(DEFAULT_CONFIG, device="cuda" if torch.cuda.is_available() else "cpu")
 
@@ -66,3 +71,6 @@ if __name__ == "__main__":
     )
     columns = ["dataset", "endpoint", "split", "metric", "value", "std", "n_seeds"]
     print(summary[columns].round(4).to_string(index=False))
+
+    if ensemble_after_training:
+        fit_and_report(df, datasets, smiles_encoder, model_name=model_name, seeds=SEEDS)
