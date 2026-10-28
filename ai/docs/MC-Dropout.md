@@ -36,5 +36,17 @@ $\sigma_{\text{floor}}$ is the 5th percentile of the target's calibration $\sigm
 - Coverage may be more optimistic in our case because val split is used for early stopping _and_ classification calibration.
 - $\sigma$ only means something on trained weights.
 
+## Ensemble intervals
+
+The 5-seed ensemble (`mufu/ensemble.py`) predicts $\bar y = \frac1S\sum_s \hat y_s$ and combines each seed's MC-Dropout $\sigma_s$ with the spread between seeds:
+
+$$
+\sigma_{\text{comb}}^2 = \frac1S\sum_s \sigma_s^2 + \frac{1}{S-1}\sum_s (\hat y_s - \bar y)^2
+$$
+
+$q$ and $\sigma_{\text{floor}}$ are fitted on val exactly as above, using $\bar y$ and $\sigma_{\text{comb}}$. They are saved to `checkpoints/<model_name>_ensemble.json` with each member's sha256, and loading fails if a member was added, removed or retrained. $q$ is also only valid for the same $T$ and dropout rates.
+
+Test-split coverage and widths from the SCRUM-90 seeds are in EXP-009 (H6).
+
 [^16]: Gal, Y., & Ghahramani, Z. (2016, October 4). _Dropout as a bayesian approximation: Representing model uncertainty in Deep learning_. arXiv.org. https://doi.org/10.48550/arXiv.1506.02142
 [^19]: Angelopoulos, A. N., & Bates, S. (2021). _A gentle introduction to conformal prediction and distribution-free uncertainty quantification_. arXiv.org. https://doi.org/10.48550/arXiv.2107.07511
