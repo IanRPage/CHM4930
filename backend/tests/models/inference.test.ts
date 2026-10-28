@@ -82,6 +82,11 @@ describe("parseInferenceResponse", () => {
       "bioactivity.BACE1 must be ordered as pic50_lo <= pic50 <= pic50_hi",
     ],
     [
+      "a pIC50 bound that overflows IC50",
+      (raw) => (raw.bioactivity.BACE1!.pic50_lo = -1000),
+      "bioactivity.BACE1.pic50_lo must be high enough for a finite IC50",
+    ],
+    [
       "an interval without pIC50",
       (raw) => (raw.bioactivity.BACE1!.pic50 = null),
       "bioactivity.BACE1.pic50_lo/pic50_hi must be null when pic50 is null",

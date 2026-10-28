@@ -103,7 +103,8 @@ The mapping from inference server errors to these statuses is in SCRUM-82.
 
 - Every key above is required. Extra keys are ignored.
 - Any output can be `null`. `pic50_lo` and `pic50_hi` are `null` exactly when
-  `pic50` is, and otherwise `pic50_lo <= pic50 <= pic50_hi`.
+  `pic50` is, and otherwise `pic50_lo <= pic50 <= pic50_hi`, with
+  `pic50_lo` high enough that $10^{9 - \text{pic50\_lo}}$ is finite.
 - Probabilities are in [0, 1], `n_samples` is an integer ≥ 2, and `coverage`
   is in (0, 1).
 - An invalid SMILES gets a 422 with `{ "error": string }`.

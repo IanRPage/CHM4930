@@ -80,6 +80,9 @@ function parseBioactivity(value: unknown, path: string): InferenceBioactivity {
   if (lo === null || hi === null || lo > pic50 || pic50 > hi) {
     fail(path, "ordered as pic50_lo <= pic50 <= pic50_hi");
   }
+  if (!Number.isFinite(ic50Nm(lo))) {
+    fail(`${path}.pic50_lo`, "high enough for a finite IC50");
+  }
   return { pic50, pic50_lo: lo, pic50_hi: hi, p_active };
 }
 
