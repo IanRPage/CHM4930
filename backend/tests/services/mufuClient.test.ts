@@ -83,6 +83,7 @@ describe("MuFuClient.predict", () => {
     expect(url).toBe(`${BASE_URL}/predict`);
     expect(init).toMatchObject({
       method: "POST",
+      redirect: "error",
       headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
       body: JSON.stringify({ smiles: "CCO" }),
     });
@@ -146,16 +147,15 @@ describe("MuFuClient.predict", () => {
     expectSafeMessage(err);
   });
 
-  it("maps a timeout while reading the body to 504", async () => {
+  it.each([
+    ["a timeout", new DOMException("", "TimeoutError"), 504],
+    ["a dropped connection", new TypeError("terminated"), 503],
+  ])("maps %s while reading the body", async (_name, failure, status) => {
     const res = jsonResponse(rawResponse());
-    vi.spyOn(res, "json").mockRejectedValue(
-      new DOMException("", "TimeoutError"),
-    );
+    vi.spyOn(res, "json").mockRejectedValue(failure);
     mockFetch().mockResolvedValue(res);
 
-    await expect(client().predict("CCO")).rejects.toMatchObject({
-      status: 504,
-    });
+    await expect(client().predict("CCO")).rejects.toMatchObject({ status });
   });
 
   it("maps a malformed response to 502 and logs only the validator message", async () => {

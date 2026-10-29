@@ -66,6 +66,7 @@ export class MuFuClient {
     try {
       res = await fetch(`${this.url}/predict`, {
         method: "POST",
+        redirect: "error",
         headers: {
           "Content-Type": "application/json",
           "X-API-Key": this.apiKey,
@@ -88,9 +89,15 @@ export class MuFuClient {
     try {
       body = await res.json();
     } catch (err) {
-      throw isTimeout(err)
-        ? timedOut()
-        : upstreamError(502, BAD_RESPONSE, "response body is not JSON");
+      if (isTimeout(err)) throw timedOut();
+      if (err instanceof SyntaxError) {
+        throw upstreamError(502, BAD_RESPONSE, "response body is not JSON");
+      }
+      throw upstreamError(
+        503,
+        UNAVAILABLE,
+        `response body failed (${errorName(err)})`,
+      );
     }
 
     try {
