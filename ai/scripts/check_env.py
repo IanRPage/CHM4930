@@ -9,8 +9,6 @@ import shutil
 import subprocess
 import sys
 
-import fastapi
-import httpx
 import matplotlib
 import numpy as np
 import pandas as pd
@@ -20,7 +18,6 @@ import sklearn
 import torch
 import torch_geometric
 import transformers
-import uvicorn
 
 print(f"numpy           {np.__version__}")
 print(f"pandas          {pd.__version__}")
@@ -31,9 +28,6 @@ print(f"rdkit           {rdkit.__version__}")
 print(f"torch           {torch.__version__}")
 print(f"torch_geometric {torch_geometric.__version__}")
 print(f"transformers    {transformers.__version__}")
-print(f"fastapi         {fastapi.__version__}")
-print(f"uvicorn         {uvicorn.__version__}")
-print(f"httpx           {httpx.__version__}")
 print(f"jupyter         {'found' if shutil.which('jupyter') else 'NOT FOUND'}")
 
 nbstripout_installed = shutil.which("nbstripout") is not None
