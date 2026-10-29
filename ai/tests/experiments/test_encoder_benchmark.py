@@ -20,7 +20,7 @@ SCRIPTS = ["ECFP4_encoder_sweep", "gnn_encoder_sweep", "SMILES_encoder_sweep"]
 
 def import_script(name: str):
     spec = importlib.util.spec_from_file_location(
-        name, AI_DIR / "scripts" / f"{name}.py"
+        name, AI_DIR / "experiments" / f"{name}.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

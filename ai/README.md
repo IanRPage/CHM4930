@@ -11,7 +11,9 @@ ai/
 │   └── baseline/       # frozen combined.csv baselines train on, and their results.csv (tracked)
 ├── docs/               # design docs (MuFu-v1.md)
 ├── notebooks/          # exploration / scratchpads
-├── scripts/            # helpful utility scripts
+├── drivers/            # training, MC-Dropout fitting, etc.
+├── experiments/        # sweeps and benchmarks
+├── scripts/            # utilities (check_env.py)
 ├── src/                # main code
 │   ├── baseline/       # random forest baselines, shared benchmark, and results recorder
 │   ├── featurize/      # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
@@ -20,7 +22,7 @@ ai/
 │   ├── pipeline/       # dataset loaders and structure to model input preprocessing
 │   ├── encoders/       # where each of MuFu's encoders are implemented
 │   └── evaluation.py   # regression, classification, and multi-task evaluation metrics
-├── tests/              # pytest suite (mirrors src/ and scripts/)
+├── tests/              # pytest suite (mirrors src/ and experiments/)
 ├── checkpoints/        # saved model weights
 ├── outputs/            # generated artifacts (figures, logs, metrics, etc.)
 ├── environment.yml     # conda environment config
@@ -128,10 +130,11 @@ together with the new results.
 
 Each run replaces its own `(model, encoder, seed)` rows in
 `data/baseline/results.csv`, one row per model × endpoint × split × seed × metric
-across `SEEDS = (0, 1, 2, 3, 4)` (aggregate across seeds with
-`baseline.results.summarize_seeds()`). Each row is tagged with the snapshot's
-SHA-256 (taken with LF line endings, so Windows checkouts match)
-and the git commit it ran on. Current test set performance (mean over 5 seeds):
+across `SEEDS = (0, 1, 2, 3, 4)`. What is constant per run (params, the snapshot's
+SHA-256 taken with LF line endings so Windows checkouts match, the git commit and the
+date) is stored once per `(model, encoder, seed)` in `data/baseline/results_runs.csv`.
+Read both with `baseline.results.load_results()` and aggregate across seeds with
+`baseline.results.summarize_seeds()`. Current test set performance (mean over 5 seeds):
 
 | Model            | Task                  | Test result                                  |
 | ---------------- | --------------------- | -------------------------------------------- |
@@ -170,8 +173,17 @@ baselines through `src/baseline/benchmark.py`:
 From `ai/`, train MuFu on all five shared seeds:
 
 ```sh
-python scripts/train_mufu.py
+python drivers/train_mufu.py
 ```
+
+`drivers/fit_mc_dropout.py` refits the MC-Dropout `q` for the saved checkpoints.
+
+Once seeds finish, `train_mufu.py` fits the seed ensemble
+(`ensemble_after_training`) and skips it if any seed checkpoint is missing.
+`drivers/fit_ensemble.py` refits it from saved checkpoints without retraining.
+Members are averaged after each seed's own Platt calibration, and pIC50
+intervals combine MC-Dropout with the spread between seeds (see
+`docs/MC-Dropout.md`).
 
 `notebooks/MuFu_Training.ipynb` shows loss plots and a MuFu vs RF comparison from saved
 results, and can run the same training with `RUN_TRAINING = True`. Both use
@@ -190,18 +202,21 @@ Outputs (a rerun replaces that seed's files):
   data hash
 - `outputs/mufu/seed_<seed>_loss.csv`: train and validation loss per epoch
 - `data/baseline/results.csv`: validation and test metrics per seed
+- `checkpoints/mufu_ensemble.json`: ensemble `q`, with each member's sha256
+- `outputs/mufu/ensemble_metrics.csv`, `ensemble_coverage.csv`: ensemble val/test
+  metrics and test interval coverage. Ensemble metrics are not written to `results.csv`.
 
 ### Encoder sweeps
 
-`scripts/ECFP4_encoder_sweep.py`, `gnn_encoder_sweep.py`, and
+`experiments/ECFP4_encoder_sweep.py`, `gnn_encoder_sweep.py`, and
 `SMILES_encoder_sweep.py` run exploratory hyperparameter stages on the BACE-1
 rows of the shared split (6,469 / 808 / 810), the same molecules as
 `rf_bioactivity`:
 
 ```sh
-python scripts/ECFP4_encoder_sweep.py 1 2
-python scripts/gnn_encoder_sweep.py 1
-python scripts/SMILES_encoder_sweep.py 1
+python experiments/ECFP4_encoder_sweep.py 1 2
+python experiments/gnn_encoder_sweep.py 1
+python experiments/SMILES_encoder_sweep.py 1
 ```
 
 Stage CSVs and logs go to `--output-dir` (default
@@ -321,7 +336,7 @@ directory, run:
 pytest
 ```
 
-`pytest.ini` points pytest at `tests/` and adds `src/` and `scripts/` to the
+`pytest.ini` points pytest at `tests/` and adds `src/` and `experiments/` to the
 import path, so tests can `import` modules from either directly.
 
 Tests marked `network` call external services (ChEMBL and MoleculeNet), so
