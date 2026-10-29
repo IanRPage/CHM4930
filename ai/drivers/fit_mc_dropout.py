@@ -1,7 +1,7 @@
 """
 Fit MC-Dropout conformal intervals for saved MuFu checkpoints.
 
-From ai/: python scripts/fit_mc_dropout.py
+From ai/: python drivers/fit_mc_dropout.py
 
 Fits q on val, saves it next to each seed's checkpoint, and reports empirical coverage
 on test.

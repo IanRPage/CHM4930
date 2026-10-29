@@ -1,7 +1,7 @@
 """
 Staged GNNEncoder experiments on the shared frozen BACE-1 cohort.
 
-    python scripts/gnn_encoder_sweep.py 1
+    python experiments/gnn_encoder_sweep.py 1
 """
 
 import copy

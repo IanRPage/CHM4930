@@ -1,7 +1,7 @@
 """
 Train MuFu on the shared benchmark seeds.
 
-From ai/: python scripts/train_mufu.py
+From ai/: python drivers/train_mufu.py
 Settings are below. Commit changes before a final run so results.csv gets a clean commit.
 """
 
