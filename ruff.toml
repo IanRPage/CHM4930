@@ -1,1 +1,1 @@
-src = ["ai/src", "ai/experiments"]
+src = ["ai/src", "ai/experiments", "ai/drivers"]

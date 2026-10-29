@@ -176,6 +176,13 @@ python drivers/train_mufu.py
 
 `drivers/fit_mc_dropout.py` refits the MC-Dropout `q` for the saved checkpoints.
 
+Once seeds finish, `train_mufu.py` fits the seed ensemble
+(`ensemble_after_training`) and skips it if any seed checkpoint is missing.
+`drivers/fit_ensemble.py` refits it from saved checkpoints without retraining.
+Members are averaged after each seed's own Platt calibration, and pIC50
+intervals combine MC-Dropout with the spread between seeds (see
+`docs/MC-Dropout.md`).
+
 `notebooks/MuFu_Training.ipynb` shows loss plots and a MuFu vs RF comparison from saved
 results, and can run the same training with `RUN_TRAINING = True`. Both use
 `src/mufu/experiment.py`.
@@ -193,6 +200,9 @@ Outputs (a rerun replaces that seed's files):
   data hash
 - `outputs/mufu/seed_<seed>_loss.csv`: train and validation loss per epoch
 - `data/baseline/results.csv`: validation and test metrics per seed
+- `checkpoints/mufu_ensemble.json`: ensemble `q`, with each member's sha256
+- `outputs/mufu/ensemble_metrics.csv`, `ensemble_coverage.csv`: ensemble val/test
+  metrics and test interval coverage. Ensemble metrics are not written to `results.csv`.
 
 ### Encoder sweeps
 
