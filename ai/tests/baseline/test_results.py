@@ -49,20 +49,28 @@ def test_run_info_is_stored_once_per_run_and_joined_on_load(paths):
     assert written.loc[0, "git_commit"] == "abc1234"
 
 
-def test_failed_write_leaves_no_partial_files(paths, monkeypatch):
+@pytest.mark.parametrize("existing", [False, True])
+def test_failed_replace_restores_both_files(paths, monkeypatch, existing):
     path, data = paths
+    runs = results.runs_path(path)
+    if existing:
+        results.record_results([row("T1")], model="a", path=path, data_path=data)
+    before = {p: p.read_bytes() for p in (path, runs) if p.exists()}
     original = type(path).replace
+    failed = []
 
-    def fail_on_runs(self, target):
-        if target.name == results.runs_path(path).name:
+    def fail_once_on_runs(self, target):
+        if target.name == runs.name and not failed:
+            failed.append(target)
             raise OSError("disk full")
         return original(self, target)
 
-    monkeypatch.setattr(type(path), "replace", fail_on_runs)
+    monkeypatch.setattr(type(path), "replace", fail_once_on_runs)
 
     with pytest.raises(OSError, match="disk full"):
-        results.record_results([row("T1")], model="m", path=path, data_path=data)
-    assert not list(path.parent.glob("*.tmp"))
+        results.record_results([row("T1")], model="b", path=path, data_path=data)
+    assert {p: p.read_bytes() for p in (path, runs) if p.exists()} == before
+    assert not list(path.parent.glob("*.tmp")) + list(path.parent.glob("*.bak"))
 
 
 def test_load_results_on_missing_file_is_empty(tmp_path):

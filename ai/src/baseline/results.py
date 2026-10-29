@@ -13,6 +13,7 @@ import datetime
 import hashlib
 import json
 import logging
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -83,8 +84,9 @@ def load_results(path: Path = RESULTS_PATH) -> pd.DataFrame:
 
 def write_results(out: pd.DataFrame, path: Path) -> None:
     """
-    Split joined rows into the metric and run files. Both are written to temp files
-    before either is moved into place.
+    Split joined rows into the metric and run files. Both are written to temp files and
+    the old files backed up before either is replaced. If a replace fails, the old pair
+    is restored, so the two files never disagree.
     """
     runs = out[RUN_COLUMNS].drop_duplicates()
     if runs.duplicated(RUN_KEYS).any():
@@ -93,17 +95,29 @@ def write_results(out: pd.DataFrame, path: Path) -> None:
         (out[METRIC_COLUMNS], path),
         (runs.sort_values(RUN_KEYS, ignore_index=True), runs_path(path)),
     ]
-    tmps = [target.with_name(target.name + ".tmp") for _, target in pairs]
+    targets = [target for _, target in pairs]
+    tmps = [t.with_name(t.name + ".tmp") for t in targets]
+    baks = [t.with_name(t.name + ".bak") for t in targets]
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         for (df, _), tmp in zip(pairs, tmps):
             df.to_csv(tmp, index=False)
-        for (_, target), tmp in zip(pairs, tmps):
-            tmp.replace(target)
-    except BaseException:
-        for tmp in tmps:
-            tmp.unlink(missing_ok=True)
-        raise
+        for target, bak in zip(targets, baks):
+            if target.exists():
+                shutil.copy2(target, bak)
+        try:
+            for target, tmp in zip(targets, tmps):
+                tmp.replace(target)
+        except BaseException:
+            for target, bak in zip(targets, baks):
+                if bak.exists():
+                    bak.replace(target)
+                else:
+                    target.unlink(missing_ok=True)
+            raise
+    finally:
+        for leftover in (*tmps, *baks):
+            leftover.unlink(missing_ok=True)
     log.info("wrote %d rows to %s", len(out), path)
 
 
