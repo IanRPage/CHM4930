@@ -276,7 +276,6 @@ For a local run of the whole app, give the backend the same key and
 | `MUFU_HOST` / `MUFU_PORT`    | `127.0.0.1` / 8000                                           |
 | `MUFU_DEVICE`                | `cpu`                                                        |
 | `MUFU_RATE_LIMIT_PER_MINUTE` | 30                                                           |
-| `MUFU_MAX_CONCURRENCY`       | 1                                                            |
 | `MUFU_REQUEST_TIMEOUT_S`     | 30                                                           |
 
 The first start downloads MolFormer; after that, `HF_HUB_OFFLINE=1` lets it

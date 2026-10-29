@@ -21,7 +21,6 @@ class Settings:
     port: int = 8000
     device: str = "cpu"
     rate_limit_per_minute: int = 30
-    max_concurrency: int = 1
     max_smiles_length: int = 1000
     max_body_bytes: int = 4096
     request_timeout_s: float = 30.0
@@ -47,7 +46,6 @@ class Settings:
             "port": ("MUFU_PORT", int),
             "device": ("MUFU_DEVICE", str),
             "rate_limit_per_minute": ("MUFU_RATE_LIMIT_PER_MINUTE", int),
-            "max_concurrency": ("MUFU_MAX_CONCURRENCY", int),
             "request_timeout_s": ("MUFU_REQUEST_TIMEOUT_S", float),
         }
         return cls(

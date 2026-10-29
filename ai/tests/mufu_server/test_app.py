@@ -35,7 +35,7 @@ def serve(predictor=None, *, load=None, wait=True, on_load_error=None, **setting
     app = create_app(
         Settings(checkpoint_dir=Path("unused"), api_key=KEY, **settings),
         load=load or (lambda _: predictor or StubPredictor()),
-        on_load_error=on_load_error or (lambda exc: None),
+        on_load_error=on_load_error,
     )
     with TestClient(app) as client:
         if wait:

@@ -21,7 +21,7 @@ from starlette.exceptions import HTTPException
 
 from mufu_server.config import Settings
 from mufu_server.infer import InvalidSmiles, load_predictor
-from mufu_server.limits import BodyLimit, SlidingWindowLimiter, Slots, retry_after
+from mufu_server.limits import BodyLimit, SlidingWindowLimiter, retry_after
 
 log = logging.getLogger(__name__)
 
@@ -38,7 +38,8 @@ def error(status: int, message: str, **headers: str) -> JSONResponse:
 
 def create_app(settings: Settings, load=load_predictor, on_load_error=None):
     limiter = SlidingWindowLimiter(settings.rate_limit_per_minute)
-    slots = Slots(settings.max_concurrency)
+    # one inference at a time; Predictor serializes them anyway
+    busy = threading.Lock()
 
     def load_in_background(app: FastAPI) -> None:
         try:
@@ -76,10 +77,6 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
             return error(401, "unauthorized")
         if wait := limiter.acquire():
             return error(429, "rate_limited", **{"Retry-After": retry_after(wait)})
-        # bodies without Content-Length (chunked) capped by BodyLimit instead
-        length = request.headers.get("content-length", "")
-        if length.isdigit() and int(length) > settings.max_body_bytes:
-            return error(413, "body_too_large")
         return await call_next(request)
 
     @app.exception_handler(HTTPException)
@@ -115,15 +112,15 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
             or any(c.isspace() for c in smiles)
         ):
             return error(422, "invalid_smiles")
-        if not slots.try_acquire():
+        if not busy.acquire(blocking=False):
             return error(503, "busy")
 
-        # slot released when inference finishes, even after timeout
+        # released when inference finishes, even after a timeout
         def run():
             try:
                 return predictor.infer(smiles)
             finally:
-                slots.release()
+                busy.release()
 
         start = time.perf_counter()
         job = asyncio.get_running_loop().run_in_executor(None, run)

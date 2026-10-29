@@ -6,27 +6,21 @@ import math
 import threading
 import time
 from collections import deque
-from collections.abc import Callable
 
 from starlette.exceptions import HTTPException
+
+WINDOW_S = 60.0
 
 
 class SlidingWindowLimiter:
     """
-    At most `limit` requests in any `window_s` seconds, across all callers.
+    At most `limit` requests in any `WINDOW_S` seconds, across all callers.
     """
 
-    def __init__(
-        self,
-        limit: int,
-        window_s: float = 60.0,
-        clock: Callable[[], float] = time.monotonic,
-    ) -> None:
+    def __init__(self, limit: int) -> None:
         if limit < 1:
             raise ValueError("limit must be at least 1")
         self.limit = limit
-        self.window_s = window_s
-        self._clock = clock
         self._hits: deque[float] = deque()
         self._lock = threading.Lock()
 
@@ -36,11 +30,11 @@ class SlidingWindowLimiter:
         would be.
         """
         with self._lock:
-            now = self._clock()
-            while self._hits and now - self._hits[0] >= self.window_s:
+            now = time.monotonic()
+            while self._hits and now - self._hits[0] >= WINDOW_S:
                 self._hits.popleft()
             if len(self._hits) >= self.limit:
-                return self._hits[0] + self.window_s - now
+                return self._hits[0] + WINDOW_S - now
             self._hits.append(now)
             return 0.0
 
@@ -74,20 +68,3 @@ class BodyLimit:
             return message
 
         await self.app(scope, limited_receive, send)
-
-
-class Slots:
-    """
-    Non-blocking cap on concurrent inferences.
-    """
-
-    def __init__(self, n: int) -> None:
-        if n < 1:
-            raise ValueError("n must be at least 1")
-        self._sem = threading.BoundedSemaphore(n)
-
-    def try_acquire(self) -> bool:
-        return self._sem.acquire(blocking=False)
-
-    def release(self) -> None:
-        self._sem.release()

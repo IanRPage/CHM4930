@@ -142,9 +142,6 @@ def load_predictor(
     directory, name = settings.checkpoint_dir, settings.model_name
     # file checks first, before the slow MolFormer load
     paths = member_paths(directory, name, seeds)
-    ensemble_file = sidecar_path(directory, name)
-    if not ensemble_file.is_file():
-        raise FileNotFoundError(f"ensemble file not found: {ensemble_file}")
     params = load_ensemble_params(paths, directory, name)
     members = load_members(
         paths, smiles_encoder or SmilesEncoder(freeze=True), device=settings.device
@@ -155,5 +152,5 @@ def load_predictor(
         members=members,
         params=params,
         model_version=settings.model_version
-        or f"{name}_ensemble@{file_sha256(ensemble_file)[:8]}",
+        or f"{name}_ensemble@{file_sha256(sidecar_path(directory, name))[:8]}",
     )
