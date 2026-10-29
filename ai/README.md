@@ -18,6 +18,7 @@ ai/
 │   ├── baseline/       # random forest baselines, shared benchmark, and results recorder
 │   ├── featurize/      # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
 │   ├── mufu/           # MuFu multimodal dataset, model, loss, and training components
+│   ├── mufu_server/    # HTTP inference server for the web backend
 │   ├── pipeline/       # dataset loaders and structure to model input preprocessing
 │   ├── encoders/       # where each of MuFu's encoders are implemented
 │   └── evaluation.py   # regression, classification, and multi-task evaluation metrics
@@ -222,6 +223,117 @@ Stage CSVs and logs go to `--output-dir` (default
 `outputs/encoders/<encoder>/sweep/`), tagged with `data_sha256` and
 `split_sha256` so interrupted stages verify the snapshot and split before
 resuming.
+
+## Inference server
+
+`src/mufu_server/` serves the 5-seed MuFu ensemble over HTTP. The response format is
+in [`backend/docs/predict-api.md`](../backend/docs/predict-api.md) ("Inference
+server contract").
+
+- `POST /predict` with `{"smiles": "..."}`: the ensemble mean pIC50 with its
+  95% combined interval and `p_active` per target, plus all 14 toxicity
+  probabilities (each seed's calibrated probabilities, averaged). The same
+  SMILES always gets the same response.
+- `GET /health`: `{"status": "loading" | "ready", "model_version": ...}`. No key
+  needed.
+
+Other requests need the `X-API-Key` header. Errors are `{"error": string}`:
+
+| Status | When                                                         |
+| ------ | ------------------------------------------------------------ |
+| 401    | missing or wrong key                                         |
+| 413    | body over 4 KiB                                              |
+| 422    | invalid SMILES or malformed body                             |
+| 429    | over the rate limit; see `Retry-After`                       |
+| 503    | model still loading, another inference running, or timed out |
+| 500    | anything else (details in the server log)                    |
+
+### Running it
+
+From `ai/`, with the five `mufu_seed_<seed>.pt` checkpoints and the
+`mufu_ensemble.json` that `drivers/fit_ensemble.py` writes in `checkpoints/`:
+
+```sh
+export MUFU_CHECKPOINT_DIR=checkpoints
+export MUFU_API_KEY="$(openssl rand -hex 32)"
+PYTHONPATH=src python -m mufu_server
+```
+
+```sh
+curl -s localhost:8000/predict -H "X-API-Key: $MUFU_API_KEY" \
+  -H 'Content-Type: application/json' -d '{"smiles": "CCOc1ccc(N)cc1"}'
+```
+
+For a local run of the whole app, give the backend the same key and
+`MUFU_API_URL=http://localhost:8000`.
+
+| Variable                     | Default                                                      |
+| ---------------------------- | ------------------------------------------------------------ |
+| `MUFU_CHECKPOINT_DIR`        | required                                                     |
+| `MUFU_API_KEY`               | required                                                     |
+| `MUFU_MODEL_NAME`            | `mufu`                                                       |
+| `MUFU_MODEL_VERSION`         | `<model_name>_ensemble@<sha256 prefix of the ensemble file>` |
+| `MUFU_HOST` / `MUFU_PORT`    | `127.0.0.1` / 8000                                           |
+| `MUFU_DEVICE`                | `cpu`                                                        |
+| `MUFU_RATE_LIMIT_PER_MINUTE` | 30                                                           |
+| `MUFU_REQUEST_TIMEOUT_S`     | 30                                                           |
+
+The first start downloads MolFormer; after that, `HF_HUB_OFFLINE=1` lets it
+start without the network. If any of the five checkpoints or the ensemble file
+is missing, or the ensemble was fitted on different checkpoints, the process
+exits with status 1 instead of serving fewer seeds.
+
+### Hosting on personal compute
+
+The deployed backend reaches the server through a named Cloudflare Tunnel
+(quick tunnels change URL on every restart).
+
+1. Copy the five `mufu_seed_<seed>.pt` files and `mufu_ensemble.json` into a
+   folder only the server uses, e.g. `~/.local/share/mufu/<version>/`. Don't
+   serve `checkpoints/` directly: training overwrites it, so a restart
+   mid-training would fail to load, and one after training would switch models
+   unannounced. To ship a new model, copy it to a new folder, update
+   `MUFU_CHECKPOINT_DIR` and restart the server.
+2. Put the env vars in `~/.config/mufu/server.env` (`chmod 600`), with
+   `MUFU_CHECKPOINT_DIR` set to that folder's absolute path, and
+   `HF_HUB_OFFLINE=1`.
+3. Create the tunnel: `cloudflared tunnel login`,
+   `cloudflared tunnel create mufu`, `cloudflared tunnel route dns mufu <hostname>`.
+4. `~/.cloudflared/config.yml`:
+
+   ```yaml
+   tunnel: mufu
+   credentials-file: /home/<user>/.cloudflared/<tunnel-id>.json
+   ingress:
+     - hostname: <hostname>
+       service: http://127.0.0.1:8000
+     - service: http_status:404
+   ```
+
+5. `~/.config/systemd/user/mufu-server.service`:
+
+   ```ini
+   [Service]
+   WorkingDirectory=%h/<path to repo>/ai
+   EnvironmentFile=%h/.config/mufu/server.env
+   Environment=PYTHONPATH=src
+   ExecStart=<conda env prefix>/bin/python -m mufu_server
+   Restart=on-failure
+   RestartSec=10
+
+   [Install]
+   WantedBy=default.target
+   ```
+
+   `mufu-tunnel.service` is the same, with
+   `ExecStart=/usr/bin/cloudflared tunnel run mufu` and `Restart=always`.
+
+6. `systemctl --user enable --now mufu-server mufu-tunnel`, and
+   `loginctl enable-linger $USER` so they start at boot.
+7. Disable suspend on AC power and add an uptime check on
+   `https://<hostname>/health`.
+
+Keep the key and `~/.cloudflared/*.json` out of the repo.
 
 ## Testing
 
