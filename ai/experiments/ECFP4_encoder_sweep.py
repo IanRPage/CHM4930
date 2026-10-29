@@ -1,7 +1,7 @@
 """
 Staged FingerprintEncoder experiments on the shared frozen BACE-1 cohort.
 
-    python scripts/ECFP4_encoder_sweep.py 3 4
+    python experiments/ECFP4_encoder_sweep.py 3 4
 """
 
 import copy

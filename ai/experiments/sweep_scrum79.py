@@ -5,11 +5,11 @@ Writes only to `ai/outputs/scrum79/` and `ai/checkpoints/scrum79/`, never to
 `results.csv` or the main checkpoints.
 
 Usage (from `ai/`):
-    python scripts/sweep_scrum79.py all
-    python scripts/sweep_scrum79.py sweep 0 1 2 3 4 5 6
-    python scripts/sweep_scrum79.py egfr
-    python scripts/sweep_scrum79.py calibrate
-    python scripts/sweep_scrum79.py summary
+    python experiments/sweep_scrum79.py all
+    python experiments/sweep_scrum79.py sweep 0 1 2 3 4 5 6
+    python experiments/sweep_scrum79.py egfr
+    python experiments/sweep_scrum79.py calibrate
+    python experiments/sweep_scrum79.py summary
 """
 
 import argparse

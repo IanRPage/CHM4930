@@ -11,7 +11,9 @@ ai/
 │   └── baseline/       # frozen combined.csv baselines train on, and their results.csv (tracked)
 ├── docs/               # design docs (MuFu-v1.md)
 ├── notebooks/          # exploration / scratchpads
-├── scripts/            # helpful utility scripts
+├── drivers/            # training, MC-Dropout fitting, etc.
+├── experiments/        # sweeps and benchmarks
+├── scripts/            # utilities (check_env.py)
 ├── src/                # main code
 │   ├── baseline/       # random forest baselines, shared benchmark, and results recorder
 │   ├── featurize/      # RDKit to SMILES, ECFP4 fingerprint, and PyG graph
@@ -19,7 +21,7 @@ ai/
 │   ├── pipeline/       # dataset loaders and structure to model input preprocessing
 │   ├── encoders/       # where each of MuFu's encoders are implemented
 │   └── evaluation.py   # regression, classification, and multi-task evaluation metrics
-├── tests/              # pytest suite (mirrors src/ and scripts/)
+├── tests/              # pytest suite (mirrors src/ and experiments/)
 ├── checkpoints/        # saved model weights
 ├── outputs/            # generated artifacts (figures, logs, metrics, etc.)
 ├── environment.yml     # conda environment config
@@ -169,8 +171,10 @@ baselines through `src/baseline/benchmark.py`:
 From `ai/`, train MuFu on all five shared seeds:
 
 ```sh
-python scripts/train_mufu.py
+python drivers/train_mufu.py
 ```
+
+`drivers/fit_mc_dropout.py` refits the MC-Dropout `q` for the saved checkpoints.
 
 `notebooks/MuFu_Training.ipynb` shows loss plots and a MuFu vs RF comparison from saved
 results, and can run the same training with `RUN_TRAINING = True`. Both use
@@ -192,15 +196,15 @@ Outputs (a rerun replaces that seed's files):
 
 ### Encoder sweeps
 
-`scripts/ECFP4_encoder_sweep.py`, `gnn_encoder_sweep.py`, and
+`experiments/ECFP4_encoder_sweep.py`, `gnn_encoder_sweep.py`, and
 `SMILES_encoder_sweep.py` run exploratory hyperparameter stages on the BACE-1
 rows of the shared split (6,469 / 808 / 810), the same molecules as
 `rf_bioactivity`:
 
 ```sh
-python scripts/ECFP4_encoder_sweep.py 1 2
-python scripts/gnn_encoder_sweep.py 1
-python scripts/SMILES_encoder_sweep.py 1
+python experiments/ECFP4_encoder_sweep.py 1 2
+python experiments/gnn_encoder_sweep.py 1
+python experiments/SMILES_encoder_sweep.py 1
 ```
 
 Stage CSVs and logs go to `--output-dir` (default
@@ -217,7 +221,7 @@ directory, run:
 pytest
 ```
 
-`pytest.ini` points pytest at `tests/` and adds `src/` and `scripts/` to the
+`pytest.ini` points pytest at `tests/` and adds `src/` and `experiments/` to the
 import path, so tests can `import` modules from either directly.
 
 Tests marked `network` call external services (ChEMBL and MoleculeNet), so
