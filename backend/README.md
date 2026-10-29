@@ -47,6 +47,8 @@ cp .env.example .env   # optional, loaded by dev and start
 npm run dev            # tsx watch, GET /api/health -> {"status":"ok"}
 ```
 
+Env vars (`MUFU_API_URL`, `MUFU_API_KEY`, `PORT`): see `.env.example`.
+
 | Script                   |                                        |
 | ------------------------ | -------------------------------------- |
 | `dev`                    | `tsx watch src/server.ts`              |
