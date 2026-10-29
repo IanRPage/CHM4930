@@ -8,9 +8,7 @@ it's ready.
 
 import asyncio
 import logging
-import os
 import secrets
-import signal
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -38,11 +36,7 @@ def error(status: int, message: str, **headers: str) -> JSONResponse:
     return JSONResponse({"error": message}, status_code=status, headers=headers)
 
 
-def _shutdown(exc: BaseException) -> None:
-    os.kill(os.getpid(), signal.SIGTERM)
-
-
-def create_app(settings: Settings, load=load_predictor, on_load_error=_shutdown):
+def create_app(settings: Settings, load=load_predictor, on_load_error=None):
     limiter = SlidingWindowLimiter(settings.rate_limit_per_minute)
     slots = Slots(settings.max_concurrency)
 
@@ -52,7 +46,8 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=_shutdown)
         except Exception as exc:
             log.exception("failed to load the model")
             app.state.load_error = exc
-            on_load_error(exc)
+            if on_load_error:
+                on_load_error(exc)
         else:
             log.info("model %s ready", app.state.predictor.model_version)
         finally:

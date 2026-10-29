@@ -138,6 +138,8 @@ def check_response(response: dict) -> None:
 
 def load_predictor(settings: Settings) -> Predictor:
     path = Path(settings.checkpoint)
+    if not path.is_file():
+        raise FileNotFoundError(f"checkpoint not found: {path}")
     model, meta = load_mufu_checkpoint(
         path, SmilesEncoder(freeze=True), device=settings.device
     )

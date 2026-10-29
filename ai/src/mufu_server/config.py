@@ -2,6 +2,7 @@
 Server settings, read from `MUFU_*` environment variables.
 """
 
+import math
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -23,6 +24,12 @@ class Settings:
     max_smiles_length: int = 1000
     max_body_bytes: int = 4096
     request_timeout_s: float = 30.0
+
+    def __post_init__(self) -> None:
+        if not 0 < self.port < 65536:
+            raise ValueError("MUFU_PORT must be between 1 and 65535")
+        if not (math.isfinite(self.request_timeout_s) and self.request_timeout_s > 0):
+            raise ValueError("MUFU_REQUEST_TIMEOUT_S must be a positive number")
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> "Settings":

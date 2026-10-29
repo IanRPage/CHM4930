@@ -1,4 +1,8 @@
 import logging
+import os
+import socket
+import subprocess
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -12,6 +16,7 @@ from mufu_server.config import Settings
 from mufu_server.infer import InvalidSmiles
 
 KEY = "test-key"
+SRC = Path(__file__).resolve().parents[2] / "src"
 AUTH = {"X-API-Key": KEY}
 
 
@@ -166,6 +171,27 @@ def test_predictor_failure_is_500_and_key_is_never_logged(caplog):
     assert response.json() == {"error": "internal_error"}
     assert missing.status_code == 404 and missing.json() == {"error": "not_found"}
     assert KEY not in caplog.text
+
+
+def test_main_exits_1_when_the_model_fails_to_load(tmp_path):
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    env = {
+        **os.environ,
+        "PYTHONPATH": str(SRC),
+        "MUFU_CHECKPOINT": str(tmp_path / "missing.pt"),
+        "MUFU_API_KEY": KEY,
+        "MUFU_PORT": str(port),
+    }
+    result = subprocess.run(
+        [sys.executable, "-m", "mufu_server"],
+        env=env,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 1
 
 
 def test_load_failure_is_reported():
