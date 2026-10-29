@@ -13,8 +13,9 @@ COVERAGE = 0.95
 
 @dataclass(frozen=True)
 class Settings:
-    checkpoint: Path
+    checkpoint_dir: Path
     api_key: str = field(repr=False)
+    model_name: str = "mufu"
     model_version: str | None = None
     host: str = "127.0.0.1"
     port: int = 8000
@@ -33,13 +34,14 @@ class Settings:
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> "Settings":
-        checkpoint = env.get("MUFU_CHECKPOINT", "").strip()
+        checkpoint_dir = env.get("MUFU_CHECKPOINT_DIR", "").strip()
         api_key = env.get("MUFU_API_KEY", "").strip()
-        if not checkpoint:
-            raise ValueError("MUFU_CHECKPOINT must be set")
+        if not checkpoint_dir:
+            raise ValueError("MUFU_CHECKPOINT_DIR must be set")
         if not api_key:
             raise ValueError("MUFU_API_KEY must be set")
         optional = {
+            "model_name": ("MUFU_MODEL_NAME", str),
             "model_version": ("MUFU_MODEL_VERSION", str),
             "host": ("MUFU_HOST", str),
             "port": ("MUFU_PORT", int),
@@ -49,7 +51,7 @@ class Settings:
             "request_timeout_s": ("MUFU_REQUEST_TIMEOUT_S", float),
         }
         return cls(
-            checkpoint=Path(checkpoint),
+            checkpoint_dir=Path(checkpoint_dir),
             api_key=api_key,
             **{
                 key: cast(env[name])

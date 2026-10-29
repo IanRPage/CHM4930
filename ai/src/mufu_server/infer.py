@@ -1,28 +1,34 @@
 """
-Single-molecule MuFu inference, in the response format of `backend/docs/predict-api.md`.
+MuFu 5-seed ensemble inference for one molecule, in the response format of
+`backend/docs/predict-api.md`.
 
-pIC50 comes with its conformal MC-Dropout interval at `COVERAGE`; `p_active` and
-toxicity are calibrated probabilities. MC passes are seeded, so the same SMILES always
-gets the same response.
+pIC50 is the ensemble mean with its combined MC-Dropout interval at `COVERAGE`;
+`p_active` and toxicity average each seed's calibrated probabilities. MC passes are
+seeded, so the same SMILES always gets the same response.
 """
 
 import math
 import threading
-from collections.abc import Mapping
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import pandas as pd
 import torch
 
+from baseline.benchmark import SEEDS
+from baseline.results import file_sha256
 from encoders.smiles_encoder import SmilesEncoder
-from mufu.calibration import CalibrationParams
 from mufu.contract import ACTIVE_COLUMNS, BIO_TARGETS, PIC50_COLUMNS, TOX_COLUMNS
 from mufu.data.dataset import MuFuDataset
-from mufu.experiment import load_mufu_checkpoint
-from mufu.mc_dropout import ConformalParams, load_conformal, predict_with_intervals
-from mufu.model import MuFu
-from mufu.train import predict
+from mufu.ensemble import (
+    EnsembleParams,
+    Member,
+    load_ensemble_params,
+    load_members,
+    member_paths,
+    predict_with_ensemble_intervals,
+    sidecar_path,
+)
 from mufu_server.config import COVERAGE, Settings
 
 MC_SEED = 0
@@ -34,18 +40,18 @@ class InvalidSmiles(ValueError):
 
 @dataclass
 class Predictor:
-    model: MuFu
-    family_states: Mapping[str, Mapping[str, torch.Tensor]] | None
-    calibration: CalibrationParams | None
-    conformal: ConformalParams
+    members: Sequence[Member]
+    params: EnsembleParams
     model_version: str
     _lock: threading.Lock = field(
         default_factory=threading.Lock, init=False, repr=False, compare=False
     )
 
     def __post_init__(self) -> None:
-        if COVERAGE not in self.conformal.coverages:
-            raise ValueError(f"conformal params have no {COVERAGE} coverage")
+        if len(self.members) < 2:
+            raise ValueError("an ensemble needs at least 2 members")
+        if COVERAGE not in self.params.conformal.coverages:
+            raise ValueError(f"ensemble params have no {COVERAGE} coverage")
 
     def infer(self, smiles: str) -> dict:
         frame = pd.DataFrame({"smiles": [smiles]})
@@ -58,13 +64,7 @@ class Predictor:
         # RNG and encoder's embedding cache shared across threads
         with self._lock, torch.random.fork_rng(devices=[]):
             torch.manual_seed(MC_SEED)
-            probs = predict(
-                self.model,
-                dataset,
-                family_states=self.family_states,
-                calibration=self.calibration,
-            )
-            pic50 = predict_with_intervals(self.model, dataset, self.conformal)
+            preds = predict_with_ensemble_intervals(self.members, dataset, self.params)
 
         pct = round(COVERAGE * 100)
         bioactivity = {}
@@ -72,7 +72,7 @@ class Predictor:
             BIO_TARGETS, PIC50_COLUMNS, ACTIVE_COLUMNS
         ):
             value, lo, hi = (
-                _finite(pic50[col][0])
+                _finite(preds[col][0])
                 for col in (pic50_col, f"{pic50_col}_lo{pct}", f"{pic50_col}_hi{pct}")
             )
             if None in (value, lo, hi):
@@ -81,16 +81,16 @@ class Predictor:
                 "pic50": value,
                 "pic50_lo": lo,
                 "pic50_hi": hi,
-                "p_active": _finite(probs[active_col][0]),
+                "p_active": _finite(preds[active_col][0]),
             }
 
         response = {
             "smiles": dataset.smiles[0],
             "model_version": self.model_version,
-            "n_samples": self.conformal.n_samples,
+            "n_samples": self.params.conformal.n_samples,
             "coverage": COVERAGE,
             "bioactivity": bioactivity,
-            "toxicity": {col: _finite(probs[col][0]) for col in TOX_COLUMNS},
+            "toxicity": {col: _finite(preds[col][0]) for col in TOX_COLUMNS},
         }
         check_response(response)
         return response
@@ -136,21 +136,24 @@ def check_response(response: dict) -> None:
         _check(_probability(p), f"toxicity {task}")
 
 
-def load_predictor(settings: Settings) -> Predictor:
-    path = Path(settings.checkpoint)
-    if not path.is_file():
-        raise FileNotFoundError(f"checkpoint not found: {path}")
-    model, meta = load_mufu_checkpoint(
-        path, SmilesEncoder(freeze=True), device=settings.device
+def load_predictor(
+    settings: Settings, smiles_encoder=None, seeds: Sequence[int] = SEEDS
+) -> Predictor:
+    directory, name = settings.checkpoint_dir, settings.model_name
+    # file checks first, before the slow MolFormer load
+    paths = member_paths(directory, name, seeds)
+    ensemble_file = sidecar_path(directory, name)
+    if not ensemble_file.is_file():
+        raise FileNotFoundError(f"ensemble file not found: {ensemble_file}")
+    params = load_ensemble_params(paths, directory, name)
+    members = load_members(
+        paths, smiles_encoder or SmilesEncoder(freeze=True), device=settings.device
     )
-    if meta["calibration"] is None:
-        raise ValueError(f"{path.name} has no saved calibration")
-    commit = meta["checkpoint"].get("git_commit")
+    if uncalibrated := [m.path.name for m in members if m.calibration is None]:
+        raise ValueError(f"no saved calibration: {', '.join(uncalibrated)}")
     return Predictor(
-        model=model,
-        family_states=meta["family_states"],
-        calibration=meta["calibration"],
-        conformal=load_conformal(path),
+        members=members,
+        params=params,
         model_version=settings.model_version
-        or (f"{path.stem}@{commit}" if commit else path.stem),
+        or f"{name}_ensemble@{file_sha256(ensemble_file)[:8]}",
     )

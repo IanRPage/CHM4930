@@ -226,13 +226,14 @@ resuming.
 
 ## Inference server
 
-`src/mufu_server/` serves one MuFu checkpoint over HTTP. The response format is
+`src/mufu_server/` serves the 5-seed MuFu ensemble over HTTP. The response format is
 in [`backend/docs/predict-api.md`](../backend/docs/predict-api.md) ("Inference
 server contract").
 
-- `POST /predict` with `{"smiles": "..."}`: pIC50 with its 95% interval and
-  `p_active` per target, plus all 14 toxicity probabilities. The same SMILES
-  always gets the same response.
+- `POST /predict` with `{"smiles": "..."}`: the ensemble mean pIC50 with its
+  95% combined interval and `p_active` per target, plus all 14 toxicity
+  probabilities (each seed's calibrated probabilities, averaged). The same
+  SMILES always gets the same response.
 - `GET /health`: `{"status": "loading" | "ready", "model_version": ...}`. No key
   needed.
 
@@ -249,12 +250,11 @@ Other requests need the `X-API-Key` header. Errors are `{"error": string}`:
 
 ### Running it
 
-From `ai/`, with the checkpoint and its `_mc_dropout.json` sidecar in
-`checkpoints/`. We serve seed 4, the one closest to the five-seed mean on the
-test split.
+From `ai/`, with the five `mufu_seed_<seed>.pt` checkpoints and the
+`mufu_ensemble.json` that `drivers/fit_ensemble.py` writes in `checkpoints/`:
 
 ```sh
-export MUFU_CHECKPOINT=checkpoints/mufu_seed_4.pt
+export MUFU_CHECKPOINT_DIR=checkpoints
 export MUFU_API_KEY="$(openssl rand -hex 32)"
 PYTHONPATH=src python -m mufu_server
 ```
@@ -267,31 +267,40 @@ curl -s localhost:8000/predict -H "X-API-Key: $MUFU_API_KEY" \
 For a local run of the whole app, give the backend the same key and
 `MUFU_API_URL=http://localhost:8000`.
 
-| Variable                     | Default               |
-| ---------------------------- | --------------------- |
-| `MUFU_CHECKPOINT`            | required              |
-| `MUFU_API_KEY`               | required              |
-| `MUFU_MODEL_VERSION`         | `<stem>@<git_commit>` |
-| `MUFU_HOST` / `MUFU_PORT`    | `127.0.0.1` / 8000    |
-| `MUFU_DEVICE`                | `cpu`                 |
-| `MUFU_RATE_LIMIT_PER_MINUTE` | 30                    |
-| `MUFU_MAX_CONCURRENCY`       | 1                     |
-| `MUFU_REQUEST_TIMEOUT_S`     | 30                    |
+| Variable                     | Default                                                      |
+| ---------------------------- | ------------------------------------------------------------ |
+| `MUFU_CHECKPOINT_DIR`        | required                                                     |
+| `MUFU_API_KEY`               | required                                                     |
+| `MUFU_MODEL_NAME`            | `mufu`                                                       |
+| `MUFU_MODEL_VERSION`         | `<model_name>_ensemble@<sha256 prefix of the ensemble file>` |
+| `MUFU_HOST` / `MUFU_PORT`    | `127.0.0.1` / 8000                                           |
+| `MUFU_DEVICE`                | `cpu`                                                        |
+| `MUFU_RATE_LIMIT_PER_MINUTE` | 30                                                           |
+| `MUFU_MAX_CONCURRENCY`       | 1                                                            |
+| `MUFU_REQUEST_TIMEOUT_S`     | 30                                                           |
 
 The first start downloads MolFormer; after that, `HF_HUB_OFFLINE=1` lets it
-start without the network. If the checkpoint fails to load, the process exits
-with status 1.
+start without the network. If any of the five checkpoints or the ensemble file
+is missing, or the ensemble was fitted on different checkpoints, the process
+exits with status 1 instead of serving fewer seeds.
 
 ### Hosting on personal compute
 
 The deployed backend reaches the server through a named Cloudflare Tunnel
 (quick tunnels change URL on every restart).
 
-1. Put the env vars in `~/.config/mufu/server.env` (`chmod 600`), with an
-   absolute `MUFU_CHECKPOINT` and `HF_HUB_OFFLINE=1`.
-2. Create the tunnel: `cloudflared tunnel login`,
+1. Copy the five `mufu_seed_<seed>.pt` files and `mufu_ensemble.json` into a
+   folder only the server uses, e.g. `~/.local/share/mufu/<version>/`. Don't
+   serve `checkpoints/` directly: training overwrites it, so a restart
+   mid-training would fail to load, and one after training would switch models
+   unannounced. To ship a new model, copy it to a new folder, update
+   `MUFU_CHECKPOINT_DIR` and restart the server.
+2. Put the env vars in `~/.config/mufu/server.env` (`chmod 600`), with
+   `MUFU_CHECKPOINT_DIR` set to that folder's absolute path, and
+   `HF_HUB_OFFLINE=1`.
+3. Create the tunnel: `cloudflared tunnel login`,
    `cloudflared tunnel create mufu`, `cloudflared tunnel route dns mufu <hostname>`.
-3. `~/.cloudflared/config.yml`:
+4. `~/.cloudflared/config.yml`:
 
    ```yaml
    tunnel: mufu
@@ -302,7 +311,7 @@ The deployed backend reaches the server through a named Cloudflare Tunnel
      - service: http_status:404
    ```
 
-4. `~/.config/systemd/user/mufu-server.service`:
+5. `~/.config/systemd/user/mufu-server.service`:
 
    ```ini
    [Service]
@@ -320,9 +329,9 @@ The deployed backend reaches the server through a named Cloudflare Tunnel
    `mufu-tunnel.service` is the same, with
    `ExecStart=/usr/bin/cloudflared tunnel run mufu` and `Restart=always`.
 
-5. `systemctl --user enable --now mufu-server mufu-tunnel`, and
+6. `systemctl --user enable --now mufu-server mufu-tunnel`, and
    `loginctl enable-linger $USER` so they start at boot.
-6. Disable suspend on AC power and add an uptime check on
+7. Disable suspend on AC power and add an uptime check on
    `https://<hostname>/health`.
 
 Keep the key and `~/.cloudflared/*.json` out of the repo.

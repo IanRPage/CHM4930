@@ -33,7 +33,7 @@ class StubPredictor:
 @contextmanager
 def serve(predictor=None, *, load=None, wait=True, on_load_error=None, **settings):
     app = create_app(
-        Settings(checkpoint=Path("unused.pt"), api_key=KEY, **settings),
+        Settings(checkpoint_dir=Path("unused"), api_key=KEY, **settings),
         load=load or (lambda _: predictor or StubPredictor()),
         on_load_error=on_load_error or (lambda exc: None),
     )
@@ -180,7 +180,7 @@ def test_main_exits_1_when_the_model_fails_to_load(tmp_path):
     env = {
         **os.environ,
         "PYTHONPATH": str(SRC),
-        "MUFU_CHECKPOINT": str(tmp_path / "missing.pt"),
+        "MUFU_CHECKPOINT_DIR": str(tmp_path),
         "MUFU_API_KEY": KEY,
         "MUFU_PORT": str(port),
     }
@@ -198,7 +198,7 @@ def test_load_failure_is_reported():
     errors = []
 
     def failing_load(_):
-        raise FileNotFoundError("unused.pt")
+        raise FileNotFoundError("missing checkpoints")
 
     with serve(load=failing_load, on_load_error=errors.append) as client:
         assert client.get("/health").json()["status"] == "loading"
