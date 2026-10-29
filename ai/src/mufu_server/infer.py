@@ -7,8 +7,9 @@ gets the same response.
 """
 
 import math
+import threading
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pandas as pd
@@ -38,6 +39,9 @@ class Predictor:
     calibration: CalibrationParams | None
     conformal: ConformalParams
     model_version: str
+    _lock: threading.Lock = field(
+        default_factory=threading.Lock, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         if COVERAGE not in self.conformal.coverages:
@@ -51,7 +55,8 @@ class Predictor:
         if len(dataset) == 0:
             raise InvalidSmiles(smiles)
 
-        with torch.random.fork_rng(devices=[]):
+        # RNG and encoder's embedding cache shared across threads
+        with self._lock, torch.random.fork_rng(devices=[]):
             torch.manual_seed(MC_SEED)
             probs = predict(
                 self.model,
