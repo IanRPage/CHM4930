@@ -65,12 +65,20 @@ Molecular descriptors aren't part of this response (SCRUM-98).
 
 The body is always `{ "error": string }`.
 
-| Status | When                                                                       |
-| ------ | -------------------------------------------------------------------------- |
-| 400    | Missing or malformed body, `smiles` fails the checks above, invalid SMILES |
-| 5xx    | Inference server unavailable, timed out, or returned an invalid response   |
+`MuFuClient` (`src/services/mufuClient.ts`) maps inference server failures to
+these statuses. The messages are fixed strings: they never include the server
+URL, API key, or upstream response body.
 
-The mapping from inference server errors to these statuses is in SCRUM-82.
+| Inference server                                                    | Client                                          |
+| ------------------------------------------------------------------- | ----------------------------------------------- |
+| 422                                                                 | 400 `Invalid SMILES`                            |
+| 429, 503 (rate limit, concurrency cap, model loading)               | 503 `Model server is busy, try again shortly`   |
+| 502, 504, 530 (Cloudflare: server or tunnel down), connection error | 503 `Model server is unavailable`               |
+| No answer within the client timeout (`MUFU_TIMEOUT_MS`)             | 504 `Model server timed out`                    |
+| Any other status (e.g. 401, 500), non-JSON, schema violation        | 502 `Model server returned an invalid response` |
+
+Requests that fail the checks above never reach the inference server and get a
+400 with the validation message.
 
 ## Inference server contract
 
@@ -108,6 +116,10 @@ The mapping from inference server errors to these statuses is in SCRUM-82.
 - Probabilities are in [0, 1], `n_samples` is an integer ≥ 2, and `coverage`
   is in (0, 1).
 - An invalid SMILES gets a 422 with `{ "error": string }`.
+- Requests carry the shared key in an `X-API-Key` header. A missing or wrong
+  key gets a 401.
+- A 429 or 503 means busy: over the rate limit, at the concurrency cap, or the
+  model is still loading.
 
 A response that breaks any of these rules is a server fault. The client gets a
 generic 5xx, and the details are only logged.
