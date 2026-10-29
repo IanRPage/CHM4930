@@ -33,7 +33,7 @@ from baseline.benchmark import (
     run_benchmark,
     seed_everything,
 )
-from baseline.results import RESULTS_PATH, summarize_seeds
+from baseline.results import load_results, summarize_seeds
 from encoders.fingerprint_encoder import FingerprintEncoder
 from encoders.smiles_encoder import SmilesEncoder
 from featurize.fingerprint import FINGERPRINT_BITS
@@ -136,7 +136,7 @@ def run_variant(
 
     if not remaining:
         print(f"[skip] {model_name}: seeds {seeds} already recorded", flush=True)
-        all_rows = pd.read_csv(results_path)
+        all_rows = load_results(results_path)
         return summarize_seeds(all_rows[all_rows["model"] == model_name])
 
     print(
@@ -170,7 +170,7 @@ def run_variant(
 def extract_metric_map(
     results_path: Path, model_name: str, split: str = "val"
 ) -> dict[tuple[str, str, str], tuple[float, float]]:
-    df = pd.read_csv(results_path)
+    df = load_results(results_path)
     sub = df[(df["model"] == model_name) & (df["split"] == split)]
     if sub.empty:
         raise ValueError(f"no {split} results found for {model_name} in {results_path}")
@@ -681,11 +681,10 @@ def print_sweep_summary(results_path: Path = SWEEP_RESULTS_PATH) -> pd.DataFrame
         print(f"No sweep results found at {results_path}")
         return pd.DataFrame()
 
-    df = pd.read_csv(results_path)
-    if RESULTS_PATH.exists():
-        rf_df = pd.read_csv(RESULTS_PATH)
-        rf_df = rf_df[rf_df["model"].isin(["rf_bioactivity", "rf_toxicity"])]
-        df = pd.concat([df, rf_df], ignore_index=True)
+    df = load_results(results_path)
+    rf_df = load_results()
+    rf_df = rf_df[rf_df["model"].isin(["rf_bioactivity", "rf_toxicity"])]
+    df = pd.concat([df, rf_df], ignore_index=True)
 
     summary = summarize_seeds(df)
     target_rows = [
