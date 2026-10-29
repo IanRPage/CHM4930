@@ -32,14 +32,54 @@ def row(endpoint, split="test", seed=0, value=0.5, **extra):
     }
 
 
-def test_rows_get_every_column_in_order(paths):
+def test_run_info_is_stored_once_per_run_and_joined_on_load(paths):
     path, data = paths
-    results.record_results([row("T1")], model="m", path=path, data_path=data)
-    written = pd.read_csv(path)
+    rows = [row("T1"), row("T2"), row("T1", seed=1)]
+    recorded = results.record_results(rows, model="m", path=path, data_path=data)
+
+    assert pd.read_csv(path).columns.tolist() == results.METRIC_COLUMNS
+    runs = pd.read_csv(results.runs_path(path))
+    assert runs.columns.tolist() == results.RUN_COLUMNS
+    assert runs["seed"].tolist() == [0, 1]
+    written = results.load_results(path)
     assert written.columns.tolist() == results.COLUMNS
+    pd.testing.assert_frame_equal(written, recorded)
     assert written.loc[0, "model"] == "m"
     assert written.loc[0, "seed"] == 0
     assert written.loc[0, "git_commit"] == "abc1234"
+
+
+def test_failed_write_leaves_no_partial_files(paths, monkeypatch):
+    path, data = paths
+    original = type(path).replace
+
+    def fail_on_runs(self, target):
+        if target.name == results.runs_path(path).name:
+            raise OSError("disk full")
+        return original(self, target)
+
+    monkeypatch.setattr(type(path), "replace", fail_on_runs)
+
+    with pytest.raises(OSError, match="disk full"):
+        results.record_results([row("T1")], model="m", path=path, data_path=data)
+    assert not list(path.parent.glob("*.tmp"))
+
+
+def test_load_results_on_missing_file_is_empty(tmp_path):
+    loaded = results.load_results(tmp_path / "missing.csv")
+
+    assert loaded.empty
+    assert loaded.columns.tolist() == results.COLUMNS
+
+
+def test_run_with_inconsistent_run_info_is_rejected(paths):
+    path, data = paths
+    rows = [row("T1"), row("T2", params='{"lr": 1}')]
+
+    with pytest.raises(ValueError, match="more than one"):
+        results.record_results(rows, model="m", path=path, data_path=data)
+    assert not path.exists()
+    assert not results.runs_path(path).exists()
 
 
 def test_params_json_is_key_order_independent():
@@ -57,7 +97,7 @@ def test_rerun_replaces_only_that_models_rows(paths):
     results.record_results([row("T1"), row("T2")], model="a", path=path, data_path=data)
     results.record_results([row("T1")], model="b", path=path, data_path=data)
     results.record_results([row("T1", value=0.9)], model="a", path=path, data_path=data)
-    written = pd.read_csv(path)
+    written = results.load_results(path)
     assert len(written) == 2
     assert written.set_index("model").loc["a", "value"] == 0.9
     assert written["model"].tolist() == ["a", "b"]
@@ -67,18 +107,19 @@ def test_other_models_stale_rows_are_dropped_only_with_opt_in(paths, caplog):
     path, data = paths
     results.record_results([row("T1")], model="a", path=path, data_path=data)
     results.record_results([row("T1")], model="b", path=path, data_path=data)
-    before = path.read_bytes()
+    before = path.read_bytes(), results.runs_path(path).read_bytes()
     data.write_text("smiles\nCCN\n")
 
     with pytest.raises(ValueError, match="different snapshot"):
         results.record_results([row("T1")], model="a", path=path, data_path=data)
-    assert path.read_bytes() == before
+    assert (path.read_bytes(), results.runs_path(path).read_bytes()) == before
 
     results.record_results(
         [row("T1")], model="a", path=path, data_path=data, allow_drop_stale=True
     )
-    written = pd.read_csv(path)
+    written = results.load_results(path)
     assert written["model"].tolist() == ["a"]
+    assert pd.read_csv(results.runs_path(path))["model"].tolist() == ["a"]
     assert written["data_sha256"].tolist() == [results.file_sha256(data)]
     assert "['b']" in caplog.text
 
@@ -94,7 +135,7 @@ def test_rerun_replaces_only_matching_encoder_and_seed_rows(paths):
         data_path=data,
     )
 
-    written = pd.read_csv(path).set_index(["encoder", "seed"])["value"]
+    written = results.load_results(path).set_index(["encoder", "seed"])["value"]
     assert written.to_dict() == {
         ("ecfp", 0): 0.9,
         ("ecfp", 1): 0.5,
@@ -112,7 +153,7 @@ def test_rows_are_sorted_by_seed_and_nan_values_kept(paths):
         row("T1", "test", seed=0),
     ]
     results.record_results(rows, model="m", path=path, data_path=data)
-    written = pd.read_csv(path)
+    written = results.load_results(path)
     assert written[["endpoint", "split", "seed"]].values.tolist() == [
         ["T1", "test", 0],
         ["T1", "test", 1],
@@ -177,7 +218,7 @@ def test_data_sha256_tracks_the_snapshot_bytes(paths):
     first = results.file_sha256(data)
     assert first == results.file_sha256(data)
     results.record_results([row("T1")], model="m", path=path, data_path=data)
-    assert pd.read_csv(path).loc[0, "data_sha256"] == first
+    assert results.load_results(path).loc[0, "data_sha256"] == first
     data.write_text("smiles\nCCN\n")
     assert results.file_sha256(data) != first
 
@@ -213,4 +254,5 @@ def test_git_commit_marks_a_dirty_tree_ignoring_results_csv(monkeypatch):
     assert results.git_commit() == "abc1234-dirty"
     outputs["status"] = ""
     assert results.git_commit() == "abc1234"
-    assert all(f":(exclude){results.RESULTS_PATH}" in a for a in status_args)
+    for excluded in (results.RESULTS_PATH, results.runs_path()):
+        assert all(f":(exclude){excluded}" in a for a in status_args)
