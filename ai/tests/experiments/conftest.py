@@ -8,7 +8,8 @@ from pipeline.combined_loader import COMBINED_CSV_PATH
 @pytest.fixture(scope="session")
 def frozen_bace1():
     before = {
-        path: path.read_bytes() for path in (COMBINED_CSV_PATH, results.RESULTS_PATH)
+        path: path.read_bytes()
+        for path in (COMBINED_CSV_PATH, results.RESULTS_PATH, results.runs_path())
     }
     loaded = eb.BACE1Benchmark.load()
     yield loaded

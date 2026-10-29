@@ -46,7 +46,8 @@ def isolate_benchmark_runtime(monkeypatch):
 @pytest.fixture(scope="session")
 def frozen_benchmark():
     before = {
-        path: path.read_bytes() for path in (COMBINED_CSV_PATH, results.RESULTS_PATH)
+        path: path.read_bytes()
+        for path in (COMBINED_CSV_PATH, results.RESULTS_PATH, results.runs_path())
     }
     loaded = bm.load_benchmark_split()
     yield loaded

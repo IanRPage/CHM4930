@@ -129,10 +129,11 @@ together with the new results.
 
 Each run replaces its own `(model, encoder, seed)` rows in
 `data/baseline/results.csv`, one row per model × endpoint × split × seed × metric
-across `SEEDS = (0, 1, 2, 3, 4)` (aggregate across seeds with
-`baseline.results.summarize_seeds()`). Each row is tagged with the snapshot's
-SHA-256 (taken with LF line endings, so Windows checkouts match)
-and the git commit it ran on. Current test set performance (mean over 5 seeds):
+across `SEEDS = (0, 1, 2, 3, 4)`. What is constant per run (params, the snapshot's
+SHA-256 taken with LF line endings so Windows checkouts match, the git commit and the
+date) is stored once per `(model, encoder, seed)` in `data/baseline/results_runs.csv`.
+Read both with `baseline.results.load_results()` and aggregate across seeds with
+`baseline.results.summarize_seeds()`. Current test set performance (mean over 5 seeds):
 
 | Model            | Task                  | Test result                                  |
 | ---------------- | --------------------- | -------------------------------------------- |
