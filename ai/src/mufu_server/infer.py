@@ -11,6 +11,7 @@ import math
 import threading
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pandas as pd
 import torch
@@ -29,6 +30,7 @@ from mufu.ensemble import (
     predict_with_ensemble_intervals,
     sidecar_path,
 )
+from mufu.hub import TAG_PATTERN, download_version, load_tagged_version
 from mufu_server.config import COVERAGE, Settings
 
 MC_SEED = 0
@@ -136,10 +138,28 @@ def check_response(response: dict) -> None:
         _check(_probability(p), f"toxicity {task}")
 
 
+def fetch_version(settings: Settings, seeds: Sequence[int] = SEEDS) -> Path:
+    """
+    Return `<checkpoint_dir>/<tag>`, downloading the tag into it the first time.
+    """
+    tag, name = settings.model_version, settings.model_name
+    if not TAG_PATTERN.fullmatch(tag):
+        raise ValueError(f"MUFU_MODEL_VERSION {tag!r} isn't a vMAJOR.MINOR.PATCH tag")
+    directory = settings.checkpoint_dir / tag
+    try:
+        load_tagged_version(directory, tag, name, seeds)
+    except FileNotFoundError:
+        download_version(settings.hf_repo, tag, directory, name, seeds)
+    return directory
+
+
 def load_predictor(
     settings: Settings, smiles_encoder=None, seeds: Sequence[int] = SEEDS
 ) -> Predictor:
-    directory, name = settings.checkpoint_dir, settings.model_name
+    name = settings.model_name
+    directory = (
+        fetch_version(settings, seeds) if settings.hf_repo else settings.checkpoint_dir
+    )
     # file checks first, before the slow MolFormer load
     paths = member_paths(directory, name, seeds)
     params = load_ensemble_params(paths, directory, name)

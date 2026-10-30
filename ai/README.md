@@ -273,6 +273,7 @@ For a local run of the whole app, give the backend the same key and
 | `MUFU_API_KEY`               | required                                                     |
 | `MUFU_MODEL_NAME`            | `mufu`                                                       |
 | `MUFU_MODEL_VERSION`         | `<model_name>_ensemble@<sha256 prefix of the ensemble file>` |
+| `MUFU_HF_REPO`               | unset                                                        |
 | `MUFU_HOST` / `MUFU_PORT`    | `127.0.0.1` / 8000                                           |
 | `MUFU_DEVICE`                | `cpu`                                                        |
 | `MUFU_RATE_LIMIT_PER_MINUTE` | 30                                                           |
@@ -283,17 +284,38 @@ start without the network. If any of the five checkpoints or the ensemble file
 is missing, or the ensemble was fitted on different checkpoints, the process
 exits with status 1 instead of serving fewer seeds.
 
+### Published weights
+
+Different versions are on [`CHM4930/mufu`](https://huggingface.co/CHM4930/mufu),
+tagged `vMAJOR.MINOR.PATCH`. Each tag's `version.json` records the commit the
+checkpoints were trained at.
+
+| Bump  | When                                                                     |
+| ----- | ------------------------------------------------------------------------ |
+| major | the server or backend must change to use it (outputs, files, model kind) |
+| minor | a retrained or improved model that's a drop-in replacement               |
+| patch | same weights, metadata only (e.g. a model card fix)                      |
+
+- To serve one, set `MUFU_HF_REPO=CHM4930/mufu` and `MUFU_MODEL_VERSION` to its
+  tag. The first start downloads it into `MUFU_CHECKPOINT_DIR/<tag>/`; later starts
+  load it from there offline.
+- To just download one, set `tag` in `drivers/download_mufu.py` and run it.
+- To publish, train with `drivers/train_mufu.py` on a clean commit and commit
+  the `results.csv` rows it writes. Then run `hf auth login` (write token), set
+  `tag` in `drivers/publish_mufu.py` and run it, first with `dry_run = True` to
+  review the model card.
+
 ### Hosting on personal compute
 
 The deployed backend reaches the server through a named Cloudflare Tunnel
 (quick tunnels change URL on every restart).
 
-1. Copy the five `mufu_seed_<seed>.pt` files and `mufu_ensemble.json` into a
-   folder only the server uses, e.g. `~/.local/share/mufu/<version>/`. Don't
-   serve `checkpoints/` directly: training overwrites it, so a restart
-   mid-training would fail to load, and one after training would switch models
-   unannounced. To ship a new model, copy it to a new folder, update
-   `MUFU_CHECKPOINT_DIR` and restart the server.
+1. Download a published version or copy the five `mufu_seed_<seed>.pt` files and
+   `mufu_ensemble.json` into a folder only the server uses, e.g.
+   `~/.local/share/mufu/<version>/`. Don't serve `checkpoints/` directly:
+   training overwrites it, so a restart mid-training would fail to load, and one
+   after training would switch models unannounced. To ship a new model, copy it
+   to a new folder, update `MUFU_CHECKPOINT_DIR` and restart the server.
 2. Put the env vars in `~/.config/mufu/server.env` (`chmod 600`), with
    `MUFU_CHECKPOINT_DIR` set to that folder's absolute path, and
    `HF_HUB_OFFLINE=1`.

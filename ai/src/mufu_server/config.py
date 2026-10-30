@@ -17,6 +17,7 @@ class Settings:
     api_key: str = field(repr=False)
     model_name: str = "mufu"
     model_version: str | None = None
+    hf_repo: str | None = None
     host: str = "127.0.0.1"
     port: int = 8000
     device: str = "cpu"
@@ -30,6 +31,8 @@ class Settings:
             raise ValueError("MUFU_PORT must be between 1 and 65535")
         if not (math.isfinite(self.request_timeout_s) and self.request_timeout_s > 0):
             raise ValueError("MUFU_REQUEST_TIMEOUT_S must be a positive number")
+        if self.hf_repo and not self.model_version:
+            raise ValueError("MUFU_HF_REPO needs MUFU_MODEL_VERSION set to a tag")
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> "Settings":
@@ -42,6 +45,7 @@ class Settings:
         optional = {
             "model_name": ("MUFU_MODEL_NAME", str),
             "model_version": ("MUFU_MODEL_VERSION", str),
+            "hf_repo": ("MUFU_HF_REPO", str),
             "host": ("MUFU_HOST", str),
             "port": ("MUFU_PORT", int),
             "device": ("MUFU_DEVICE", str),

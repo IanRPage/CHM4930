@@ -9,6 +9,7 @@ from baseline.results import file_sha256
 from mufu.contract import ACTIVE_COLUMNS, PIC50_COLUMNS, TOX_COLUMNS
 from mufu.data.dataset import MuFuDataset
 from mufu.ensemble import predict_with_ensemble_intervals
+from mufu_server import infer
 from mufu_server.config import COVERAGE
 from mufu_server.infer import MC_SEED, InvalidSmiles, check_response, load_predictor
 
@@ -61,6 +62,30 @@ def test_load_predictor_rejects_missing_or_stale_files(
     break_files(ensemble_copy)
     with pytest.raises(error, match=match):
         load_predictor(settings(ensemble_copy), smiles_encoder=encoder, seeds=SEEDS)
+
+
+def test_fetch_version_keeps_each_tag_in_its_own_folder(monkeypatch, tmp_path):
+    downloads = []
+
+    def load(directory, *_):
+        if directory not in [d[2] for d in downloads]:
+            raise FileNotFoundError
+
+    monkeypatch.setattr(infer, "load_tagged_version", load)
+    monkeypatch.setattr(infer, "download_version", lambda *a: downloads.append(a))
+
+    for tag in ("v1.0.0", "v1.0.0", "v1.1.0"):
+        pinned = settings(tmp_path, hf_repo="org/mufu", model_version=tag)
+        assert infer.fetch_version(pinned) == tmp_path / tag
+    assert [d[:3] for d in downloads] == [
+        ("org/mufu", "v1.0.0", tmp_path / "v1.0.0"),
+        ("org/mufu", "v1.1.0", tmp_path / "v1.1.0"),
+    ]
+
+    with pytest.raises(ValueError, match="vMAJOR"):
+        infer.fetch_version(
+            settings(tmp_path, hf_repo="org/mufu", model_version="../x")
+        )
 
 
 def test_infer_is_reproducible(predictor):

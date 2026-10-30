@@ -24,3 +24,4 @@ dependencies:
       - torch_geometric==2.8.0.post1
       - deepchem==2.8.0
       - transformers==5.17.0
+      - huggingface_hub==1.33.0
