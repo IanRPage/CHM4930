@@ -91,16 +91,19 @@ def test_key_is_checked_before_the_body(tmp_path, headers):
 
 
 @pytest.mark.parametrize(
-    ("text", "api_key", "match"),
+    ("text", "mode", "api_key", "match"),
     [
-        ("", "", "no keys"),
-        (f"default {hash_key('other')}\n", KEY, "'default'"),
-        (f"alex {hash_key(KEY)}\n", KEY, "also in"),
+        ("", 0o600, "", "no keys"),
+        ("", 0o600, KEY, "no keys"),
+        (f"alex {hash_key('other')}\n", 0o620, KEY, "writable"),
+        (f"default {hash_key('other')}\n", 0o600, KEY, "'default'"),
+        (f"alex {hash_key(KEY)}\n", 0o600, KEY, "also in"),
     ],
 )
-def test_bad_key_setup_fails_at_startup(tmp_path, text, api_key, match):
+def test_bad_key_setup_fails_at_startup(tmp_path, text, mode, api_key, match):
     keys_file = tmp_path / "api_keys"
     keys_file.write_text(text)
+    keys_file.chmod(mode)
     with pytest.raises(ValueError, match=match):
         create_app(Settings(Path("unused"), api_key=api_key, api_keys_file=keys_file))
 

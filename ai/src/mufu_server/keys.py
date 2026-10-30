@@ -9,14 +9,11 @@ apply when the server restarts.
 
 import argparse
 import hashlib
-import logging
 import os
 import re
 import secrets
 import sys
 from pathlib import Path
-
-log = logging.getLogger(__name__)
 
 DEFAULT_FILE = Path.home() / ".config" / "mufu" / "api_keys"
 NAME = re.compile(r"[A-Za-z0-9_.+@-]+")
@@ -29,10 +26,12 @@ def hash_key(key: str) -> str:
 
 def load_keys(path: Path) -> dict[str, str]:
     """
-    Name to key hash. Raises on malformed lines or repeated names or keys.
+    Name to key hash. Raises if others can write the file, on malformed lines, or on
+    repeated names or keys.
     """
-    if path.stat().st_mode & 0o077:
-        log.warning("%s is readable by other users; chmod 600 it", path)
+    # only hashes are stored, so being readable is fine, but a writer could add a key
+    if path.stat().st_mode & 0o022:
+        raise ValueError(f"{path} is writable by other users; chmod 600 it")
     keys = {}
     for n, line in enumerate(path.read_text().splitlines(), 1):
         if not line.strip():

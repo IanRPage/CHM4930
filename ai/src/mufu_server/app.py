@@ -38,7 +38,11 @@ def error(status: int, message: str, **headers: str) -> JSONResponse:
 
 
 def create_app(settings: Settings, load=load_predictor, on_load_error=None):
-    keys = load_keys(settings.api_keys_file) if settings.api_keys_file else {}
+    keys = {}
+    if settings.api_keys_file:
+        keys = load_keys(settings.api_keys_file)
+        if not keys:
+            raise ValueError(f"{settings.api_keys_file} has no keys")
     if settings.api_key:
         if "default" in keys:
             raise ValueError(
@@ -47,8 +51,6 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
         if hash_key(settings.api_key) in keys.values():
             raise ValueError("MUFU_API_KEY is also in MUFU_API_KEYS_FILE")
         keys["default"] = hash_key(settings.api_key)
-    if not keys:
-        raise ValueError(f"{settings.api_keys_file} has no keys")
     callers = {h: name for name, h in keys.items()}
     limiters = {
         name: SlidingWindowLimiter(settings.rate_limit_per_minute) for name in keys
@@ -87,8 +89,9 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
     async def gate(request: Request, call_next):
         if request.url.path in OPEN_PATHS:
             return await call_next(request)
+        key = request.headers.get("x-api-key", "")
         # keys are random, so a timing leak on their hashes reveals nothing usable
-        caller = callers.get(hash_key(request.headers.get("x-api-key", "")))
+        caller = callers.get(hash_key(key)) if key else None
         if caller is None:
             log.warning("unauthorized %s %s", request.method, request.url.path)
             return error(401, "unauthorized")
