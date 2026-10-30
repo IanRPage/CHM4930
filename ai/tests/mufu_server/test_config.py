@@ -14,12 +14,15 @@ def test_from_env_reads_overrides():
             "MUFU_MODEL_NAME": "mufu_test",
             "MUFU_PORT": "9000",
             "MUFU_REQUEST_TIMEOUT_S": "2.5",
+            "MUFU_HF_REPO": "org/mufu",
+            "MUFU_MODEL_VERSION": "v1.0.0",
         }
     )
     assert settings.checkpoint_dir == Path("checkpoints")
     assert settings.model_name == "mufu_test"
     assert settings.port == 9000
     assert settings.request_timeout_s == 2.5
+    assert settings.hf_repo == "org/mufu"
     assert "s3cr3t" not in repr(settings)
 
 
@@ -32,6 +35,7 @@ def test_from_env_reads_overrides():
         ({**REQUIRED, "MUFU_PORT": "70000"}, "MUFU_PORT"),
         ({**REQUIRED, "MUFU_REQUEST_TIMEOUT_S": "0"}, "MUFU_REQUEST_TIMEOUT_S"),
         ({**REQUIRED, "MUFU_REQUEST_TIMEOUT_S": "nan"}, "MUFU_REQUEST_TIMEOUT_S"),
+        ({**REQUIRED, "MUFU_HF_REPO": "org/mufu"}, "MUFU_MODEL_VERSION"),
     ],
 )
 def test_invalid_settings_fail_fast(env, match):

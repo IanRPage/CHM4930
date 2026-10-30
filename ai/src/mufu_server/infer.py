@@ -29,6 +29,7 @@ from mufu.ensemble import (
     predict_with_ensemble_intervals,
     sidecar_path,
 )
+from mufu.hub import download_version, load_tagged_version
 from mufu_server.config import COVERAGE, Settings
 
 MC_SEED = 0
@@ -136,9 +137,24 @@ def check_response(response: dict) -> None:
         _check(_probability(p), f"toxicity {task}")
 
 
+def fetch_version(settings: Settings, seeds: Sequence[int] = SEEDS) -> None:
+    # downloads only if the folder has no complete version, so restarts work offline
+    directory, name, tag = (
+        settings.checkpoint_dir,
+        settings.model_name,
+        settings.model_version,
+    )
+    try:
+        load_tagged_version(directory, tag, name, seeds)
+    except FileNotFoundError:
+        download_version(settings.hf_repo, tag, directory, name, seeds)
+
+
 def load_predictor(
     settings: Settings, smiles_encoder=None, seeds: Sequence[int] = SEEDS
 ) -> Predictor:
+    if settings.hf_repo:
+        fetch_version(settings, seeds)
     directory, name = settings.checkpoint_dir, settings.model_name
     # file checks first, before the slow MolFormer load
     paths = member_paths(directory, name, seeds)

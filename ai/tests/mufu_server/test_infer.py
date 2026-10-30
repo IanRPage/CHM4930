@@ -9,6 +9,7 @@ from baseline.results import file_sha256
 from mufu.contract import ACTIVE_COLUMNS, PIC50_COLUMNS, TOX_COLUMNS
 from mufu.data.dataset import MuFuDataset
 from mufu.ensemble import predict_with_ensemble_intervals
+from mufu_server import infer
 from mufu_server.config import COVERAGE
 from mufu_server.infer import MC_SEED, InvalidSmiles, check_response, load_predictor
 
@@ -61,6 +62,22 @@ def test_load_predictor_rejects_missing_or_stale_files(
     break_files(ensemble_copy)
     with pytest.raises(error, match=match):
         load_predictor(settings(ensemble_copy), smiles_encoder=encoder, seeds=SEEDS)
+
+
+def test_fetch_version_downloads_only_a_missing_version(monkeypatch, tmp_path):
+    downloads = []
+
+    def load(*_):
+        if not downloads:
+            raise FileNotFoundError
+
+    monkeypatch.setattr(infer, "load_tagged_version", load)
+    monkeypatch.setattr(infer, "download_version", lambda *a: downloads.append(a))
+    pinned = settings(tmp_path, hf_repo="org/mufu", model_version="v1.0.0")
+
+    infer.fetch_version(pinned)
+    infer.fetch_version(pinned)
+    assert [d[:3] for d in downloads] == [("org/mufu", "v1.0.0", tmp_path)]
 
 
 def test_infer_is_reproducible(predictor):
