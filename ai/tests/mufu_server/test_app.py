@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from mufu_server.app import create_app
 from mufu_server.config import Settings
 from mufu_server.infer import InvalidSmiles
+from mufu_server.keys import add_key, hash_key
 
 KEY = "test-key"
 SRC = Path(__file__).resolve().parents[2] / "src"
@@ -33,7 +34,7 @@ class StubPredictor:
 @contextmanager
 def serve(predictor=None, *, load=None, wait=True, on_load_error=None, **settings):
     app = create_app(
-        Settings(checkpoint_dir=Path("unused"), api_key=KEY, **settings),
+        Settings(checkpoint_dir=Path("unused"), **{"api_key": KEY, **settings}),
         load=load or (lambda _: predictor or StubPredictor()),
         on_load_error=on_load_error,
     )
@@ -75,12 +76,33 @@ def test_predict_returns_the_predictor_response():
     assert response.json() == {"smiles": "CCO"}
 
 
-@pytest.mark.parametrize("headers", [{}, {"X-API-Key": "wrong"}])
-def test_key_is_checked_before_the_body(headers):
-    with serve() as client:
+@pytest.mark.parametrize("headers", [{}, {"X-API-Key": "wrong"}, AUTH])
+def test_key_is_checked_before_the_body(tmp_path, headers):
+    keys_file = tmp_path / "api_keys"
+    alex = add_key(keys_file, "alex")
+    with serve(api_key="", api_keys_file=keys_file) as client:
         response = client.post("/predict", content=b"not json", headers=headers)
+        allowed = client.post(
+            "/predict", content=b"not json", headers={"X-API-Key": alex}
+        )
     assert response.status_code == 401
     assert response.json() == {"error": "unauthorized"}
+    assert allowed.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("text", "api_key", "match"),
+    [
+        ("", "", "no keys"),
+        (f"default {hash_key('other')}\n", KEY, "'default'"),
+        (f"alex {hash_key(KEY)}\n", KEY, "also in"),
+    ],
+)
+def test_bad_key_setup_fails_at_startup(tmp_path, text, api_key, match):
+    keys_file = tmp_path / "api_keys"
+    keys_file.write_text(text)
+    with pytest.raises(ValueError, match=match):
+        create_app(Settings(Path("unused"), api_key=api_key, api_keys_file=keys_file))
 
 
 @pytest.mark.parametrize(
@@ -125,16 +147,25 @@ def test_body_limit_with_and_without_content_length():
     assert small.status_code == 200 and small.json() == {"smiles": "CCO"}
 
 
-def test_rate_limit_is_429_with_retry_after():
-    with serve(rate_limit_per_minute=2) as client:
+def test_each_key_has_its_own_rate_limit(tmp_path, caplog):
+    keys_file = tmp_path / "api_keys"
+    alex = add_key(keys_file, "alex")
+    caplog.set_level(logging.INFO)
+    with serve(rate_limit_per_minute=2, api_keys_file=keys_file) as client:
         statuses = [
             client.post("/predict", json={"smiles": "CCO"}, headers=AUTH)
             for _ in range(3)
         ]
+        other = client.post(
+            "/predict", json={"smiles": "CCO"}, headers={"X-API-Key": alex}
+        )
         assert client.get("/health").status_code == 200
     assert [r.status_code for r in statuses] == [200, 200, 429]
     assert statuses[2].json() == {"error": "rate_limited"}
     assert 1 <= int(statuses[2].headers["Retry-After"]) <= 60
+    assert other.status_code == 200
+    assert "predict ok for alex" in caplog.text
+    assert "predict ok for default" in caplog.text
 
 
 def test_busy_and_timeout_are_503():
