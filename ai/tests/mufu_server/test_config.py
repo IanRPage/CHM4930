@@ -16,6 +16,7 @@ def test_from_env_reads_overrides():
             "MUFU_REQUEST_TIMEOUT_S": "2.5",
             "MUFU_HF_REPO": "org/mufu",
             "MUFU_MODEL_VERSION": "v1.0.0",
+            "MUFU_API_KEYS_FILE": "keys",
         }
     )
     assert settings.checkpoint_dir == Path("checkpoints")
@@ -23,6 +24,7 @@ def test_from_env_reads_overrides():
     assert settings.port == 9000
     assert settings.request_timeout_s == 2.5
     assert settings.hf_repo == "org/mufu"
+    assert settings.api_keys_file == Path("keys")
     assert "s3cr3t" not in repr(settings)
 
 
@@ -30,7 +32,7 @@ def test_from_env_reads_overrides():
     ("env", "match"),
     [
         ({"MUFU_API_KEY": "s3cr3t"}, "MUFU_CHECKPOINT_DIR"),
-        ({"MUFU_CHECKPOINT_DIR": "x", "MUFU_API_KEY": " "}, "MUFU_API_KEY"),
+        ({"MUFU_CHECKPOINT_DIR": "x", "MUFU_API_KEY": " "}, "MUFU_API_KEYS_FILE"),
         ({**REQUIRED, "MUFU_PORT": "0"}, "MUFU_PORT"),
         ({**REQUIRED, "MUFU_PORT": "70000"}, "MUFU_PORT"),
         ({**REQUIRED, "MUFU_REQUEST_TIMEOUT_S": "0"}, "MUFU_REQUEST_TIMEOUT_S"),

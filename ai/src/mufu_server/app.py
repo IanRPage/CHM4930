@@ -1,14 +1,14 @@
 """
 HTTP server around `Predictor.infer`.
 
-Every path except `/health` needs the `X-API-Key` header and counts toward the rate
-limit. The model loads in a background thread, so `/health` reports `"loading"` until
-it's ready.
+Every path except `/health` needs a key in the `X-API-Key` header: `MUFU_API_KEY`
+(named "default" in the log) or one from `MUFU_API_KEYS_FILE` (see `keys.py`). Each
+key has its own rate limit. The model loads in a background thread, so `/health`
+reports `"loading"` until it's ready.
 """
 
 import asyncio
 import logging
-import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -21,6 +21,7 @@ from starlette.exceptions import HTTPException
 
 from mufu_server.config import Settings
 from mufu_server.infer import InvalidSmiles, load_predictor
+from mufu_server.keys import hash_key, load_keys
 from mufu_server.limits import BodyLimit, SlidingWindowLimiter, retry_after
 
 log = logging.getLogger(__name__)
@@ -37,7 +38,23 @@ def error(status: int, message: str, **headers: str) -> JSONResponse:
 
 
 def create_app(settings: Settings, load=load_predictor, on_load_error=None):
-    limiter = SlidingWindowLimiter(settings.rate_limit_per_minute)
+    keys = {}
+    if settings.api_keys_file:
+        keys = load_keys(settings.api_keys_file)
+        if not keys:
+            raise ValueError(f"{settings.api_keys_file} has no keys")
+    if settings.api_key:
+        if "default" in keys:
+            raise ValueError(
+                "MUFU_API_KEYS_FILE can't name a key 'default' when MUFU_API_KEY is set"
+            )
+        if hash_key(settings.api_key) in keys.values():
+            raise ValueError("MUFU_API_KEY is also in MUFU_API_KEYS_FILE")
+        keys["default"] = hash_key(settings.api_key)
+    callers = {h: name for name, h in keys.items()}
+    limiters = {
+        name: SlidingWindowLimiter(settings.rate_limit_per_minute) for name in keys
+    }
     # one inference at a time; Predictor serializes them anyway
     busy = threading.Lock()
 
@@ -73,10 +90,15 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
         if request.url.path in OPEN_PATHS:
             return await call_next(request)
         key = request.headers.get("x-api-key", "")
-        if not secrets.compare_digest(key.encode(), settings.api_key.encode()):
+        # keys are random, so a timing leak on their hashes reveals nothing usable
+        caller = callers.get(hash_key(key)) if key else None
+        if caller is None:
+            log.warning("unauthorized %s %s", request.method, request.url.path)
             return error(401, "unauthorized")
-        if wait := limiter.acquire():
+        if wait := limiters[caller].acquire():
+            log.warning("%s is rate limited", caller)
             return error(429, "rate_limited", **{"Retry-After": retry_after(wait)})
+        request.state.caller = caller
         return await call_next(request)
 
     @app.exception_handler(HTTPException)
@@ -101,7 +123,7 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
         }
 
     @app.post("/predict")
-    async def predict(body: PredictRequest):
+    async def predict(body: PredictRequest, request: Request):
         predictor = app.state.predictor
         if predictor is None:
             return error(503, "loading")
@@ -136,7 +158,11 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
         except Exception:
             log.exception("inference failed")
             return error(500, "internal_error")
-        log.info("predict ok in %.0f ms", (time.perf_counter() - start) * 1000)
+        log.info(
+            "predict ok for %s in %.0f ms",
+            request.state.caller,
+            (time.perf_counter() - start) * 1000,
+        )
         return result
 
     return app

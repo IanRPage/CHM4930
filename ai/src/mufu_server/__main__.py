@@ -1,7 +1,8 @@
 """
 From ai/: PYTHONPATH=src python -m mufu_server
 
-Reads `MUFU_*` environment variables. Exits 1 if the model fails to load.
+Reads `MUFU_*` environment variables. Exits 1 if the settings or key file are invalid
+or the model fails to load.
 """
 
 import logging
