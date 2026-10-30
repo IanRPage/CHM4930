@@ -14,7 +14,8 @@ COVERAGE = 0.95
 @dataclass(frozen=True)
 class Settings:
     checkpoint_dir: Path
-    api_key: str = field(repr=False)
+    api_key: str = field(default="", repr=False)
+    api_keys_file: Path | None = None
     model_name: str = "mufu"
     model_version: str | None = None
     hf_repo: str | None = None
@@ -33,6 +34,8 @@ class Settings:
             raise ValueError("MUFU_REQUEST_TIMEOUT_S must be a positive number")
         if self.hf_repo and not self.model_version:
             raise ValueError("MUFU_HF_REPO needs MUFU_MODEL_VERSION set to a tag")
+        if not self.api_key and self.api_keys_file is None:
+            raise ValueError("set MUFU_API_KEY or MUFU_API_KEYS_FILE")
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] = os.environ) -> "Settings":
@@ -40,9 +43,8 @@ class Settings:
         api_key = env.get("MUFU_API_KEY", "").strip()
         if not checkpoint_dir:
             raise ValueError("MUFU_CHECKPOINT_DIR must be set")
-        if not api_key:
-            raise ValueError("MUFU_API_KEY must be set")
         optional = {
+            "api_keys_file": ("MUFU_API_KEYS_FILE", Path),
             "model_name": ("MUFU_MODEL_NAME", str),
             "model_version": ("MUFU_MODEL_VERSION", str),
             "hf_repo": ("MUFU_HF_REPO", str),
