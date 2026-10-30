@@ -16,11 +16,17 @@ DATA = "d" * 64
 CONFORMAL = ConformalParams((0.9,), np.ones((2, 1)), np.zeros(2), 2, (0.1,))
 
 
-def write_run(directory, commits=(COMMIT,) * 3):
+def write_run(directory, overrides=({}, {}, {})):
     paths = []
-    for seed, commit in zip(SEEDS, commits, strict=True):
+    for seed, override in zip(SEEDS, overrides, strict=True):
         path = directory / f"m_seed_{seed}.pt"
-        torch.save({"seed": seed, "git_commit": commit, "data_sha256": DATA}, path)
+        ckpt = {
+            "model": {},
+            "calibration": {},
+            "git_commit": COMMIT,
+            "data_sha256": DATA,
+        }
+        torch.save({**ckpt, "seed": seed, **override}, path)
         save_conformal(CONFORMAL, path)
         paths.append(path)
     members = tuple((p.name, file_sha256(p)) for p in paths)
@@ -41,23 +47,22 @@ def test_load_version_lists_the_full_set(tmp_path):
 
 
 def stale_ensemble(directory):
-    torch.save(
-        {"seed": 0, "git_commit": COMMIT, "data_sha256": DATA, "x": 1},
-        directory / "m_seed_0.pt",
-    )
-    save_conformal(CONFORMAL, directory / "m_seed_0.pt")
+    path = directory / "m_seed_0.pt"
+    torch.save({**torch.load(path), "seed": 9}, path)
+    save_conformal(CONFORMAL, path)
 
 
 @pytest.mark.parametrize(
-    ("commits", "corrupt", "match"),
+    ("overrides", "corrupt", "match"),
     [
-        ((COMMIT, COMMIT, "other"), None, "different runs"),
-        ((f"{COMMIT}-dirty",) * 3, None, "uncommitted"),
-        ((COMMIT,) * 3, stale_ensemble, "refit the ensemble"),
+        (({}, {}, {"git_commit": "other"}), None, "different runs"),
+        (({"git_commit": f"{COMMIT}-dirty"},) * 3, None, "uncommitted"),
+        (({}, {"calibration": None}, {}), None, "m_seed_1.pt has no model"),
+        (({}, {}, {}), stale_ensemble, "refit the ensemble"),
     ],
 )
-def test_load_version_rejects_unpublishable_sets(tmp_path, commits, corrupt, match):
-    write_run(tmp_path, commits)
+def test_load_version_rejects_unpublishable_sets(tmp_path, overrides, corrupt, match):
+    write_run(tmp_path, overrides)
     if corrupt:
         corrupt(tmp_path)
 
@@ -89,13 +94,13 @@ def results_rows(model, value, commit=COMMIT):
 
 
 def test_model_card_uses_this_runs_metrics():
-    version = hub.Version("m", COMMIT, DATA, ())
+    version = hub.Version("m", COMMIT, DATA, "e", ())
     results = pd.DataFrame(
         results_rows("m", 0.8)
         + results_rows("m", 0.1, commit="old")
         + results_rows("rf_bioactivity", 0.5, commit="rf")
     )
-    ensemble = pd.DataFrame(results_rows("m", 0.9))
+    ensemble = pd.DataFrame(results_rows("m", 0.9)).assign(ensemble_sha256="e")
 
     card = hub.model_card(version, "v1.0.0", results, ensemble, "org/m")
 
@@ -103,6 +108,10 @@ def test_model_card_uses_this_runs_metrics():
     assert len(card.data.eval_results) == len(hub.CARD_METRICS)
     assert "| 0.900 | 0.810 ± 0.010 | 0.510 |" in card.text
 
+    with pytest.raises(ValueError, match="rerun fit_ensemble"):
+        hub.model_card(
+            version, "v1.0.0", results, ensemble.assign(ensemble_sha256="x"), "org/m"
+        )
     with pytest.raises(ValueError, match="no m rows"):
         hub.model_card(
             version,

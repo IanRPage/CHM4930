@@ -25,7 +25,7 @@ from huggingface_hub import (
 )
 
 from baseline.benchmark import SEEDS
-from baseline.results import summarize_seeds
+from baseline.results import file_sha256, summarize_seeds
 from mufu.ensemble import load_ensemble_params, member_paths, sidecar_path
 from mufu.mc_dropout import load_conformal
 from mufu.mc_dropout import sidecar_path as conformal_path
@@ -53,6 +53,7 @@ class Version:
     model_name: str
     git_commit: str
     data_sha256: str
+    ensemble_sha256: str
     files: tuple[Path, ...]
 
 
@@ -70,6 +71,8 @@ def load_version(
     runs = set()
     for path in paths:
         ckpt = torch.load(path, map_location="cpu", weights_only=True)
+        if "model" not in ckpt or ckpt.get("calibration") is None:
+            raise ValueError(f"{path.name} has no model weights or calibration")
         runs.add((ckpt.get("git_commit"), ckpt.get("data_sha256")))
     if len(runs) != 1:
         raise ValueError(f"checkpoints come from different runs: {sorted(runs)}")
@@ -77,12 +80,9 @@ def load_version(
     if not commit or commit == "unknown" or commit.endswith("-dirty"):
         raise ValueError(f"checkpoints were trained on an uncommitted tree ({commit})")
 
-    files = (
-        *paths,
-        *(conformal_path(p) for p in paths),
-        sidecar_path(checkpoint_dir, model_name),
-    )
-    return Version(model_name, commit, data_sha256, files)
+    ensemble = sidecar_path(checkpoint_dir, model_name)
+    files = (*paths, *(conformal_path(p) for p in paths), ensemble)
+    return Version(model_name, commit, data_sha256, file_sha256(ensemble), files)
 
 
 def _test_value(df: pd.DataFrame, dataset: str, endpoint: str, metric: str):
@@ -107,6 +107,11 @@ def model_card(
     writes it.
     """
     name = version.model_name
+    fitted_on = set(ensemble_metrics.get("ensemble_sha256", []))
+    if fitted_on != {version.ensemble_sha256}:
+        raise ValueError(
+            "ensemble metrics aren't from this ensemble file; rerun fit_ensemble.py"
+        )
     run = results[
         (results["model"] == name)
         & (results["git_commit"] == version.git_commit)

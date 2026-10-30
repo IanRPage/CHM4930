@@ -297,7 +297,7 @@ checkpoints were trained at.
 | patch | same weights, metadata only (e.g. a model card fix)                      |
 
 - To serve one, set `MUFU_HF_REPO=CHM4930/mufu` and `MUFU_MODEL_VERSION` to its
-  tag. The first start downloads it into `MUFU_CHECKPOINT_DIR`; later starts
+  tag. The first start downloads it into `MUFU_CHECKPOINT_DIR/<tag>/`; later starts
   load it from there offline.
 - To just download one, set `tag` in `drivers/download_mufu.py` and run it.
 - To publish, train with `drivers/train_mufu.py` on a clean commit and commit

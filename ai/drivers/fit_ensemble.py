@@ -18,7 +18,7 @@ import pandas as pd
 import torch
 
 from baseline.benchmark import SEEDS, evaluate_split_predictions, load_benchmark_split
-from baseline.results import load_results, summarize_seeds
+from baseline.results import file_sha256, load_results, summarize_seeds
 from encoders.smiles_encoder import SmilesEncoder
 from mufu.contract import ACTIVE_COLUMNS, PIC50_COLUMNS, TOX_COLUMNS
 from mufu.data.dataset import split_datasets
@@ -29,6 +29,7 @@ from mufu.ensemble import (
     member_paths,
     predict_with_ensemble_intervals,
     save_ensemble,
+    sidecar_path,
 )
 from mufu.mc_dropout import DEFAULT_COVERAGES, DEFAULT_T, empirical_coverage
 
@@ -123,6 +124,7 @@ def fit_and_report(
         )
     )
     coverage = empirical_coverage(test_preds, datasets["test"], conformal.coverages)
+    metrics["ensemble_sha256"] = file_sha256(sidecar_path(checkpoint_dir, model_name))
 
     out_dir = AI_DIR / "outputs" / model_name
     out_dir.mkdir(parents=True, exist_ok=True)
