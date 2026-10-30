@@ -264,13 +264,27 @@ curl -s localhost:8000/predict -H "X-API-Key: $MUFU_API_KEY" \
   -H 'Content-Type: application/json' -d '{"smiles": "CCOc1ccc(N)cc1"}'
 ```
 
+To give several people their own key, create one per name; each prints once
+and only its hash is saved (to `~/.config/mufu/api_keys` unless `--file` says
+otherwise):
+
+```sh
+PYTHONPATH=src python -m mufu_server.keys add <name or email>
+```
+
+Then start the server with `MUFU_API_KEYS_FILE` pointing at that file (it can be
+combined with `MUFU_API_KEY`, logged as `default`). Each key has its own rate
+limit and the log names who made each prediction. To revoke a key, delete its
+line and restart.
+
 For a local run of the whole app, give the backend the same key and
 `MUFU_API_URL=http://localhost:8000`.
 
 | Variable                     | Default                                                      |
 | ---------------------------- | ------------------------------------------------------------ |
 | `MUFU_CHECKPOINT_DIR`        | required                                                     |
-| `MUFU_API_KEY`               | required                                                     |
+| `MUFU_API_KEY`               | this or `MUFU_API_KEYS_FILE` is required                     |
+| `MUFU_API_KEYS_FILE`         | unset                                                        |
 | `MUFU_MODEL_NAME`            | `mufu`                                                       |
 | `MUFU_MODEL_VERSION`         | `<model_name>_ensemble@<sha256 prefix of the ensemble file>` |
 | `MUFU_HF_REPO`               | unset                                                        |
