@@ -15,7 +15,7 @@ function renderAt(path: string) {
 describe("App", () => {
   it.each([
     ["/", "MuFu"],
-    ["/predict", "Single Prediction"],
+    ["/predict", "Single Molecule Prediction"],
     ["/batch", "Batch Prediction"],
     ["/explorer", "Dataset Explorer"],
     ["/about", "About MuFu"],
@@ -54,7 +54,10 @@ describe("App", () => {
     );
     await userEvent.click(screen.getByRole("link", { name: "Get Started" }));
     expect(
-      screen.getByRole("heading", { level: 1, name: "Single Prediction" }),
+      screen.getByRole("heading", {
+        level: 1,
+        name: "Single Molecule Prediction",
+      }),
     ).toBeInTheDocument();
   });
 });

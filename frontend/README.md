@@ -16,9 +16,9 @@ frontend/
     ├── components/
     │   └── layout/     # Layout (sidebar + <Outlet/>), Sidebar
     ├── pages/          # route-level components, one per sidebar entry
-    ├── services/       # API client (SCRUM-71)
-    ├── types/          # request/response types, mirror backend models (SCRUM-81)
-    └── test/setup.ts   # jest-dom matchers, RTL cleanup
+    ├── services/       # predict() adapter + PredictError (typed errors)
+    ├── types/          # request/response types, mirror backend models
+    └── test/           # setup.ts (jest-dom, RTL cleanup), shared fixtures
 ```
 
 ## Conventions
@@ -27,6 +27,11 @@ frontend/
   `verbatimModuleSyntax` is on, so type-only imports need `import type`.
 - Components never call `fetch` directly; go through `services/`. Use relative
   URLs only, no base URL env var.
+- `predict()` throws `PredictError` with a `kind` (`invalid-smiles`, `busy`,
+  `unavailable`, `timeout`, `server`, `network`, `invalid-response`), or
+  rethrows the `AbortError` if the caller aborts. Outputs that are missing or
+  malformed in the response come back as `{ value: null, reason }`, never as
+  defaults.
 - Tests are colocated (`Foo.test.tsx`), Vitest + Testing Library on jsdom.
   Vitest globals are off: import `describe`/`it`/`expect` from `vitest`.
   Anything that uses router hooks or `NavLink` must render inside a
@@ -66,7 +71,8 @@ must not also touch `ai/` or `backend/` (`PR scope` check).
 ## Routes
 
 From the [app screens](https://www.figma.com/design/hQeLEZcHn3QAtqUVicSccX/MuFu-%E2%80%93-App-Screens).
-All pages are stubs.
+`/predict` covers 02 input and 03 results without molecule drawing, the
+structure view, or molecular properties. `/batch` and `/explorer` are stubs.
 
 | Path        | Page                   | Figma sub-screens                                        |
 | ----------- | ---------------------- | -------------------------------------------------------- |
