@@ -72,7 +72,7 @@ From the [app screens](https://www.figma.com/design/hQeLEZcHn3QAtqUVicSccX/MuFu-
 
 | Endpoint                                                            | Screen                | Notes                                                                                                                                       |
 | ------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/predict` ([contract](docs/predict-api.md))               | Single prediction     | per target (EGFR, BACE1): pIC50 + 95% CI (MC-dropout), IC50, P(active); 12 Tox21 probs; ClinTox FDA-approval prob                           |
+| `POST /api/predict` ([contract](docs/predict-api.md))               | Single prediction     | Implemented. Per target (EGFR, BACE1): pIC50 + 95% CI (MC-dropout), IC50, P(active); 12 Tox21 probs; ClinTox FDA-approval prob              |
 | `GET /api/molecule?smiles=` (or folded into predict)                | Molecular information | formula, InChIKey, descriptors, Lipinski, 3D coords. Needs RDKit, so source from the model service                                          |
 | `POST /api/batch`, `GET /api/batch/:id`, results (paged/filter/CSV) | Batch                 | 10 MB CSV/SDF/TXT, progress, cancel, ~2 min. Exceeds a single serverless invocation: needs a job store or chunking. Stretch goal (SCRUM-99) |
 | `GET /api/dataset/summary`, `GET /api/dataset/molecules?q=&page=`   | Dataset explorer      | precompute from `ai/data/baseline/combined.csv`                                                                                             |
