@@ -143,9 +143,29 @@
   border-radius: 12px;
 }
 
+/* Tinted panels: green when the outcome is favorable, slate otherwise */
 .predict-panel-good {
-  background: #f0fdf4;
-  border-color: #bbf7d0;
+  --tint: #f0fdf4;
+  --line: #bbf7d0;
+  --track: #dcfce7;
+  --fill: #22c55e;
+  --value: #16a34a;
+  --strong: #15803d;
+}
+
+.predict-panel-neutral {
+  --tint: #f8fafc;
+  --line: #e2e8f0;
+  --track: #e2e8f0;
+  --fill: #94a3b8;
+  --value: #334155;
+  --strong: #475569;
+}
+
+.predict-panel-good,
+.predict-panel-neutral {
+  background: var(--tint);
+  border-color: var(--line);
 }
 
 .predict-panel-head {
@@ -171,8 +191,8 @@
 
 .predict-pill-good {
   background: #fff;
-  border: 1px solid #bbf7d0;
-  color: #15803d;
+  border: 1px solid var(--line, #bbf7d0);
+  color: var(--strong, #15803d);
 }
 
 .predict-pill-bad {
@@ -187,7 +207,7 @@
   margin-left: 6px;
   padding: 2px;
   border-radius: 7px;
-  background: #dcfce7;
+  background: var(--track);
 }
 
 .predict-segmented button {
@@ -206,7 +226,7 @@
   background: #fff;
   box-shadow: 0 1px 2px rgba(15, 23, 41, 0.12);
   font-weight: 600;
-  color: #15803d;
+  color: var(--strong);
 }
 
 .predict-stats {
@@ -220,7 +240,7 @@
   flex-direction: column;
   gap: 4px;
   padding: 0 14px;
-  border-left: 1px solid #bbf7d0;
+  border-left: 1px solid var(--line);
 }
 
 .predict-stat:first-child {
@@ -237,7 +257,7 @@
 .predict-stat-value {
   font-size: 24px;
   font-weight: 700;
-  color: #16a34a;
+  color: var(--value);
 }
 
 .predict-stat-detail {
@@ -257,13 +277,13 @@
   position: relative;
   height: 10px;
   border-radius: 5px;
-  background: #dcfce7;
+  background: var(--track);
 }
 
 .predict-scale-fill {
   height: 100%;
   border-radius: 5px;
-  background: #22c55e;
+  background: var(--fill);
 }
 
 .predict-scale-interval {
@@ -273,7 +293,7 @@
   width: calc(var(--hi) - var(--lo));
   height: 18px;
   border-radius: 4px;
-  background: rgba(21, 128, 61, 0.22);
+  background: color-mix(in srgb, var(--strong) 22%, transparent);
 }
 
 .predict-scale-point {
@@ -299,7 +319,7 @@
   position: absolute;
   transform: translateX(-50%);
   font-weight: 500;
-  color: #15803d;
+  color: var(--strong);
 }
 
 .predict-legend {
@@ -408,7 +428,7 @@
 .predict-approval p {
   margin: 2px 0 0;
   font-size: 12px;
-  color: #15803d;
+  color: var(--strong);
 }
 
 .predict-approval-track {
@@ -416,14 +436,14 @@
   height: 8px;
   margin-left: auto;
   border-radius: 4px;
-  background: #dcfce7;
+  background: var(--track);
   overflow: hidden;
 }
 
 .predict-approval-fill {
   display: block;
   height: 100%;
-  background: #22c55e;
+  background: var(--fill);
 }
 
 .predict-approval-value {
@@ -432,7 +452,7 @@
   text-align: right;
   font-size: 20px;
   font-weight: 700;
-  color: #16a34a;
+  color: var(--value);
 }
 
 .predict-approval-track + .predict-approval-value {

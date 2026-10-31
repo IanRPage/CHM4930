@@ -24,6 +24,7 @@ describe("SinglePredictionPage", () => {
   it("shows predictions per target, with unavailable outputs as a dash", async () => {
     const result = predictResponse();
     result.toxicity.stressResponse["SR-ARE"] = { value: 0.54 };
+    result.bioactivity.BACE1.pActive = { value: 0.9 };
     predictMock.mockResolvedValue(result);
     await submit("CCO");
 
@@ -40,8 +41,13 @@ describe("SinglePredictionPage", () => {
     expect(
       screen.getByText("Confidence via MC-Dropout · 50 passes"),
     ).toBeInTheDocument();
+    const bioactivity = screen
+      .getByRole("heading", { name: "Bioactivity" })
+      .closest("section");
+    expect(bioactivity).toHaveClass("predict-panel-neutral");
 
     await userEvent.click(screen.getByRole("button", { name: "BACE1" }));
+    expect(bioactivity).toHaveClass("predict-panel-good");
     expect(screen.getByText("4.90")).toBeInTheDocument();
     expect(screen.getByText("95% CI 3.80 – 6.00")).toBeInTheDocument();
     expect(screen.getByText("12.6 µM")).toBeInTheDocument();

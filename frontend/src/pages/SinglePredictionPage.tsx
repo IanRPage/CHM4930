@@ -25,6 +25,13 @@ const PIC50_MIN = 2;
 const PIC50_MAX = 12;
 const MODERATE_RISK = 0.3;
 const HIGH_RISK = 0.5;
+const FAVORABLE = 0.5;
+
+function tone(output: Output) {
+  return output.value !== null && output.value >= FAVORABLE
+    ? "predict-panel-good"
+    : "predict-panel-neutral";
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -94,7 +101,7 @@ function Bioactivity({ result }: { result: PredictResponse }) {
   const ci = ciCoverage === null ? "CI" : `${percent(ciCoverage)} CI`;
 
   return (
-    <section className="predict-panel predict-panel-good">
+    <section className={`predict-panel ${tone(pActive)}`}>
       <div className="predict-panel-head">
         <img src={bioactivityIcon} alt="" />
         <h3>Bioactivity</h3>
@@ -253,7 +260,7 @@ function Toxicity({ result }: { result: PredictResponse }) {
 
 function Approval({ output }: { output: Output }) {
   return (
-    <section className="predict-panel predict-panel-good predict-approval">
+    <section className={`predict-panel ${tone(output)} predict-approval`}>
       <img src={approvalIcon} alt="" />
       <div>
         <h3>Likelihood of FDA approval</h3>
