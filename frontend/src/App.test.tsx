@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -18,7 +18,7 @@ describe("App", () => {
     ["/predict", "Single Prediction"],
     ["/batch", "Batch Prediction"],
     ["/explorer", "Dataset Explorer"],
-    ["/about", "About"],
+    ["/about", "About MuFu"],
   ])("renders the page for %s", (path, heading) => {
     renderAt(path);
     expect(
@@ -41,8 +41,20 @@ describe("App", () => {
     renderAt("/");
     await userEvent.click(screen.getByRole("link", { name: "About" }));
     expect(
-      screen.getByRole("heading", { level: 1, name: "About" }),
+      screen.getByRole("heading", { level: 1, name: "About MuFu" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "About" })).toHaveClass("active");
+  });
+
+  it("routes the home entry cards and marks unfinished ones as coming soon", async () => {
+    renderAt("/");
+    expect(screen.getAllByText("Coming soon")).toHaveLength(2);
+    expect(within(screen.getByRole("main")).getAllByRole("link")).toHaveLength(
+      1,
+    );
+    await userEvent.click(screen.getByRole("link", { name: "Get Started" }));
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Single Prediction" }),
+    ).toBeInTheDocument();
   });
 });
