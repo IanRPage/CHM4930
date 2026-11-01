@@ -22,14 +22,14 @@
   font-size: 64px;
   font-weight: 800;
   letter-spacing: -2px;
-  color: #0f172a;
+  color: var(--slate-900);
 }
 
 .home-subtitle {
   margin: 14px 0 0;
   font-size: 22px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--slate-800);
 }
 
 .home-lede {
@@ -37,7 +37,7 @@
   margin: 12px 0 0;
   font-size: 16px;
   line-height: 24.8px;
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 .home-graphic {
@@ -83,14 +83,14 @@
   line-height: 1.2;
   font-size: 17px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--slate-900);
 }
 
 .home-card-body p {
   margin: 9px 0 16px;
   font-size: 14px;
   line-height: 21.7px;
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 .home-btn {
@@ -103,7 +103,7 @@
   font-size: 14px;
   font-weight: 600;
   line-height: 17px;
-  color: #fff;
+  color: var(--white);
   text-decoration: none;
 }
 
@@ -129,13 +129,13 @@
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--slate-900);
 }
 
 .home-feature p {
   margin: 4px 0 0;
   font-size: 13px;
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 @media (max-width: 1100px) {
