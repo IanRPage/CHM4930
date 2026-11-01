@@ -50,45 +50,49 @@ export default function Sidebar() {
   }, []);
 
   return (
-    <aside className={classNames("sidebar", collapsed && "sidebar-collapsed")}>
-      {collapsed ? (
-        <button
-          type="button"
-          className="sidebar-expand"
-          aria-label="Expand sidebar"
-          onClick={() => setCollapsed(false)}
-        >
-          <img
-            className="sidebar-logo"
-            src={logoDark}
-            alt=""
-            width={32}
-            height={32}
-          />
-          <img
-            className="sidebar-expand-icon"
-            src={expandIcon}
-            alt=""
-            width={20}
-            height={20}
-          />
-        </button>
-      ) : (
-        <div className="sidebar-head">
+    <aside
+      className={classNames("sidebar", collapsed && "sidebar-collapsed")}
+      onClick={(e) => {
+        if (collapsed && !(e.target as Element).closest("a, button")) {
+          setCollapsed(false);
+        }
+      }}
+    >
+      <div className="sidebar-head">
+        {!collapsed && (
           <div className="sidebar-brand">
             <img src={logoDark} alt="" width={32} height={32} />
             <span>MuFu</span>
           </div>
-          <button
-            type="button"
-            className="sidebar-collapse"
-            aria-label="Collapse sidebar"
-            onClick={() => setCollapsed(true)}
-          >
+        )}
+        <button
+          type="button"
+          className={collapsed ? "sidebar-expand" : "sidebar-collapse"}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          onClick={() => setCollapsed((prev) => !prev)}
+        >
+          {collapsed ? (
+            <>
+              <img
+                className="sidebar-logo"
+                src={logoDark}
+                alt=""
+                width={32}
+                height={32}
+              />
+              <img
+                className="sidebar-expand-icon"
+                src={expandIcon}
+                alt=""
+                width={20}
+                height={20}
+              />
+            </>
+          ) : (
             <img src={collapseIcon} alt="" width={20} height={20} />
-          </button>
-        </div>
-      )}
+          )}
+        </button>
+      </div>
 
       <nav aria-label="Primary">
         {NAV_ITEMS.map(({ to, label, icon }) => (

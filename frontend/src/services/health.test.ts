@@ -18,13 +18,19 @@ afterEach(() => {
 });
 
 describe("fetchModelVersion", () => {
-  it("fetches /api/health and returns the active model version", async () => {
-    reply(200, { status: "ok", modelVersion: "mufu-v1.2.0" });
+  it("fetches /api/health and prefixes bare version tags with mufu-", async () => {
+    reply(200, { status: "ok", modelVersion: "v1.2.0" });
 
     await expect(fetchModelVersion()).resolves.toBe("mufu-v1.2.0");
     expect(fetchMock).toHaveBeenCalledWith("/api/health", {
       signal: undefined,
     });
+  });
+
+  it("preserves model versions that already start with mufu", async () => {
+    reply(200, { status: "ok", modelVersion: "mufu_ensemble@a1b2c3d4" });
+
+    await expect(fetchModelVersion()).resolves.toBe("mufu_ensemble@a1b2c3d4");
   });
 
   it.each([

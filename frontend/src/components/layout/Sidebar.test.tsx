@@ -49,6 +49,8 @@ describe("Sidebar", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Collapse sidebar" }),
     );
+    const expandButton = screen.getByRole("button", { name: "Expand sidebar" });
+    expect(expandButton).toHaveFocus();
     expect(screen.getByRole("complementary")).toHaveClass("sidebar-collapsed");
     expect(screen.queryByText("MuFu")).not.toBeInTheDocument();
     expect(screen.queryByText(/Model:/)).not.toBeInTheDocument();
@@ -56,13 +58,25 @@ describe("Sidebar", () => {
       screen.getByRole("link", { name: "Batch Prediction" }),
     ).toBeInTheDocument();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: "Expand sidebar" }),
-    );
+    await userEvent.click(expandButton);
+    expect(
+      screen.getByRole("button", { name: "Collapse sidebar" }),
+    ).toHaveFocus();
     expect(screen.getByRole("complementary")).not.toHaveClass(
       "sidebar-collapsed",
     );
     expect(screen.getByText("MuFu")).toBeInTheDocument();
     expect(screen.getByText("Model: mufu-v1.0.0")).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Collapse sidebar" }),
+    );
+    await userEvent.click(screen.getByRole("link", { name: "About" }));
+    expect(screen.getByRole("complementary")).toHaveClass("sidebar-collapsed");
+
+    await userEvent.click(screen.getByRole("complementary"));
+    expect(screen.getByRole("complementary")).not.toHaveClass(
+      "sidebar-collapsed",
+    );
   });
 });

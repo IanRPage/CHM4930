@@ -25,6 +25,7 @@ body {
 .sidebar-collapsed {
   width: 72px;
   padding: 19px 14px 24px;
+  cursor: e-resize;
 }
 
 .sidebar-head {
@@ -35,6 +36,11 @@ body {
   padding-left: 6px;
   overflow: hidden;
   white-space: nowrap;
+}
+
+.sidebar-collapsed .sidebar-head {
+  justify-content: center;
+  padding-left: 0;
 }
 
 .sidebar-brand {
@@ -65,10 +71,6 @@ body {
   background: none;
   cursor: pointer;
   transition: background-color 150ms ease;
-}
-
-.sidebar-expand {
-  margin: 4px auto;
 }
 
 .sidebar-expand-icon {

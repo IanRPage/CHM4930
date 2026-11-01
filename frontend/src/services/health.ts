@@ -7,13 +7,18 @@ export async function fetchModelVersion(
     const res = await fetch("/api/health", { signal });
     if (!res.ok) return null;
     const body: unknown = await res.json();
-    return typeof body === "object" &&
-      body !== null &&
-      "modelVersion" in body &&
-      typeof body.modelVersion === "string" &&
-      body.modelVersion
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      !("modelVersion" in body) ||
+      typeof body.modelVersion !== "string" ||
+      !body.modelVersion
+    ) {
+      return null;
+    }
+    return body.modelVersion.startsWith("mufu")
       ? body.modelVersion
-      : null;
+      : `mufu-${body.modelVersion}`;
   } catch {
     return null;
   }
