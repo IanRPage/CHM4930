@@ -201,7 +201,7 @@ def test_run_benchmark_records_per_seed_and_returns_summary(split_df, paths):
     )
 
     assert seen_seeds == [0, 1, 2]
-    written = pd.read_csv(path)
+    written = results.load_results(path)
     # 2 splits * 3 metrics * 3 seeds = 18 rows
     assert len(written) == 18
     assert sorted(written["seed"].unique()) == [0, 1, 2]
@@ -258,7 +258,7 @@ def test_run_benchmark_loads_from_data_path_when_df_is_none(
     )
 
     assert seen_rows == [20]
-    written = pd.read_csv(out_path)
+    written = results.load_results(out_path)
     assert set(written["data_sha256"]) == {results.file_sha256(snapshot_csv)}
 
 
@@ -397,7 +397,7 @@ def test_load_is_read_only_and_missing_snapshot_raises(
 
 
 def test_frozen_benchmark_matches_recorded_rf_checksum_and_counts(frozen_benchmark):
-    recorded = pd.read_csv(results.RESULTS_PATH)
+    recorded = results.load_results()
     rf = recorded[recorded["model"].isin(["rf_bioactivity", "rf_toxicity"])]
     assert len(rf) == 46 * len(benchmark.SEEDS)
     assert set(rf["seed"]) == set(benchmark.SEEDS)

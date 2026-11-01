@@ -1,0 +1,89 @@
+.predict-legend {
+  display: flex;
+  gap: 20px;
+  margin: 8px 0 0 30px;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--slate-600);
+}
+
+.predict-legend li::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 2px;
+  background: var(--risk);
+}
+
+.predict-risk-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 40px;
+  margin-top: 14px;
+}
+
+.predict-risk-columns h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--slate-500);
+}
+
+.predict-risk-columns ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.predict-risk {
+  display: grid;
+  grid-template-columns: 138px 100px 44px;
+  align-items: center;
+  gap: 12px;
+  height: 24px;
+  font-size: 13px;
+  color: var(--slate-700);
+}
+
+.predict-risk-low {
+  --risk: var(--slate-300);
+}
+
+.predict-risk-moderate {
+  --risk: var(--amber-500);
+}
+
+.predict-risk-high {
+  --risk: var(--red-500);
+}
+
+.predict-risk-meter {
+  --meter-color: var(--risk);
+}
+
+.predict-risk-value {
+  font-weight: 600;
+  text-align: right;
+}
+
+.predict-risk-high .predict-risk-value {
+  font-weight: 700;
+  color: var(--red-700);
+}
+
+.predict-risk-missing {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--slate-500);
+}
+
+@media (max-width: 800px) {
+  .predict-risk-columns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+}

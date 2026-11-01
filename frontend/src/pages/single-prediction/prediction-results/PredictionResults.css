@@ -1,0 +1,39 @@
+.predict-results {
+  margin-top: 24px;
+}
+
+.predict-smiles {
+  margin: 0 0 12px 4px;
+  font-size: 14px;
+  color: var(--slate-700);
+}
+
+.predict-smiles code {
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.predict-properties {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.predict-properties h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.predict-na {
+  color: var(--slate-400);
+}
+
+.predict-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--slate-500);
+}

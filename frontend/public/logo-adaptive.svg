@@ -1,0 +1,30 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    svg { color: #0f172a; }
+    .core { fill: #2563eb; }
+    @media (prefers-color-scheme: dark) {
+      svg { color: #ffffff; }
+      .core { fill: #60a5fa; }
+    }
+  </style>
+  <polygon points="32.00,8.00 52.78,20.00 52.78,44.00 32.00,56.00 11.22,44.00 11.22,20.00" fill="none" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/>
+  <line x1="32.00" y1="19.50" x2="42.83" y2="25.75" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-opacity="0.45"/>
+  <line x1="42.83" y1="25.75" x2="42.83" y2="38.25" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-opacity="0.45"/>
+  <line x1="42.83" y1="38.25" x2="32.00" y2="44.50" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-opacity="0.45"/>
+  <line x1="32.00" y1="44.50" x2="21.17" y2="38.25" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-opacity="0.45"/>
+  <line x1="21.17" y1="38.25" x2="21.17" y2="25.75" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-opacity="0.45"/>
+  <line x1="21.17" y1="25.75" x2="32.00" y2="19.50" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-opacity="0.45"/>
+  <line x1="32.00" y1="32.00" x2="32.00" y2="19.50" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-opacity="1"/>
+  <line x1="32.00" y1="32.00" x2="42.83" y2="25.75" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-opacity="1"/>
+  <line x1="32.00" y1="32.00" x2="42.83" y2="38.25" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-opacity="1"/>
+  <line x1="32.00" y1="32.00" x2="32.00" y2="44.50" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-opacity="1"/>
+  <line x1="32.00" y1="32.00" x2="21.17" y2="38.25" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-opacity="1"/>
+  <line x1="32.00" y1="32.00" x2="21.17" y2="25.75" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-opacity="1"/>
+  <circle cx="32.00" cy="19.50" r="2.8" fill="currentColor"/>
+  <circle cx="42.83" cy="25.75" r="2.8" fill="currentColor"/>
+  <circle cx="42.83" cy="38.25" r="2.8" fill="currentColor"/>
+  <circle cx="32.00" cy="44.50" r="2.8" fill="currentColor"/>
+  <circle cx="21.17" cy="38.25" r="2.8" fill="currentColor"/>
+  <circle cx="21.17" cy="25.75" r="2.8" fill="currentColor"/>
+  <circle cx="32.00" cy="32.00" r="5.2" class="core"/>
+</svg>

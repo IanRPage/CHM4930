@@ -5,6 +5,7 @@ ai/data/*
 ai/data/baseline/*
 !ai/data/baseline/combined.csv
 !ai/data/baseline/results.csv
+!ai/data/baseline/results_runs.csv
 ai/checkpoints/*
 !ai/checkpoints/.gitkeep
 ai/outputs/*

@@ -16,8 +16,12 @@ dependencies:
   - pytest-cov=7.1.0
   - diff-cover=10.5.1
   - pytorch=2.12.1
+  - fastapi=0.162.0
+  - uvicorn=0.54.0
+  - httpx=0.28.1
   - pip=26.2.1
   - pip:
       - torch_geometric==2.8.0.post1
       - deepchem==2.8.0
       - transformers==5.17.0
+      - huggingface_hub==1.33.0

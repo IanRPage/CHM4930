@@ -13,7 +13,7 @@ body {
   flex-direction: column;
   width: 240px;
   padding: 24px 16px;
-  border-right: 1px solid #e5e7eb;
+  border-right: 1px solid var(--slate-200);
   box-sizing: border-box;
 }
 
@@ -37,7 +37,7 @@ body {
 }
 
 .sidebar nav a.active {
-  background: #eef2ff;
+  background: var(--indigo-50);
   font-weight: 600;
 }
 
@@ -46,10 +46,11 @@ body {
   flex-direction: column;
   margin-top: auto;
   font-size: 12px;
-  color: #6b7280;
+  color: var(--slate-500);
 }
 
 .main {
   flex: 1;
+  background: linear-gradient(var(--tint-sky), var(--slate-50) 40%);
   padding: 32px;
 }
