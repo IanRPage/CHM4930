@@ -41,8 +41,30 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
-  it("navigates with the sidebar", async () => {
+  it("navigates with the sidebar, including Coming Soon routes", async () => {
     renderAt("/");
+    await userEvent.click(
+      screen.getByRole("link", { name: "Batch Prediction" }),
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Batch Prediction" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Coming Soon")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Batch Prediction" })).toHaveClass(
+      "active",
+    );
+
+    await userEvent.click(
+      screen.getByRole("link", { name: "Dataset Explorer" }),
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Dataset Explorer" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Coming Soon")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Dataset Explorer" })).toHaveClass(
+      "active",
+    );
+
     await userEvent.click(screen.getByRole("link", { name: "About" }));
     expect(
       screen.getByRole("heading", { level: 1, name: "About MuFu" }),
