@@ -161,6 +161,8 @@ def run_variant(
         seeds=remaining,
         df=df,
         path=results_path,
+        n_boot=0,
+        predictions_dir=SWEEP_DIR / "predictions",
     )
     elapsed = time.time() - t0
     print(f"=== Finished {model_name} in {elapsed:.1f}s ===", flush=True)

@@ -11,7 +11,8 @@ The deployed backend reaches the server through a named Cloudflare Tunnel
    to a new folder, update `MUFU_CHECKPOINT_DIR` and restart the server.
 2. Put the env vars in `~/.config/mufu/server.env` (`chmod 600`), with
    `MUFU_CHECKPOINT_DIR` set to that folder's absolute path, and
-   `HF_HUB_OFFLINE=1`.
+   `HF_HUB_OFFLINE=1`. Start the server once without it first: the first start downloads
+   MolFormer into the Hugging Face cache, and offline mode can't start without it.
 3. Create the tunnel: `cloudflared tunnel login`,
    `cloudflared tunnel create mufu`, `cloudflared tunnel route dns mufu <hostname>`.
 4. `~/.cloudflared/config.yml`:
@@ -46,6 +47,7 @@ The deployed backend reaches the server through a named Cloudflare Tunnel
 6. `systemctl --user enable --now mufu-server mufu-tunnel`, and
    `loginctl enable-linger $USER` so they start at boot.
 7. Disable suspend on AC power and add an uptime check on
-   `https://<hostname>/health`.
+   `https://<hostname>/health` that expects `"status": "ready"`; it returns 200
+   with `"loading"` while the model loads.
 
 Keep the key and `~/.cloudflared/*.json` out of the repo.
