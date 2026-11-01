@@ -1,13 +1,13 @@
 import { Link } from "react-router-dom";
-import heroMolecule from "../assets/hero-molecule.svg";
-import arrowRight from "../assets/icon-arrow-right.svg";
-import batchIcon from "../assets/icon-batch.svg";
-import boltIcon from "../assets/icon-bolt.svg";
-import exploreIcon from "../assets/icon-explore.svg";
-import leafIcon from "../assets/icon-leaf.svg";
-import singleIcon from "../assets/icon-single-prediction.svg";
-import targetIcon from "../assets/icon-target.svg";
-import logo from "../assets/mufu-logo-light.svg";
+import heroMolecule from "../../assets/hero-molecule.svg";
+import arrowRight from "../../assets/icon-arrow-right.svg";
+import batchIcon from "../../assets/icon-batch.svg";
+import boltIcon from "../../assets/icon-bolt.svg";
+import exploreIcon from "../../assets/icon-explore.svg";
+import leafIcon from "../../assets/icon-leaf.svg";
+import singleIcon from "../../assets/icon-single-prediction.svg";
+import targetIcon from "../../assets/icon-target.svg";
+import logo from "../../assets/mufu-logo-light.svg";
 import "./HomePage.css";
 
 type EntryCard = {

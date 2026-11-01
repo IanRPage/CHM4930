@@ -1,12 +1,12 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PredictError } from "../services/errors.ts";
-import { predict } from "../services/predict.ts";
-import { predictResponse } from "../test/fixtures.ts";
+import { PredictError } from "../../services/errors.ts";
+import { predict } from "../../services/predict.ts";
+import { predictResponse } from "../../test/fixtures.ts";
 import SinglePredictionPage from "./SinglePredictionPage.tsx";
 
-vi.mock("../services/predict.ts", () => ({ predict: vi.fn() }));
+vi.mock("../../services/predict.ts", () => ({ predict: vi.fn() }));
 
 const predictMock = vi.mocked(predict);
 

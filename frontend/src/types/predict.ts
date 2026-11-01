@@ -1,5 +1,5 @@
-// Mirrors backend/src/models/predict.ts. Missing metadata fields are null here,
-// since the client treats anything the server leaves out as unavailable.
+// mirrors backend/src/models/predict.ts. missing metadata fields are null since
+// the client treats anything the server leaves out as unavailable
 
 export const TARGETS = ["BACE1", "EGFR"] as const;
 export const NR_TASKS = [

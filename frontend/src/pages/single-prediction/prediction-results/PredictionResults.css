@@ -1,0 +1,103 @@
+.predict-results {
+  margin-top: 24px;
+}
+
+.predict-smiles {
+  margin: 0 0 12px 4px;
+  font-size: 14px;
+  color: #334155;
+}
+
+.predict-smiles code {
+  font-family: ui-monospace, "Roboto Mono", monospace;
+  word-break: break-all;
+}
+
+.predict-properties {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+}
+
+.predict-properties h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.predict-panel {
+  padding: 18px 21px 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.predict-panel-good {
+  --tint: #f0fdf4;
+  --line: #bbf7d0;
+  --track: #dcfce7;
+  --fill: #22c55e;
+  --value: #16a34a;
+  --strong: #15803d;
+}
+
+.predict-panel-neutral {
+  --tint: #f8fafc;
+  --line: #e2e8f0;
+  --track: #e2e8f0;
+  --fill: #94a3b8;
+  --value: #334155;
+  --strong: #475569;
+}
+
+.predict-panel-good,
+.predict-panel-neutral {
+  background: var(--tint);
+  border-color: var(--line);
+}
+
+.predict-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.predict-panel h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.predict-pill {
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.predict-pill-good {
+  background: #fff;
+  border: 1px solid var(--line, #bbf7d0);
+  color: var(--strong, #15803d);
+}
+
+.predict-pill-bad {
+  background: #fee2e2;
+  font-weight: 600;
+  color: #b91c1c;
+}
+
+.predict-na {
+  color: #94a3b8;
+}
+
+.predict-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}

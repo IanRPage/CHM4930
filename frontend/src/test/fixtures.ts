@@ -1,7 +1,6 @@
 import type { PredictResponse } from "../types/predict.ts";
 import { NR_TASKS, SR_TASKS } from "../types/predict.ts";
 
-// Example response from backend/docs/predict-api.md
 export function predictResponse(): PredictResponse {
   const tox = { value: 0.1 };
   return {

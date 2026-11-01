@@ -1,0 +1,50 @@
+.predict {
+  max-width: 1104px;
+  margin: 0 auto;
+  padding: 9px 16px 32px;
+  color: #0f172a;
+}
+
+.predict-header h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.predict-header p {
+  margin: 6px 0 0;
+  font-size: 15px;
+  color: #64748b;
+}
+
+.predict-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 25px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.predict-tabs button {
+  padding: 12px 20px 13px;
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.predict-tabs button[aria-selected="true"] {
+  border-bottom-color: #2563eb;
+  font-weight: 600;
+  color: #2563eb;
+}
+
+.predict-tabs button:disabled {
+  color: #cbd5e1;
+  cursor: default;
+}
