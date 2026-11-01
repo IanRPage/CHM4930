@@ -1,9 +1,9 @@
 import { render, waitFor } from "@testing-library/react";
-import { createViewer } from "3dmol";
+import { createViewerGrid } from "3dmol";
 import { afterEach, expect, it, vi } from "vitest";
 import MoleculeViewer from "./MoleculeViewer.tsx";
 
-vi.mock("3dmol", () => ({ createViewer: vi.fn() }));
+vi.mock("3dmol", () => ({ createViewerGrid: vi.fn() }));
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -12,6 +12,7 @@ afterEach(() => {
 
 it("successfully loads and renders a molecule from an SDF URL", async () => {
   const viewer = {
+    setBackgroundColor: vi.fn(),
     addModel: vi.fn(),
     setStyle: vi.fn(),
     resize: vi.fn(),
@@ -19,9 +20,9 @@ it("successfully loads and renders a molecule from an SDF URL", async () => {
     render: vi.fn(),
     clear: vi.fn(),
   };
-  vi.mocked(createViewer).mockReturnValue(
-    viewer as unknown as ReturnType<typeof createViewer>,
-  );
+  vi.mocked(createViewerGrid).mockReturnValue([
+    [viewer],
+  ] as unknown as ReturnType<typeof createViewerGrid>);
   const fetchMock = vi.fn().mockResolvedValue(new Response("molecule SDF"));
   vi.stubGlobal("fetch", fetchMock);
 
