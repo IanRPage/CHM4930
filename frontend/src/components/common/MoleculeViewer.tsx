@@ -14,11 +14,17 @@ export default function MoleculeViewer({ sdfUrl }: MoleculeViewerProps) {
 
     let cancelled = false;
 
-    const viewer = $3Dmol.createViewer(containerRef.current, {
-      backgroundColor: "white",
-      backgroundAlpha: 0,
-      antialias: true,
-    });
+    let viewer: ReturnType<typeof $3Dmol.createViewer>;
+    try {
+      viewer = $3Dmol.createViewer(containerRef.current, {
+        backgroundColor: "white",
+        backgroundAlpha: 0,
+        antialias: true,
+      });
+    } catch (error) {
+      console.error("Molecule viewer creation error:", error);
+      return;
+    }
 
     async function loadMolecule() {
       try {
