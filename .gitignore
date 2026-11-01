@@ -7,6 +7,7 @@ ai/data/baseline/*
 !ai/data/baseline/results.csv
 !ai/data/baseline/results_runs.csv
 !ai/data/baseline/results_by_similarity.csv
+!ai/data/baseline/results_paired.csv
 ai/checkpoints/*
 !ai/checkpoints/.gitkeep
 ai/outputs/*
