@@ -1,8 +1,9 @@
 """
 Paired bootstrap of one model minus another on a split, from the test predictions
 `run_benchmark` saves. Each resample draws test compounds once and scores both models on
-them, with the delta averaged over seeds, so the CI covers test sampling and training
-noise together. Writes a model minus RF on the default split to
+them, with the delta averaged over seeds. The CI covers test-compound sampling for these
+trained seeds; it doesn't resample training, so it says nothing about a retrain, though
+seed spread is small next to it. Writes a model minus RF on the default split to
 `data/baseline/results_paired.csv`, replacing that model's earlier rows.
 
 From `ai/`, with `PYTHONPATH=src` (the model defaults to `mufu`):
