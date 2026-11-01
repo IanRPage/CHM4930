@@ -1,12 +1,11 @@
 """
 Record benchmark metrics in the tracked CSV `ai/data/baseline/results.csv`.
 
-Each row is one seed's measurement. What is constant per `(model, encoder, seed)` run
-(params, snapshot hash, git commit, date) is stored once in `results_runs.csv` next to
-it. `load_results()` joins the two, and readers aggregate across seeds with
-`summarize_seeds()`. Re-running replaces the `(model, encoder, seed)` rows being written
-and refuses to drop other models' rows from an older snapshot unless
-`allow_drop_stale=True`.
+Each row is one seed's measurement on one scaffold split (`split_id`). What is constant
+per `(model, encoder, split_id, seed)` run (params, hashes, commits, date) is stored once
+in `results_runs.csv` next to it, and `load_results()` joins the two. Re-running replaces
+the run rows being written and refuses to drop other models' rows from an older snapshot
+unless `allow_drop_stale=True`.
 """
 
 import datetime
@@ -24,45 +23,89 @@ from pipeline.combined_loader import COMBINED_CSV_PATH
 log = logging.getLogger(__name__)
 
 RESULTS_PATH = COMBINED_CSV_PATH.with_name("results.csv")
+DEFAULT_SPLIT_ID = "default"
 COLUMNS = [
     "model",
     "encoder",
     "dataset",
     "endpoint",
+    "split_id",
     "split",
     "seed",
     "metric",
     "value",
+    "ci_low",
+    "ci_high",
     "n_labeled",
     "n_positive",
+    "n_tasks",
+    "dropped_tasks",
     "params",
     "data_sha256",
+    "split_sha256",
     "git_commit",
+    "eval_commit",
     "date",
 ]
-RUN_KEYS = ["model", "encoder", "seed"]
-RUN_INFO = ["params", "data_sha256", "git_commit", "date"]
+RUN_KEYS = ["model", "encoder", "split_id", "seed"]
+RUN_INFO = [
+    "params",
+    "data_sha256",
+    "split_sha256",
+    "git_commit",
+    "eval_commit",
+    "date",
+]
 RUN_COLUMNS = RUN_KEYS + RUN_INFO
 METRIC_COLUMNS = [c for c in COLUMNS if c not in RUN_INFO]
-SORT_KEYS = ["model", "encoder", "dataset", "endpoint", "split", "seed", "metric"]
+SORT_KEYS = [
+    "model",
+    "encoder",
+    "dataset",
+    "endpoint",
+    "split_id",
+    "split",
+    "seed",
+    "metric",
+]
 SUMMARY_GROUP_KEYS = [
-    c for c in COLUMNS if c not in ("seed", "value", "git_commit", "date")
+    c
+    for c in COLUMNS
+    if c
+    not in ("seed", "value", "ci_low", "ci_high", "git_commit", "eval_commit", "date")
 ]
 SUMMARY_COLUMNS = [
     "model",
     "encoder",
     "dataset",
     "endpoint",
+    "split_id",
     "split",
     "metric",
     "value",
     "std",
+    "ci_low",
+    "ci_high",
     "n_seeds",
     "n_labeled",
     "n_positive",
+    "n_tasks",
+    "dropped_tasks",
     "params",
     "data_sha256",
+    "split_sha256",
 ]
+SPLIT_GROUP_KEYS = ["model", "encoder", "dataset", "endpoint", "split", "metric"]
+SPLIT_SUMMARY_COLUMNS = [
+    *SPLIT_GROUP_KEYS,
+    "value",
+    "split_std",
+    "seed_std",
+    "n_splits",
+    "n_seeds",
+    "data_sha256",
+]
+LOWER_IS_BETTER = frozenset({"rmse"})
 
 
 def runs_path(path: Path = RESULTS_PATH) -> Path:
@@ -169,14 +212,21 @@ def record_results(
     allow_drop_stale: bool = False,
     commit: str | None = None,
 ) -> pd.DataFrame:
+    """
+    `commit` is the commit that trained the model, the current one by default.
+    `eval_commit` is always the current one.
+    """
     sha = file_sha256(data_path)
+    head = git_commit()
     new = pd.DataFrame(rows).assign(
         model=model,
         data_sha256=sha,
-        git_commit=git_commit() if commit is None else commit,
+        git_commit=head if commit is None else commit,
+        eval_commit=head,
         date=datetime.datetime.now(datetime.UTC).date().isoformat(),
     )
     new = new.reindex(columns=COLUMNS)
+    new["split_id"] = new["split_id"].fillna(DEFAULT_SPLIT_ID).astype(str)
     new["seed"] = new["seed"].astype("Int64")
     if path.exists():
         old = load_results(path)
@@ -194,10 +244,8 @@ def record_results(
                 "dropping results for %s: computed on a different snapshot",
                 stale_others,
             )
-        replaced = pd.MultiIndex.from_frame(new[["model", "encoder", "seed"]])
-        keep = ~stale & ~pd.MultiIndex.from_frame(
-            old[["model", "encoder", "seed"]]
-        ).isin(replaced)
+        replaced = pd.MultiIndex.from_frame(new[RUN_KEYS])
+        keep = ~stale & ~pd.MultiIndex.from_frame(old[RUN_KEYS]).isin(replaced)
         new = pd.concat([old[keep], new], ignore_index=True)
     out = new[COLUMNS].sort_values(SORT_KEYS, ignore_index=True)
     out["seed"] = out["seed"].astype("Int64")
@@ -206,12 +254,39 @@ def record_results(
 
 
 def summarize_seeds(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Per split: mean and std over seeds, and the mean per-seed bootstrap CI.
+    """
     if df.empty:
         return pd.DataFrame(columns=SUMMARY_COLUMNS)
+    df = df.reindex(columns=COLUMNS)
     grouped = df.groupby(SUMMARY_GROUP_KEYS, dropna=False, as_index=False).agg(
         value=("value", "mean"),
         std=("value", lambda s: s.std(ddof=1)),
+        ci_low=("ci_low", "mean"),
+        ci_high=("ci_high", "mean"),
         n_seeds=("value", "count"),
     )
     sort_cols = [k for k in SORT_KEYS if k != "seed"]
     return grouped[SUMMARY_COLUMNS].sort_values(sort_cols, ignore_index=True)
+
+
+def summarize_splits(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    `split_std` is the std of the split means, `seed_std` the mean within-split std.
+    """
+    if df.empty:
+        return pd.DataFrame(columns=SPLIT_SUMMARY_COLUMNS)
+    per_split = summarize_seeds(df)
+    grouped = per_split.groupby(
+        [*SPLIT_GROUP_KEYS, "data_sha256"], dropna=False, as_index=False
+    ).agg(
+        value=("value", "mean"),
+        split_std=("value", lambda s: s.std(ddof=1)),
+        seed_std=("std", "mean"),
+        n_splits=("split_id", "nunique"),
+        n_seeds=("n_seeds", "sum"),
+    )
+    return grouped[SPLIT_SUMMARY_COLUMNS].sort_values(
+        SPLIT_GROUP_KEYS, ignore_index=True
+    )

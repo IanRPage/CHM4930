@@ -79,8 +79,12 @@ def test_evaluate_bioactivity_with_and_without_explicit_active_scores(split_df):
     assert rows.loc[("pIC50_BACE1", "val", "rmse"), "value"] == pytest.approx(0.0)
     assert rows.loc[("pIC50_BACE1", "val", "r2"), "value"] == pytest.approx(1.0)
     assert rows.loc[("pIC50_BACE1", "val", "roc_auc"), "value"] == pytest.approx(1.0)
+    assert rows.loc[("pIC50_BACE1", "val", "spearman"), "value"] == pytest.approx(1.0)
+    assert rows.loc[("pIC50_BACE1", "val", "pr_auc"), "value"] == pytest.approx(1.0)
+    assert rows.loc[("pIC50_BACE1", "val", "prevalence"), "value"] == 0.5
     assert rows.loc[("pIC50_BACE1", "val", "rmse"), "n_labeled"] == 2
     assert rows.loc[("pIC50_BACE1", "val", "rmse"), "n_positive"] == 1
+    assert rows["ci_low"].isna().all()
 
     # pIC50-derived ROC-AUC under pIC50_EGFR, classifier head ROC-AUC under active_EGFR
     assert rows.loc[("pIC50_EGFR", "val", "rmse"), "value"] == pytest.approx(0.0)
@@ -106,9 +110,8 @@ def test_evaluate_toxicity_excludes_omitted_endpoints_from_macros(split_df):
         },
     }
 
-    rows = pd.DataFrame(
-        benchmark.evaluate_split_predictions(split_df, predictions)
-    ).set_index(["endpoint", "split"])
+    rows = pd.DataFrame(benchmark.evaluate_split_predictions(split_df, predictions))
+    rows = rows[rows["metric"] == "roc_auc"].set_index(["endpoint", "split"])
 
     # In val, only NR-AR (tox21) was predicted; CT_TOX (clintox) was omitted
     assert ("NR-AR", "val") in rows.index
@@ -122,6 +125,11 @@ def test_evaluate_toxicity_excludes_omitted_endpoints_from_macros(split_df):
     assert np.isnan(rows.loc[("macro_clintox", "val"), "value"])
     assert rows.loc[("macro_overall", "val"), "value"] == pytest.approx(1.0)
     assert np.isnan(rows.loc[("macro_overall", "val"), "n_labeled"])
+    # omitted endpoints count as dropped, alongside ones with a single class
+    assert rows.loc[("macro_overall", "val"), "n_tasks"] == 1
+    dropped = rows.loc[("macro_overall", "val"), "dropped_tasks"].split(";")
+    assert "CT_TOX" in dropped and "NR-AR" not in dropped
+    assert len(dropped) == len(benchmark.TOX_TASKS) - 1
 
     # In test, NR-AR has AUC 1.0 and CT_TOX has AUC 0.0 -> macro_overall is 0.5
     assert rows.loc[("CT_TOX", "test"), "dataset"] == "clintox"
@@ -139,7 +147,7 @@ def test_evaluate_checks_optional_smiles_alignment(split_df):
             }
         },
     )
-    assert len(rows) == 3
+    assert len(rows) == 7
 
     with pytest.raises(ValueError, match="prediction SMILES do not match"):
         benchmark.evaluate_split_predictions(
@@ -177,6 +185,45 @@ def test_evaluate_rejects_wrong_length_split_or_unknown_column(split_df):
         )
 
 
+def test_bootstrap_ci_is_test_only_brackets_value_and_repeats_with_seed():
+    rng = np.random.default_rng(0)
+    n = 60
+    y = rng.normal(6.0, 1.0, n)
+    df = pd.DataFrame(
+        {
+            "smiles": [f"C{i}" for i in range(n)],
+            "split": ["val"] * 30 + ["test"] * 30,
+            "pIC50_BACE1": y,
+            "active_BACE1": (y >= 6).astype(float),
+            "pIC50_EGFR": np.nan,
+            "active_EGFR": np.nan,
+            **{task: np.nan for task in benchmark.TOX_TASKS},
+        }
+    )
+    noisy = y + rng.normal(0, 0.5, n)
+    predictions = {
+        split: {"pIC50_BACE1": noisy[df["split"] == split]} for split in ("val", "test")
+    }
+
+    first, second, other = (
+        pd.DataFrame(
+            benchmark.evaluate_split_predictions(
+                df, predictions, n_boot=200, boot_seed=seed
+            )
+        )
+        for seed in (0, 0, 1)
+    )
+
+    pd.testing.assert_frame_equal(first, second)
+    assert not first[["ci_low", "ci_high"]].equals(other[["ci_low", "ci_high"]])
+    val, test = first[first["split"] == "val"], first[first["split"] == "test"]
+    assert val["ci_low"].isna().all() and val["ci_high"].isna().all()
+    assert (test["ci_low"] <= test["value"]).all()
+    assert (test["value"] <= test["ci_high"]).all()
+    rmse = test.set_index("metric").loc["rmse"]
+    assert rmse["ci_low"] < rmse["ci_high"]
+
+
 def test_run_benchmark_records_per_seed_and_returns_summary(split_df, paths):
     path, data_path = paths
     seen_seeds = []
@@ -202,8 +249,15 @@ def test_run_benchmark_records_per_seed_and_returns_summary(split_df, paths):
 
     assert seen_seeds == [0, 1, 2]
     written = results.load_results(path)
-    # 2 splits * 3 metrics * 3 seeds = 18 rows
-    assert len(written) == 18
+    assert (written["split_id"] == "default").all()
+    assert set(written["split_sha256"]) == {benchmark.split_sha256(split_df)}
+    test_rows = written[written["split"] == "test"]
+    assert test_rows["ci_low"].notna().any()
+    saved = pd.read_csv(benchmark.prediction_path("stub", "enc", "default", 2))
+    assert saved["smiles"].tolist() == ["CCCC", "CCCCC", "CCCCCC"]
+    assert saved["pIC50_BACE1"].tolist()[:2] == pytest.approx([4.4, 8.4])
+    # 2 splits * 7 metrics * 3 seeds = 42 rows
+    assert len(written) == 42
     assert sorted(written["seed"].unique()) == [0, 1, 2]
     assert (written["params"] == '{"a": 1, "b": 2}').all()
 
@@ -332,12 +386,20 @@ def test_run_benchmark_records_finished_seeds_before_a_crash(split_df, paths):
 
 def test_load_benchmark_split_delegates_to_combined_and_scaffold(monkeypatch):
     sentinel = pd.DataFrame({"smiles": ["CCO"]})
+    calls = []
     monkeypatch.setattr(benchmark, "load_combined", lambda **_: sentinel)
-    monkeypatch.setattr(
-        benchmark, "scaffold_split", lambda df: df.assign(split=["train"])
-    )
+
+    def split(df, **kwargs):
+        calls.append(kwargs)
+        return df.assign(split=["train"])
+
+    monkeypatch.setattr(benchmark, "scaffold_split", split)
     out = benchmark.load_benchmark_split()
+    benchmark.load_benchmark_split(split_id="scaffold-3")
     assert out["split"].tolist() == ["train"]
+    assert calls == [{}, {"seed": 3}]
+    with pytest.raises(ValueError, match="split_id must be"):
+        benchmark.load_benchmark_split(split_id="random-3")
 
 
 def test_split_sha256_is_order_independent_and_changes_with_membership(split_df):
@@ -399,13 +461,17 @@ def test_load_is_read_only_and_missing_snapshot_raises(
 def test_frozen_benchmark_matches_recorded_rf_checksum_and_counts(frozen_benchmark):
     recorded = results.load_results()
     rf = recorded[recorded["model"].isin(["rf_bioactivity", "rf_toxicity"])]
-    assert len(rf) == 46 * len(benchmark.SEEDS)
+    # per run: bio 2 targets * 2 splits * 7 metrics, tox 2 splits * (6 macro + 14 * 3)
+    assert len(rf) == 124 * len(benchmark.SEEDS) * len(benchmark.SPLIT_IDS)
     assert set(rf["seed"]) == set(benchmark.SEEDS)
+    assert set(rf["split_id"]) == set(benchmark.SPLIT_IDS)
+    default = rf[rf["split_id"] == "default"]
+    assert set(default["split_sha256"]) == {benchmark.split_sha256(frozen_benchmark)}
     original = "b340ddf73f38e10f8b6a2948156417661a269ffc9a6d9b097b538c4690e1b041"
     assert set(rf["data_sha256"]) == {original}
     assert results.file_sha256(COMBINED_CSV_PATH) == original
 
-    for row in rf[rf["n_labeled"].notna()].itertuples(index=False):
+    for row in default[default["n_labeled"].notna()].itertuples(index=False):
         labels = frozen_benchmark.loc[
             frozen_benchmark["split"] == row.split, row.endpoint
         ].dropna()

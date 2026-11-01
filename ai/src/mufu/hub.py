@@ -25,7 +25,7 @@ from huggingface_hub import (
 )
 
 from baseline.benchmark import SEEDS
-from baseline.results import file_sha256, summarize_seeds
+from baseline.results import DEFAULT_SPLIT_ID, file_sha256, summarize_seeds
 from mufu.ensemble import load_ensemble_params, member_paths, sidecar_path
 from mufu.mc_dropout import load_conformal
 from mufu.mc_dropout import sidecar_path as conformal_path
@@ -112,6 +112,7 @@ def model_card(
         raise ValueError(
             "ensemble metrics aren't from this ensemble file; rerun fit_ensemble.py"
         )
+    results = results[results["split_id"] == DEFAULT_SPLIT_ID]
     run = results[
         (results["model"] == name)
         & (results["git_commit"] == version.git_commit)

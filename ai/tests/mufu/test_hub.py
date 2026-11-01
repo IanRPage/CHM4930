@@ -70,12 +70,13 @@ def test_load_version_rejects_unpublishable_sets(tmp_path, overrides, corrupt, m
         hub.load_version(tmp_path, "m", SEEDS)
 
 
-def results_rows(model, value, commit=COMMIT):
+def results_rows(model, value, commit=COMMIT, split_id="default"):
     return [
         {
             "model": model,
             "dataset": dataset,
             "endpoint": endpoint,
+            "split_id": split_id,
             "split": "test",
             "metric": metric,
             "seed": seed,
@@ -99,6 +100,7 @@ def test_model_card_uses_this_runs_metrics():
         results_rows("m", 0.8)
         + results_rows("m", 0.1, commit="old")
         + results_rows("rf_bioactivity", 0.5, commit="rf")
+        + results_rows("rf_bioactivity", 0.7, commit="rf", split_id="scaffold-0")
     )
     ensemble = pd.DataFrame(results_rows("m", 0.9)).assign(ensemble_sha256="e")
 

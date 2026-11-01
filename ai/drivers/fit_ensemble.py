@@ -18,7 +18,12 @@ import pandas as pd
 import torch
 
 from baseline.benchmark import SEEDS, evaluate_split_predictions, load_benchmark_split
-from baseline.results import file_sha256, load_results, summarize_seeds
+from baseline.results import (
+    DEFAULT_SPLIT_ID,
+    file_sha256,
+    load_results,
+    summarize_seeds,
+)
 from encoders.smiles_encoder import SmilesEncoder
 from mufu.contract import ACTIVE_COLUMNS, PIC50_COLUMNS, TOX_COLUMNS
 from mufu.data.dataset import split_datasets
@@ -56,7 +61,12 @@ PREDICTION_COLUMNS = ("smiles", *PIC50_COLUMNS, *ACTIVE_COLUMNS, *TOX_COLUMNS)
 
 def single_model_summary(model_name: str) -> pd.DataFrame:
     recorded = load_results()
-    return summarize_seeds(recorded[recorded["model"] == model_name])
+    return summarize_seeds(
+        recorded[
+            (recorded["model"] == model_name)
+            & (recorded["split_id"] == DEFAULT_SPLIT_ID)
+        ]
+    )
 
 
 def print_comparison(metrics: pd.DataFrame, single: pd.DataFrame) -> None:

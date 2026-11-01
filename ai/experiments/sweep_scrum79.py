@@ -683,7 +683,10 @@ def print_sweep_summary(results_path: Path = SWEEP_RESULTS_PATH) -> pd.DataFrame
 
     df = load_results(results_path)
     rf_df = load_results()
-    rf_df = rf_df[rf_df["model"].isin(["rf_bioactivity", "rf_toxicity"])]
+    rf_df = rf_df[
+        rf_df["model"].isin(["rf_bioactivity", "rf_toxicity"])
+        & (rf_df["split_id"] == "default")
+    ]
     df = pd.concat([df, rf_df], ignore_index=True)
 
     summary = summarize_seeds(df)
