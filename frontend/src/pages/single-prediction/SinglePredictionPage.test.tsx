@@ -25,6 +25,10 @@ describe("SinglePredictionPage", () => {
     const result = predictResponse();
     result.toxicity.stressResponse["SR-ARE"] = { value: 0.54 };
     result.bioactivity.BACE1.pActive = { value: 0.9 };
+    const missing = { value: null, reason: "Not returned by the server" };
+    result.toxicity.nuclearReceptor["NR-AR"] = missing;
+    result.toxicity.nuclearReceptor["NR-ER"] = missing;
+    result.fdaApproved = { value: null, reason: "Not returned by the model" };
     predictMock.mockResolvedValue(result);
     await submit("CCO");
 
@@ -35,8 +39,11 @@ describe("SinglePredictionPage", () => {
         name: "Prediction Results",
       }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("Not returned by the model")).toHaveLength(2);
-    expect(screen.getByText("1 of 12 high risk")).toBeInTheDocument();
+    expect(screen.getAllByText("Not returned by the model")).toHaveLength(3);
+    expect(screen.getByText("1 of 10 high risk")).toBeInTheDocument();
+    expect(
+      screen.getByText("NR-AR, NR-ER: Not returned by the server"),
+    ).toBeInTheDocument();
     expect(screen.getByText("54%")).toBeInTheDocument();
     expect(
       screen.getByText("Confidence via MC-Dropout · 50 passes"),
@@ -57,9 +64,17 @@ describe("SinglePredictionPage", () => {
     expect(screen.getByLabelText("Enter SMILES")).toHaveValue("CCO");
   });
 
-  it("shows the error message and stays on the input tab", async () => {
-    predictMock.mockRejectedValue(new PredictError("invalid-smiles"));
-    await submit("xyz");
+  it("shows the error and drops the previous result when a retry fails", async () => {
+    predictMock
+      .mockResolvedValueOnce(predictResponse())
+      .mockRejectedValueOnce(new PredictError("invalid-smiles"));
+    await submit("CCO");
+    await screen.findByRole("heading", {
+      level: 1,
+      name: "Prediction Results",
+    });
+    await userEvent.click(screen.getByRole("tab", { name: "Input Molecule" }));
+    await userEvent.click(screen.getByRole("button", { name: "Predict" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Invalid SMILES",
     );

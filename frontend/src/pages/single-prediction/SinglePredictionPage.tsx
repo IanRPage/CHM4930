@@ -25,6 +25,7 @@ export default function SinglePredictionPage() {
     controller.current = current;
     setLoading(true);
     setError(null);
+    setResult(null);
     try {
       setResult(await predict(smiles, { signal: current.signal }));
       setTab("results");

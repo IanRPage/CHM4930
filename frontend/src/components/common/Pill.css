@@ -18,3 +18,9 @@
   font-weight: 600;
   color: var(--red-700);
 }
+
+.pill-neutral {
+  background: var(--white);
+  border: 1px solid var(--slate-200);
+  color: var(--slate-600);
+}

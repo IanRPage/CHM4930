@@ -19,7 +19,7 @@ function riskLevel(p: number) {
 function RiskRow({ task, output }: { task: string; output: Output }) {
   if (output.value === null) {
     return (
-      <li className="predict-risk" title={output.reason}>
+      <li className="predict-risk">
         <span>{task}</span>
         <Meter value={0} className="predict-risk-meter" />
         <span className="predict-risk-value predict-na">—</span>
@@ -37,22 +37,32 @@ function RiskRow({ task, output }: { task: string; output: Output }) {
 
 export default function ToxicityPanel({ result }: { result: PredictResponse }) {
   const { nuclearReceptor, stressResponse } = result.toxicity;
-  const outputs = [
-    ...Object.values(nuclearReceptor),
-    ...Object.values(stressResponse),
+  const tasks: (readonly [string, Output])[] = [
+    ...NR_TASKS.map((t) => [t, nuclearReceptor[t]] as const),
+    ...SR_TASKS.map((t) => [t, stressResponse[t]] as const),
   ];
-  const high = outputs.filter(
-    (o) => o.value !== null && o.value >= HIGH_RISK,
-  ).length;
+  const evaluated = tasks.flatMap(([, o]) =>
+    o.value === null ? [] : [o.value],
+  );
+  const high = evaluated.filter((p) => p >= HIGH_RISK).length;
+  const missing = new Map<string, string[]>();
+  for (const [task, o] of tasks) {
+    if (o.value === null)
+      missing.set(o.reason, [...(missing.get(o.reason) ?? []), task]);
+  }
 
   return (
     <Panel
       title="Toxicity risk"
       icon={toxicityIcon}
       aside={
-        <Pill tone={high ? "bad" : "good"}>
-          {high} of {outputs.length} high risk
-        </Pill>
+        evaluated.length === 0 ? (
+          <Pill tone="neutral">Not available</Pill>
+        ) : (
+          <Pill tone={high ? "bad" : "good"}>
+            {high} of {evaluated.length} high risk
+          </Pill>
+        )
       }
     >
       <ul className="predict-legend">
@@ -78,6 +88,11 @@ export default function ToxicityPanel({ result }: { result: PredictResponse }) {
           </ul>
         </div>
       </div>
+      {[...missing].map(([reason, names]) => (
+        <p key={reason} className="predict-risk-missing">
+          {names.join(", ")}: {reason}
+        </p>
+      ))}
     </Panel>
   );
 }

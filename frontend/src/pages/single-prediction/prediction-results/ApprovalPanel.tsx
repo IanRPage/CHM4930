@@ -15,12 +15,10 @@ export default function ApprovalPanel({ output }: { output: Output }) {
       className="predict-approval"
       aside={
         output.value === null ? (
-          <span
-            className="predict-approval-value predict-na"
-            title={output.reason}
-          >
-            —
-          </span>
+          <>
+            <span className="predict-approval-reason">{output.reason}</span>
+            <span className="predict-approval-value predict-na">—</span>
+          </>
         ) : (
           <>
             <Meter value={output.value} className="predict-approval-meter" />

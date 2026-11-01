@@ -94,7 +94,7 @@ Follow these when changing anything under `frontend/`.
     `controls` (next to the title), and `aside` (right side).
     `tone="good" | "neutral"` tints it and sets `--tint`, `--line`, `--track`,
     `--fill`, `--value`, and `--strong` for its contents.
-  - `Pill`: status badge, `good` or `bad`.
+  - `Pill`: status badge, `good`, `bad`, or `neutral`.
   - `Meter`: bar for a 0–1 value, styled with `--meter-height`,
     `--meter-track`, and `--meter-color`.
 

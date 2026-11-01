@@ -5,7 +5,7 @@ export default function Pill({
   tone,
   children,
 }: {
-  tone: "good" | "bad";
+  tone: "good" | "bad" | "neutral";
   children: ReactNode;
 }) {
   return <span className={`pill pill-${tone}`}>{children}</span>;

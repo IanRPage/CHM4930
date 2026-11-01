@@ -21,3 +21,8 @@
   font-weight: 700;
   color: var(--value);
 }
+
+.predict-approval-reason {
+  font-size: 12px;
+  color: var(--slate-500);
+}

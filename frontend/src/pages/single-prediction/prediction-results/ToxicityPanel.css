@@ -75,6 +75,12 @@
   color: var(--red-700);
 }
 
+.predict-risk-missing {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--slate-500);
+}
+
 @media (max-width: 800px) {
   .predict-risk-columns {
     grid-template-columns: minmax(0, 1fr);
