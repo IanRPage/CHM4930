@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { CSSProperties } from "react";
 import bioactivityIcon from "../../../assets/icon-bioactivity.svg";
+import Panel from "../../../components/common/Panel.tsx";
+import Pill from "../../../components/common/Pill.tsx";
 import type {
   Output,
   PredictResponse,
@@ -78,10 +80,11 @@ export default function BioactivityPanel({
   const ci = ciCoverage === null ? "CI" : `${percent(ciCoverage)} CI`;
 
   return (
-    <section className={`predict-panel ${tone(pActive)}`}>
-      <div className="predict-panel-head">
-        <img src={bioactivityIcon} alt="" />
-        <h3>Bioactivity</h3>
+    <Panel
+      title="Bioactivity"
+      icon={bioactivityIcon}
+      tone={tone(pActive)}
+      controls={
         <div className="predict-segmented" role="group" aria-label="Target">
           {TARGET_ORDER.map((t) => (
             <button
@@ -94,13 +97,15 @@ export default function BioactivityPanel({
             </button>
           ))}
         </div>
-        {mcDropoutPasses !== null && (
-          <span className="predict-pill predict-pill-good">
+      }
+      aside={
+        mcDropoutPasses !== null && (
+          <Pill tone="good">
             Confidence via MC-Dropout · {mcDropoutPasses} passes
-          </span>
-        )}
-      </div>
-
+          </Pill>
+        )
+      }
+    >
       <div className="predict-stats">
         <Stat
           label="pIC50"
@@ -157,6 +162,6 @@ export default function BioactivityPanel({
           </div>
         </div>
       )}
-    </section>
+    </Panel>
   );
 }

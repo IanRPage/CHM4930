@@ -1,49 +1,23 @@
 .predict-approval {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   padding-top: 9px;
   padding-bottom: 9px;
-}
-
-.predict-approval > img {
-  align-self: flex-start;
 }
 
 .predict-approval h3 {
   font-size: 15px;
 }
 
-.predict-approval p {
-  margin: 2px 0 0;
-  font-size: 12px;
-  color: var(--strong);
-}
-
-.predict-approval-track {
+.predict-approval-meter {
+  --meter-height: 8px;
+  --meter-track: var(--track);
+  --meter-color: var(--fill);
   width: 170px;
-  height: 8px;
-  margin-left: auto;
-  border-radius: 4px;
-  background: var(--track);
-  overflow: hidden;
-}
-
-.predict-approval-fill {
-  display: block;
-  height: 100%;
-  background: var(--fill);
 }
 
 .predict-approval-value {
   min-width: 56px;
-  margin-left: auto;
   text-align: right;
   font-size: 20px;
   font-weight: 700;
   color: var(--value);
-}
-
-.predict-approval-track + .predict-approval-value {
-  margin-left: 0;
 }

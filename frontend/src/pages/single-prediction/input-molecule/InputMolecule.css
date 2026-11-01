@@ -1,6 +1,5 @@
 .predict-input {
   margin-top: 24px;
-  padding: 24px;
 }
 
 .predict-input label {
@@ -22,38 +21,38 @@
   min-width: 0;
   height: 48px;
   padding: 0 16px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--slate-300);
   border-radius: 8px;
   box-sizing: border-box;
-  font-family: ui-monospace, "Roboto Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 15px;
-  color: #0f172a;
+  color: var(--slate-900);
 }
 
 .predict-input input:focus {
-  outline: 2px solid #bfdbfe;
-  border-color: #2563eb;
+  outline: 2px solid var(--blue-200);
+  border-color: var(--blue-600);
 }
 
 .predict-input button {
   padding: 0 28px;
   border: 0;
   border-radius: 8px;
-  background: #2563eb;
+  background: var(--blue-600);
   font: inherit;
   font-size: 15px;
   font-weight: 600;
-  color: #fff;
+  color: var(--white);
   cursor: pointer;
 }
 
 .predict-input button:disabled {
-  background: #93c5fd;
+  background: var(--blue-300);
   cursor: default;
 }
 
 .predict-error {
   margin: 12px 0 0;
   font-size: 14px;
-  color: #b91c1c;
+  color: var(--red-700);
 }

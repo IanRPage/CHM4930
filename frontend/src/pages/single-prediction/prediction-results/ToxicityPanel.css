@@ -5,7 +5,7 @@
   padding: 0;
   list-style: none;
   font-size: 12px;
-  color: #475569;
+  color: var(--slate-600);
 }
 
 .predict-legend li::before {
@@ -30,7 +30,7 @@
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 .predict-risk-columns ul {
@@ -46,33 +46,23 @@
   gap: 12px;
   height: 24px;
   font-size: 13px;
-  color: #334155;
+  color: var(--slate-700);
 }
 
 .predict-risk-low {
-  --risk: #cbd5e1;
+  --risk: var(--slate-300);
 }
 
 .predict-risk-moderate {
-  --risk: #f59e0b;
+  --risk: var(--amber-500);
 }
 
 .predict-risk-high {
-  --risk: #ef4444;
+  --risk: var(--red-500);
 }
 
-.predict-risk-track {
-  height: 6px;
-  border-radius: 3px;
-  background: #f1f5f9;
-  overflow: hidden;
-}
-
-.predict-risk-fill {
-  display: block;
-  height: 100%;
-  border-radius: 3px;
-  background: var(--risk);
+.predict-risk-meter {
+  --meter-color: var(--risk);
 }
 
 .predict-risk-value {
@@ -82,7 +72,7 @@
 
 .predict-risk-high .predict-risk-value {
   font-weight: 700;
-  color: #b91c1c;
+  color: var(--red-700);
 }
 
 @media (max-width: 800px) {

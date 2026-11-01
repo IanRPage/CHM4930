@@ -1,5 +1,6 @@
 import type { FormEvent } from "react";
 import infoIcon from "../../../assets/icon-info.svg";
+import Card from "../../../components/common/Card.tsx";
 import "./InputMolecule.css";
 
 export default function InputMolecule({
@@ -21,7 +22,7 @@ export default function InputMolecule({
   }
 
   return (
-    <form className="card predict-input" onSubmit={handleSubmit}>
+    <Card as="form" className="predict-input" onSubmit={handleSubmit}>
       <label htmlFor="smiles">
         Enter SMILES
         <img
@@ -49,6 +50,6 @@ export default function InputMolecule({
           {error}
         </p>
       )}
-    </form>
+    </Card>
   );
 }

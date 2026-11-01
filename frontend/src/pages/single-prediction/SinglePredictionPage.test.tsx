@@ -44,10 +44,10 @@ describe("SinglePredictionPage", () => {
     const bioactivity = screen
       .getByRole("heading", { name: "Bioactivity" })
       .closest("section");
-    expect(bioactivity).toHaveClass("predict-panel-neutral");
+    expect(bioactivity).toHaveClass("panel-neutral");
 
     await userEvent.click(screen.getByRole("button", { name: "BACE1" }));
-    expect(bioactivity).toHaveClass("predict-panel-good");
+    expect(bioactivity).toHaveClass("panel-good");
     expect(screen.getByText("4.90")).toBeInTheDocument();
     expect(screen.getByText("95% CI 3.80 – 6.00")).toBeInTheDocument();
     expect(screen.getByText("12.6 µM")).toBeInTheDocument();

@@ -2,27 +2,14 @@
   max-width: 1104px;
   margin: 0 auto;
   padding: 9px 16px 32px;
-  color: #0f172a;
-}
-
-.predict-header h1 {
-  margin: 0;
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-}
-
-.predict-header p {
-  margin: 6px 0 0;
-  font-size: 15px;
-  color: #64748b;
+  color: var(--slate-900);
 }
 
 .predict-tabs {
   display: flex;
   gap: 8px;
   margin-top: 25px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--slate-200);
 }
 
 .predict-tabs button {
@@ -34,17 +21,17 @@
   font: inherit;
   font-size: 14px;
   font-weight: 500;
-  color: #64748b;
+  color: var(--slate-500);
   cursor: pointer;
 }
 
 .predict-tabs button[aria-selected="true"] {
-  border-bottom-color: #2563eb;
+  border-bottom-color: var(--blue-600);
   font-weight: 600;
-  color: #2563eb;
+  color: var(--blue-600);
 }
 
 .predict-tabs button:disabled {
-  color: #cbd5e1;
+  color: var(--slate-300);
   cursor: default;
 }

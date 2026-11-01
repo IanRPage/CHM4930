@@ -1,4 +1,7 @@
 import toxicityIcon from "../../../assets/icon-toxicity.svg";
+import Meter from "../../../components/common/Meter.tsx";
+import Panel from "../../../components/common/Panel.tsx";
+import Pill from "../../../components/common/Pill.tsx";
 import type { Output, PredictResponse } from "../../../types/predict.ts";
 import { NR_TASKS, SR_TASKS } from "../../../types/predict.ts";
 import "./ToxicityPanel.css";
@@ -18,7 +21,7 @@ function RiskRow({ task, output }: { task: string; output: Output }) {
     return (
       <li className="predict-risk" title={output.reason}>
         <span>{task}</span>
-        <span className="predict-risk-track" />
+        <Meter value={0} className="predict-risk-meter" />
         <span className="predict-risk-value predict-na">—</span>
       </li>
     );
@@ -26,12 +29,7 @@ function RiskRow({ task, output }: { task: string; output: Output }) {
   return (
     <li className={`predict-risk predict-risk-${riskLevel(output.value)}`}>
       <span>{task}</span>
-      <span className="predict-risk-track">
-        <span
-          className="predict-risk-fill"
-          style={{ width: percent(output.value) }}
-        />
-      </span>
+      <Meter value={output.value} className="predict-risk-meter" />
       <span className="predict-risk-value">{percent(output.value)}</span>
     </li>
   );
@@ -48,18 +46,15 @@ export default function ToxicityPanel({ result }: { result: PredictResponse }) {
   ).length;
 
   return (
-    <section className="predict-panel">
-      <div className="predict-panel-head">
-        <img src={toxicityIcon} alt="" />
-        <h3>Toxicity risk</h3>
-        <span
-          className={`predict-pill ${
-            high ? "predict-pill-bad" : "predict-pill-good"
-          }`}
-        >
+    <Panel
+      title="Toxicity risk"
+      icon={toxicityIcon}
+      aside={
+        <Pill tone={high ? "bad" : "good"}>
           {high} of {outputs.length} high risk
-        </span>
-      </div>
+        </Pill>
+      }
+    >
       <ul className="predict-legend">
         <li className="predict-risk-low">Low &lt; 30%</li>
         <li className="predict-risk-moderate">Moderate 30–50%</li>
@@ -83,6 +78,6 @@ export default function ToxicityPanel({ result }: { result: PredictResponse }) {
           </ul>
         </div>
       </div>
-    </section>
+    </Panel>
   );
 }

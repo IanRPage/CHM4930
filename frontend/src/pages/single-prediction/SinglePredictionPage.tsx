@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import PageHeader from "../../components/common/PageHeader.tsx";
 import { PredictError } from "../../services/errors.ts";
 import { predict } from "../../services/predict.ts";
 import type { PredictResponse } from "../../types/predict.ts";
@@ -38,18 +39,16 @@ export default function SinglePredictionPage() {
 
   return (
     <div className="predict">
-      <header className="predict-header">
-        <h1>
-          {tab === "input"
-            ? "Single Molecule Prediction"
-            : "Prediction Results"}
-        </h1>
-        <p>
-          {tab === "input"
+      <PageHeader
+        title={
+          tab === "input" ? "Single Molecule Prediction" : "Prediction Results"
+        }
+        subtitle={
+          tab === "input"
             ? "Input a molecule to predict bioactivity and toxicity"
-            : "Model predictions for the input molecule"}
-        </p>
-      </header>
+            : "Model predictions for the input molecule"
+        }
+      />
 
       <div className="predict-tabs" role="tablist">
         <button

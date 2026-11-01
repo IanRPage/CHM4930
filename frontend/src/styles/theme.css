@@ -1,0 +1,60 @@
+/* Design tokens. Use these instead of raw colors so palette changes stay in one place. */
+:root {
+  --white: #fff;
+
+  --slate-50: #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1e293b;
+  --slate-900: #0f172a;
+
+  --blue-50: #eff6ff;
+  --blue-100: #dbeafe;
+  --blue-200: #bfdbfe;
+  --blue-300: #93c5fd;
+  --blue-500: #3b82f6;
+  --blue-600: #2563eb;
+  --blue-700: #1d4ed8;
+
+  --indigo-50: #eef2ff;
+
+  --green-50: #f0fdf4;
+  --green-100: #dcfce7;
+  --green-200: #bbf7d0;
+  --green-500: #22c55e;
+  --green-600: #16a34a;
+  --green-700: #15803d;
+
+  --emerald-500: #10b981;
+
+  --red-50: #fef2f2;
+  --red-100: #fee2e2;
+  --red-500: #ef4444;
+  --red-700: #b91c1c;
+
+  --amber-100: #fef3c7;
+  --amber-500: #f59e0b;
+
+  --cyan-50: #ecfeff;
+  --cyan-500: #06b6d4;
+  --cyan-700: #0e7490;
+
+  --violet-100: #ede9fe;
+  --violet-600: #7c3aed;
+
+  /* Figma tints for icon chips and the main background */
+  --tint-blue: #e8f0ff;
+  --tint-violet: #f1ebff;
+  --tint-green: #e3f7ee;
+  --tint-sky: #f1f6ff;
+
+  --shadow-card: 0 1px 1.5px rgba(15, 23, 41, 0.06);
+  --shadow-raised: 0 1px 2px rgba(15, 23, 41, 0.12);
+
+  --font-mono: ui-monospace, "Roboto Mono", monospace;
+}

@@ -1,0 +1,14 @@
+.meter {
+  display: block;
+  height: var(--meter-height, 6px);
+  border-radius: 999px;
+  background: var(--meter-track, var(--slate-100));
+  overflow: hidden;
+}
+
+.meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--meter-color, var(--blue-600));
+}

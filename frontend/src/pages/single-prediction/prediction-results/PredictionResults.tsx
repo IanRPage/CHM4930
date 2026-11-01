@@ -1,4 +1,5 @@
 import infoMutedIcon from "../../../assets/icon-info-muted.svg";
+import Card from "../../../components/common/Card.tsx";
 import type { PredictResponse } from "../../../types/predict.ts";
 import ApprovalPanel from "./ApprovalPanel.tsx";
 import BioactivityPanel from "./BioactivityPanel.tsx";
@@ -17,7 +18,7 @@ export default function PredictionResults({
           <strong>SMILES:</strong> <code>{result.smiles}</code>
         </p>
       )}
-      <section className="card predict-properties">
+      <Card className="predict-properties">
         <h2>Predicted Properties</h2>
         <BioactivityPanel result={result} />
         <ToxicityPanel result={result} />
@@ -27,7 +28,7 @@ export default function PredictionResults({
           Predictions are model estimates and should be validated
           experimentally.
         </p>
-      </section>
+      </Card>
     </div>
   );
 }
