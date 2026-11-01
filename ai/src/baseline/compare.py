@@ -2,15 +2,16 @@
 Paired bootstrap of one model minus another on a split, from the test predictions
 `run_benchmark` saves. Each resample draws test compounds once and scores both models on
 them, with the delta averaged over seeds, so the CI covers test sampling and training
-noise together. Writes MuFu minus RF on the default split to
-`data/baseline/results_paired.csv`.
+noise together. Writes a model minus RF on the default split to
+`data/baseline/results_paired.csv`, replacing that model's earlier rows.
 
-From `ai/`, with `PYTHONPATH=src`:
+From `ai/`, with `PYTHONPATH=src` (the model defaults to `mufu`):
 
-    python -m baseline.compare
+    python -m baseline.compare [model]
 """
 
 import logging
+import sys
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
@@ -123,16 +124,22 @@ def paired_bootstrap(
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    if len(sys.argv) > 2:
+        raise SystemExit("usage: python -m baseline.compare [model]")
+    model = sys.argv[1] if len(sys.argv) == 2 else "mufu"
     df = benchmark.load_benchmark_split()
     rows = []
     for endpoint, metrics in HEADLINE.items():
         rf = "rf_bioactivity" if endpoint.startswith("pIC50_") else "rf_toxicity"
-        log.info("bootstrapping mufu - %s on %s", rf, endpoint)
-        rows += paired_bootstrap(df, "mufu", rf, endpoint, metrics)
-    table = pd.DataFrame(rows)
-    table.to_csv(PAIRED_PATH, index=False)
-    log.info("wrote %d rows to %s", len(table), PAIRED_PATH)
-    print(table.round(4).to_string(index=False))
+        log.info("bootstrapping %s - %s on %s", model, rf, endpoint)
+        rows += paired_bootstrap(df, model, rf, endpoint, metrics)
+    new = pd.DataFrame(rows)
+    if PAIRED_PATH.exists():
+        old = pd.read_csv(PAIRED_PATH)
+        new = pd.concat([old[old["a"] != model], new], ignore_index=True)
+    new.to_csv(PAIRED_PATH, index=False)
+    log.info("wrote %d rows to %s", len(rows), PAIRED_PATH)
+    print(new[new["a"] == model].round(4).to_string(index=False))
 
 
 if __name__ == "__main__":

@@ -84,6 +84,34 @@ and metric) and `results_runs.csv` (params, data/split hashes, training and scor
 commits per run). [`notebooks/benchmark-results.ipynb`](notebooks/benchmark-results.ipynb)
 plots them.
 
+### Evaluating a MuFu change
+
+Compare variants on validation and score only the one you keep on test: picking whichever
+variant does best on test inflates its test score.
+
+1. Make the change, set `model_name = "mufu_<name>"` in `drivers/train_mufu.py` (so v1.0.0's
+   checkpoints and rows aren't overwritten), and run `python drivers/train_mufu.py`.
+2. Compare it with `mufu` and RF in the Validation section of the results notebook. Repeat
+   1–2 until you have a version worth keeping.
+3. Score that version on test once, then read the notebook's test sections. A paired CI
+   that excludes 0 is a real difference from RF.
+
+   ```
+   PYTHONPATH=src python -m baseline.compare mufu_<name>
+   PYTHONPATH=src python -m baseline.similarity
+   ```
+
+4. If it beats `mufu`, publish it to Hugging Face.
+   - Commit the change, retrain with `model_name = "mufu"` on that clean commit (publishing
+     refuses dirty checkpoints), rerun step 3 for `mufu`, and commit the result CSVs.
+   - `hf auth login` with a write token, set `tag` in `drivers/publish_mufu.py`, and run it
+     with `dry_run = True` to review the model card, then `dry_run = False`.
+   - Tags are `vMAJOR.MINOR.PATCH`: minor for a drop-in retrained model, major if the
+     server or backend must change, patch for metadata only.
+
+To drop a variant, `git restore` the result CSVs and delete
+`outputs/predictions/mufu_<name>__*`.
+
 ## Results
 
 Test set. "Default" is the mean over 5 seeds with the 95% bootstrap CI; "6 splits" is
@@ -127,8 +155,7 @@ PYTHONPATH=src python -m baseline.baseline_bioactivity
 PYTHONPATH=src python -m baseline.baseline_toxicity
 ```
 
-**MuFu** (GPU). Settings are at the top of each driver; commit before a final run so the
-rows record a clean commit.
+**MuFu** (GPU). Settings are at the top of each driver.
 
 ```
 python drivers/train_mufu.py      # 5 seeds, then the seed ensemble
@@ -170,11 +197,9 @@ and saves its hash; point `MUFU_API_KEYS_FILE` at that file. Other settings
 `src/mufu_server/config.py`. The server refuses to start if any checkpoint is missing or
 the ensemble was fitted on different ones.
 
-Published weights are on [`CHM4930/mufu`](https://huggingface.co/CHM4930/mufu), tagged
-`vMAJOR.MINOR.PATCH`: major if the server or backend must change, minor for a drop-in
-retrained model, patch for metadata only. Set `MUFU_HF_REPO=CHM4930/mufu` and
-`MUFU_MODEL_VERSION=<tag>` to serve one; `drivers/download_mufu.py` and
-`drivers/publish_mufu.py` download and publish. Hosting on personal compute behind a
+Published versions are on [`CHM4930/mufu`](https://huggingface.co/CHM4930/mufu). To
+serve one, set `MUFU_HF_REPO=CHM4930/mufu` and `MUFU_MODEL_VERSION=<tag>`;
+`drivers/download_mufu.py` just downloads one. Hosting on personal compute behind a
 Cloudflare Tunnel: [`docs/hosting.md`](docs/hosting.md).
 
 ## Testing
