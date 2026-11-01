@@ -13,7 +13,7 @@ CYCLOALKANE_SMILES = ["C1" + "C" * (n - 1) + "1" for n in range(3, 23)]
 
 
 @pytest.fixture(autouse=True)
-def isolate_benchmark_runtime(monkeypatch):
+def isolate_benchmark_runtime(monkeypatch, tmp_path):
     python_state = random.getstate()
     numpy_state = np.random.get_state()
     torch_state = torch.get_rng_state()
@@ -33,6 +33,8 @@ def isolate_benchmark_runtime(monkeypatch):
         return record(*args, **kwargs)
 
     monkeypatch.setattr(bm, "record_results", guarded_record)
+    monkeypatch.setattr(bm, "PREDICTIONS_DIR", tmp_path / "predictions")
+    monkeypatch.setattr(bm, "N_BOOT", 50)
     yield
     random.setstate(python_state)
     np.random.set_state(numpy_state)

@@ -4,6 +4,7 @@ import {
   toPredictResponse,
 } from "../models/inference.ts";
 import type { PredictResponse } from "../models/predict.ts";
+import { isRecord } from "../models/util.ts";
 
 // One request runs many MC-Dropout passes on the inference server plus a tunnel
 // round trip, and must finish inside the Vercel function duration
@@ -59,6 +60,27 @@ export class MuFuClient {
     this.url = url.replace(/\/+$/, "");
     this.apiKey = apiKey;
     this.timeoutMs = timeoutMs;
+  }
+
+  async modelVersion(): Promise<string | null> {
+    try {
+      const res = await fetch(`${this.url}/health`, {
+        redirect: "error",
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+      if (!res.ok) {
+        await res.body?.cancel().catch(() => {});
+        return null;
+      }
+      const body: unknown = await res.json();
+      return isRecord(body) &&
+        typeof body.model_version === "string" &&
+        body.model_version
+        ? body.model_version
+        : null;
+    } catch {
+      return null;
+    }
   }
 
   async predict(smiles: string): Promise<PredictResponse> {

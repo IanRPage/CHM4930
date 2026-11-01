@@ -70,12 +70,13 @@ def test_load_version_rejects_unpublishable_sets(tmp_path, overrides, corrupt, m
         hub.load_version(tmp_path, "m", SEEDS)
 
 
-def results_rows(model, value, commit=COMMIT):
+def results_rows(model, value, commit=COMMIT, split_id="default"):
     return [
         {
             "model": model,
             "dataset": dataset,
             "endpoint": endpoint,
+            "split_id": split_id,
             "split": "test",
             "metric": metric,
             "seed": seed,
@@ -99,6 +100,7 @@ def test_model_card_uses_this_runs_metrics():
         results_rows("m", 0.8)
         + results_rows("m", 0.1, commit="old")
         + results_rows("rf_bioactivity", 0.5, commit="rf")
+        + results_rows("rf_bioactivity", 0.7, commit="rf", split_id="scaffold-0")
     )
     ensemble = pd.DataFrame(results_rows("m", 0.9)).assign(ensemble_sha256="e")
 
@@ -106,6 +108,8 @@ def test_model_card_uses_this_runs_metrics():
 
     assert {r.metric_value for r in card.data.eval_results} == {0.9}
     assert len(card.data.eval_results) == len(hub.CARD_METRICS)
+    index = card.data.to_dict()["model-index"][0]["results"]
+    assert len(index) == len({endpoint for _, endpoint, _, _ in hub.CARD_METRICS})
     assert "| 0.900 | 0.810 ± 0.010 | 0.510 |" in card.text
 
     with pytest.raises(ValueError, match="rerun fit_ensemble"):

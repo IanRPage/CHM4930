@@ -1,9 +1,31 @@
 """
-Evaluation metrics (RMSE, R2, and ROC-AUC) for single-task and masked multi-task predictions.
+Evaluation metrics for single-task and masked multi-task predictions: RMSE, R2,
+Spearman and Kendall for regression, ROC-AUC and PR-AUC for classification.
 """
 
 import numpy as np
-from sklearn.metrics import mean_squared_error, r2_score, roc_auc_score
+from scipy.stats import kendalltau, spearmanr
+from sklearn.metrics import (
+    average_precision_score,
+    mean_squared_error,
+    r2_score,
+    roc_auc_score,
+)
+
+
+def _ranking(y_true, y_score) -> dict[str, float]:
+    if np.unique(y_true).size < 2:
+        return {"roc_auc": float("nan"), "pr_auc": float("nan")}
+    return {
+        "roc_auc": float(roc_auc_score(y_true, y_score)),
+        "pr_auc": float(average_precision_score(y_true, y_score)),
+    }
+
+
+def _rank_correlation(fn, y_true, y_score) -> float:
+    if y_true.size < 2 or np.ptp(y_true) == 0 or np.ptp(y_score) == 0:
+        return float("nan")
+    return float(fn(y_true, y_score).statistic)
 
 
 def evaluation_metrics(y_true, y_score, task_type, mask=None):
@@ -34,23 +56,16 @@ def evaluation_metrics(y_true, y_score, task_type, mask=None):
             raise ValueError("mask must have the same shape as y_true")
 
     if task_type == "multitask":
-        task_scores = []
-
-        for task_index in range(y_true.shape[1]):
-            valid = mask[:, task_index]
-
-            task_true = y_true[valid, task_index]
-            task_pred = y_score[valid, task_index]
-
-            if np.unique(task_true).size < 2:
-                task_scores.append(float("nan"))
-            else:
-                task_scores.append(float(roc_auc_score(task_true, task_pred)))
-
-        valid_scores = [score for score in task_scores if not np.isnan(score)]
+        per_task = [
+            _ranking(y_true[mask[:, j], j], y_score[mask[:, j], j])
+            for j in range(y_true.shape[1])
+        ]
+        roc = [t["roc_auc"] for t in per_task]
+        valid_scores = [score for score in roc if not np.isnan(score)]
 
         return {
-            "per_task_roc_auc": task_scores,
+            "per_task_roc_auc": roc,
+            "per_task_pr_auc": [t["pr_auc"] for t in per_task],
             "mean_roc_auc": (
                 float(np.mean(valid_scores)) if valid_scores else float("nan")
             ),
@@ -71,12 +86,8 @@ def evaluation_metrics(y_true, y_score, task_type, mask=None):
             "r2": (
                 float(r2_score(y_true, y_score)) if y_true.size >= 2 else float("nan")
             ),
+            "spearman": _rank_correlation(spearmanr, y_true, y_score),
+            "kendall": _rank_correlation(kendalltau, y_true, y_score),
         }
 
-    return {
-        "roc_auc": (
-            float(roc_auc_score(y_true, y_score))
-            if np.unique(y_true).size >= 2
-            else float("nan")
-        ),
-    }
+    return _ranking(y_true, y_score)

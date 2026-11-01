@@ -19,6 +19,7 @@ def recorded(monkeypatch, tmp_path):
     monkeypatch.setattr(results, "git_commit", lambda: "abc1234")
     monkeypatch.setattr(bt, "SEEDS", TEST_SEEDS)
     monkeypatch.setattr(benchmark, "SEEDS", TEST_SEEDS)
+    monkeypatch.setattr(bt, "SPLIT_IDS", ("default",))
 
     real_record = benchmark.record_results
 
@@ -148,10 +149,14 @@ def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
 
     assert [model for model, _ in recorded] == ["rf_toxicity"] * len(TEST_SEEDS)
     rows = pd.DataFrame([row for _, seed_rows in recorded for row in seed_rows])
-    rows = rows.set_index(["endpoint", "split", "seed"])
-    assert len(rows) == 10 * len(TEST_SEEDS)
-    assert (rows["metric"] == "roc_auc").all()
+    # per split: 3 macros * (roc_auc, pr_auc) + 2 tasks * (roc_auc, pr_auc, prevalence)
+    assert len(rows) == 24 * len(TEST_SEEDS)
     assert (rows["encoder"] == "ecfp4-2048").all()
+    prevalence = rows[rows["metric"] == "prevalence"].set_index(
+        ["endpoint", "split", "seed"]
+    )
+    assert prevalence.loc[("T1", "test", 0), "value"] == 0.5
+    rows = rows[rows["metric"] == "roc_auc"].set_index(["endpoint", "split", "seed"])
 
     t1 = rows.loc[("T1", "test", 0)]
     assert (t1["dataset"], t1["value"], t1["n_labeled"], t1["n_positive"]) == (
@@ -177,6 +182,8 @@ def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
     macro = rows.loc[("macro_clintox", "test", 0)]
     assert macro["dataset"] == "clintox"
     assert np.isnan(macro["value"]) and np.isnan(macro["n_labeled"])
+    assert (macro["n_tasks"], macro["dropped_tasks"]) == (0, "T2")
+    assert rows.loc[("macro_overall", "test", 0), "n_tasks"] == 1
 
 
 def test_main_skips_untrainable_endpoint_and_excludes_it_from_macros(
@@ -197,7 +204,7 @@ def test_main_skips_untrainable_endpoint_and_excludes_it_from_macros(
     bt.main()
 
     rows = pd.DataFrame([row for _, seed_rows in recorded for row in seed_rows])
-    rows = rows.set_index(["endpoint", "split", "seed"])
+    rows = rows[rows["metric"] == "roc_auc"].set_index(["endpoint", "split", "seed"])
     assert "T2" not in rows.index.get_level_values("endpoint")
     assert rows.loc[("macro_overall", "val", 0), "value"] == pytest.approx(1.0)
     assert np.isnan(rows.loc[("macro_clintox", "val", 0), "value"])
