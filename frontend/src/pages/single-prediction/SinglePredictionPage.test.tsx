@@ -60,8 +60,25 @@ describe("SinglePredictionPage", () => {
     expect(screen.getByText("12.6 µM")).toBeInTheDocument();
     expect(screen.getByText("95% CI 1 µM – 158 µM")).toBeInTheDocument();
 
+    await userEvent.click(
+      screen.getByRole("tab", { name: "Molecular Information" }),
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Molecular Information" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Coming Soon")).toBeInTheDocument();
+
     await userEvent.click(screen.getByRole("tab", { name: "Input Molecule" }));
     expect(screen.getByLabelText("Enter SMILES")).toHaveValue("CCO");
+
+    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.getByLabelText("Enter SMILES")).toHaveValue("");
+    expect(
+      screen.getByRole("tab", { name: "Prediction Results" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("tab", { name: "Molecular Information" }),
+    ).toBeDisabled();
   });
 
   it("shows the error and drops the previous result when a retry fails", async () => {
@@ -81,5 +98,12 @@ describe("SinglePredictionPage", () => {
     expect(
       screen.getByRole("tab", { name: "Prediction Results" }),
     ).toBeDisabled();
+    expect(
+      screen.getByRole("tab", { name: "Molecular Information" }),
+    ).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.getByLabelText("Enter SMILES")).toHaveValue("");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

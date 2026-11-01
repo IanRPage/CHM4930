@@ -9,12 +9,14 @@ export default function InputMolecule({
   loading,
   error,
   onSubmit,
+  onClear,
 }: {
   smiles: string;
   onSmilesChange: (smiles: string) => void;
   loading: boolean;
   error: string | null;
   onSubmit: () => void;
+  onClear: () => void;
 }) {
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,10 +41,17 @@ export default function InputMolecule({
           placeholder="e.g. CCOc1ccc(cc1)N"
           spellCheck={false}
           autoComplete="off"
-          required
         />
         <button type="submit" disabled={loading}>
           {loading ? "Predicting…" : "Predict"}
+        </button>
+        <button
+          type="button"
+          className="predict-clear"
+          disabled={loading}
+          onClick={onClear}
+        >
+          Clear
         </button>
       </div>
       {error && (
