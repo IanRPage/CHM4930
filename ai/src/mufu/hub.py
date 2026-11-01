@@ -25,7 +25,7 @@ from huggingface_hub import (
 )
 
 from baseline.benchmark import SEEDS
-from baseline.results import file_sha256, summarize_seeds
+from baseline.results import DEFAULT_SPLIT_ID, file_sha256, summarize_seeds
 from mufu.ensemble import load_ensemble_params, member_paths, sidecar_path
 from mufu.mc_dropout import load_conformal
 from mufu.mc_dropout import sidecar_path as conformal_path
@@ -42,7 +42,8 @@ CARD_METRICS = (
     ("egfr", "pIC50_EGFR", "rmse", "EGFR pIC50"),
     ("egfr", "pIC50_EGFR", "r2", "EGFR pIC50"),
     ("tox21", "macro_tox21", "roc_auc", "Tox21 (macro)"),
-    ("clintox", "macro_clintox", "roc_auc", "ClinTox (macro)"),
+    ("clintox", "CT_TOX", "roc_auc", "ClinTox CT_TOX"),
+    ("clintox", "FDA_APPROVED", "roc_auc", "ClinTox FDA_APPROVED"),
 )
 HF_METRIC_TYPES = {"rmse": "rmse", "r2": "r_squared", "roc_auc": "roc_auc"}
 METRIC_LABELS = {"rmse": "RMSE", "r2": "R²", "roc_auc": "ROC AUC"}
@@ -112,6 +113,7 @@ def model_card(
         raise ValueError(
             "ensemble metrics aren't from this ensemble file; rerun fit_ensemble.py"
         )
+    results = results[results["split_id"] == DEFAULT_SPLIT_ID]
     run = results[
         (results["model"] == name)
         & (results["git_commit"] == version.git_commit)
@@ -144,6 +146,7 @@ def model_card(
                 task_type=f"tabular-{kind}",
                 task_name=label,
                 dataset_type=dataset,
+                dataset_config=endpoint,
                 dataset_name=f"{label.split()[0]} (CHM4930 test split)",
                 dataset_split="test",
                 metric_type=HF_METRIC_TYPES[metric],

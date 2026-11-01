@@ -4,12 +4,15 @@ Random forest toxicity baseline on ECFP4 fingerprints.
 Run from `ai/` with `PYTHONPATH=src`:
 
     python -m baseline.baseline_toxicity
+
+Runs on every scaffold split in `SPLIT_IDS`, tuning `max_features` on each split's own
+validation set.
 """
 
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
-from baseline.benchmark import SEEDS, load_benchmark_split, run_benchmark
+from baseline.benchmark import SEEDS, SPLIT_IDS, load_benchmark_split, run_benchmark
 from evaluation import evaluation_metrics
 from featurize.fingerprint import FINGERPRINT_BITS, mol_to_ecfp4
 from pipeline.combined_loader import TOX_TASKS
@@ -65,14 +68,19 @@ def fit_endpoint(X, y, train_idx, val_idx, seed=None):
 def _lookup_auc(summary, endpoint, split):
     if summary.empty:
         return float("nan")
-    match = summary[(summary["endpoint"] == endpoint) & (summary["split"] == split)]
+    match = summary[
+        (summary["endpoint"] == endpoint)
+        & (summary["split"] == split)
+        & (summary["metric"] == "roc_auc")
+    ]
     if match.empty:
         return float("nan")
     return float(match["value"].iloc[0])
 
 
-def main():
-    df = load_benchmark_split()
+def run_split(split_id):
+    print(f"\n=== split {split_id} ===")
+    df = load_benchmark_split(split_id=split_id)
     tox_df = df.loc[df[TOX_TASKS].notna().any(axis=1)].reset_index(drop=True)
     X = (
         np.stack([mol_to_ecfp4(to_mol(s), FINGERPRINT_BITS) for s in tox_df["smiles"]])
@@ -136,6 +144,7 @@ def main():
         encoder=f"ecfp4-{FINGERPRINT_BITS}",
         params=params,
         seeds=SEEDS,
+        split_id=split_id,
         df=df,
     )
 
@@ -160,6 +169,11 @@ def main():
             f"val ROC-AUC={val_auc:.4f}, "
             f"test ROC-AUC={test_auc:.4f}; {status}"
         )
+
+
+def main():
+    for split_id in SPLIT_IDS:
+        run_split(split_id)
 
 
 if __name__ == "__main__":

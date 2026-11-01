@@ -15,6 +15,7 @@ PIC50 = {
 }
 ALL_PIC50 = PIC50["BACE1"] | PIC50["EGFR"]
 TEST_SEEDS = (0, 1)
+BIO_METRICS = ("rmse", "r2", "spearman", "kendall", "roc_auc", "pr_auc", "prevalence")
 
 
 @pytest.fixture
@@ -50,6 +51,7 @@ def recorded(monkeypatch, tmp_path):
     monkeypatch.setattr(results, "git_commit", lambda: "abc1234")
     monkeypatch.setattr(bb, "SEEDS", TEST_SEEDS)
     monkeypatch.setattr(benchmark, "SEEDS", TEST_SEEDS)
+    monkeypatch.setattr(bb, "SPLIT_IDS", ("default",))
 
     real_record = benchmark.record_results
 
@@ -72,7 +74,7 @@ def combined(monkeypatch):
         df[f"pIC50_{target}"] = pic50
         df[f"active_{target}"] = (pic50 >= 6).astype(float).where(pic50.notna())
     df["split"] = (["train"] * 4 + ["val"] * 3 + ["test"] * 2) * 2
-    monkeypatch.setattr(bb, "load_benchmark_split", lambda: df)
+    monkeypatch.setattr(bb, "load_benchmark_split", lambda **_: df)
     monkeypatch.setattr(
         bb, "mol_to_ecfp4", lambda mol, n_bits: np.array([mol.GetNumAtoms()])
     )
@@ -128,8 +130,8 @@ def test_main_records_val_and_test_rows_per_target_and_seed(
         {seed} for seed in TEST_SEEDS
     ]
     rows = pd.DataFrame([row for _, seed_rows in recorded for row in seed_rows])
-    # 2 targets * 2 splits * 3 metrics * 2 seeds = 24 rows
-    assert len(rows) == 12 * len(TEST_SEEDS)
+    # 2 targets * 2 splits * 7 metrics per seed
+    assert len(rows) == 28 * len(TEST_SEEDS)
     rows = rows[rows["endpoint"] == f"pIC50_{target}"].set_index(
         ["split", "seed", "metric"]
     )
@@ -137,7 +139,7 @@ def test_main_records_val_and_test_rows_per_target_and_seed(
         (split, seed, metric)
         for split in ("val", "test")
         for seed in TEST_SEEDS
-        for metric in ("rmse", "r2", "roc_auc")
+        for metric in BIO_METRICS
     )
     assert (rows["dataset"] == target.lower()).all()
     assert (rows["encoder"] == "ecfp4-2048").all()

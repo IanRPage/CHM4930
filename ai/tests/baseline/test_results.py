@@ -264,3 +264,56 @@ def test_git_commit_marks_a_dirty_tree_ignoring_results_csv(monkeypatch):
     assert results.git_commit() == "abc1234"
     for excluded in (results.RESULTS_PATH, results.runs_path()):
         assert all(f":(exclude){excluded}" in a for a in status_args)
+
+
+def summary_rows(model, split_id, values, metric="rmse"):
+    return [
+        {
+            "model": model,
+            "encoder": "enc",
+            "dataset": "bace1",
+            "endpoint": "pIC50_BACE1",
+            "split_id": split_id,
+            "split": "test",
+            "seed": seed,
+            "metric": metric,
+            "value": value,
+            "ci_low": value - 0.1,
+            "ci_high": value + 0.1,
+            "data_sha256": "sha",
+        }
+        for seed, value in enumerate(values)
+    ]
+
+
+def test_split_and_seed_variance_are_reported_separately():
+    df = pd.DataFrame(
+        summary_rows("m", "default", [1.0, 1.2])
+        + summary_rows("m", "scaffold-0", [2.0, 2.2])
+    ).reindex(columns=results.COLUMNS)
+
+    per_split = results.summarize_seeds(df).set_index("split_id")
+    assert per_split.loc["default", "value"] == pytest.approx(1.1)
+    assert per_split.loc["default", "ci_low"] == pytest.approx(1.0)
+    assert per_split.loc["default", "std"] == pytest.approx(np.sqrt(0.02))
+
+    (row,) = results.summarize_splits(df).to_dict("records")
+    assert row["value"] == pytest.approx(1.6)
+    assert row["split_std"] == pytest.approx(np.sqrt(0.5))
+    assert row["seed_std"] == pytest.approx(np.sqrt(0.02))
+    assert (row["n_splits"], row["n_seeds"]) == (2, 4)
+
+
+def test_rescored_run_keeps_training_commit_apart_from_eval_commit(paths):
+    path, data = paths
+    results.record_results([row("T1")], model="m", path=path, data_path=data)
+    results.record_results(
+        [row("T1", value=0.7)], model="m", path=path, data_path=data, commit="627f004"
+    )
+
+    (loaded,) = results.load_results(path).to_dict("records")
+    assert (loaded["value"], loaded["git_commit"], loaded["eval_commit"]) == (
+        0.7,
+        "627f004",
+        "abc1234",
+    )
