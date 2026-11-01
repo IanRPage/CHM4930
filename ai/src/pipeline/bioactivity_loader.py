@@ -46,12 +46,12 @@ API_FIELDS = [
 # Target IDs and cache paths
 BACE1_TARGET_ID = "CHEMBL4822"
 EGFR_TARGET_ID = "CHEMBL203"
-TARGETS = {
+CHEMBL_TARGETS = {
     "bace1": {"target_id": BACE1_TARGET_ID, "csv_name": "chembl-bace-1.csv"},
     "egfr": {"target_id": EGFR_TARGET_ID, "csv_name": "chembl-egfr.csv"},
 }
-BACE1_CSV_PATH = DATA_DIR / TARGETS["bace1"]["csv_name"]
-EGFR_CSV_PATH = DATA_DIR / TARGETS["egfr"]["csv_name"]
+BACE1_CSV_PATH = DATA_DIR / CHEMBL_TARGETS["bace1"]["csv_name"]
+EGFR_CSV_PATH = DATA_DIR / CHEMBL_TARGETS["egfr"]["csv_name"]
 PIC50_ACTIVE_THRESHOLD = 6.0
 CSV_COLUMNS = ["molecule_chembl_id", "smiles", "pIC50", "n_meas", "pIC50_spread"]
 
@@ -152,15 +152,19 @@ def clean_activities(raw: pd.DataFrame) -> pd.DataFrame:
 
 
 def download_bioactivity_data(target: str, csv_path: Path) -> None:
-    raw = fetch_activities(TARGETS[target]["target_id"])
+    raw = fetch_activities(CHEMBL_TARGETS[target]["target_id"])
     write_csv(clean_activities(raw), csv_path)
+
+
+def is_active(pic50: pd.Series, threshold: float = PIC50_ACTIVE_THRESHOLD) -> pd.Series:
+    return pic50 >= threshold
 
 
 def add_active_label(
     df: pd.DataFrame, threshold: float = PIC50_ACTIVE_THRESHOLD
 ) -> pd.DataFrame:
     out = df.copy()
-    out["active"] = (out["pIC50"] >= threshold).astype(int)
+    out["active"] = is_active(out["pIC50"], threshold).astype(int)
     return out
 
 
@@ -176,9 +180,11 @@ def load_bioactivity_data(
     refresh: bool = False,
     data_dir: Path = DATA_DIR,
 ) -> pd.DataFrame:
-    if target not in TARGETS:
-        raise ValueError(f"unknown target {target!r}, expected one of {list(TARGETS)}")
-    csv_path = data_dir / TARGETS[target]["csv_name"]
+    if target not in CHEMBL_TARGETS:
+        raise ValueError(
+            f"unknown target {target!r}, expected one of {list(CHEMBL_TARGETS)}"
+        )
+    csv_path = data_dir / CHEMBL_TARGETS[target]["csv_name"]
     return _load(target, csv_path, threshold, refresh)
 
 
@@ -206,7 +212,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--dataset",
-        choices=[*TARGETS, "all"],
+        choices=[*CHEMBL_TARGETS, "all"],
         default="all",
         help="which dataset to load (default: %(default)s)",
     )
@@ -219,7 +225,7 @@ def main() -> None:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    names = list(TARGETS) if args.dataset == "all" else [args.dataset]
+    names = list(CHEMBL_TARGETS) if args.dataset == "all" else [args.dataset]
     for name in names:
         df = load_bioactivity_data(name, args.threshold, args.refresh)
         print(f"\n{name}: {len(df)} molecules")

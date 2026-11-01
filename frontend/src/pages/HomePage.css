@@ -1,0 +1,150 @@
+.home {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.home-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.home-title {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
+.home-title h1 {
+  margin: 0;
+  font-size: 64px;
+  font-weight: 800;
+  letter-spacing: -2px;
+  color: #0f172a;
+}
+
+.home-subtitle {
+  margin: 14px 0 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.home-lede {
+  max-width: 489px;
+  margin: 12px 0 0;
+  font-size: 16px;
+  line-height: 24.8px;
+  color: #64748b;
+}
+
+.home-graphic {
+  flex-shrink: 0;
+}
+
+.home-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 32px;
+}
+
+.home-card {
+  display: flex;
+  gap: 18px;
+  padding: 28px 24px 30px;
+}
+
+.home-chip {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+}
+
+.home-chip-sm {
+  width: 48px;
+  height: 48px;
+}
+
+.home-card-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.home-card-body h2 {
+  margin: 0;
+  line-height: 1.2;
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.home-card-body p {
+  margin: 9px 0 16px;
+  font-size: 14px;
+  line-height: 21.7px;
+  color: #64748b;
+}
+
+.home-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 17px;
+  color: #fff;
+  text-decoration: none;
+}
+
+.home-btn-soon {
+  cursor: default;
+}
+
+.home-features {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 37px;
+  padding-left: 8px;
+}
+
+.home-feature {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.home-feature h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.home-feature p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+@media (max-width: 1100px) {
+  .home-cards,
+  .home-features {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .home-graphic {
+    display: none;
+  }
+}

@@ -277,7 +277,7 @@ def test_egfr_loader_keeps_binding_variants_and_derives_active_label(
     assert len(requested) == 1
 
 
-@pytest.mark.parametrize("target", list(bl.TARGETS))
+@pytest.mark.parametrize("target", list(bl.CHEMBL_TARGETS))
 def test_downloaded_csv_has_no_active_label(fake_chembl, tmp_path, target):
     csv = tmp_path / "cached.csv"
     bl.download_bioactivity_data(target, csv)
@@ -430,14 +430,14 @@ def test_unknown_target_raises_before_downloading(fake_chembl, tmp_path):
     assert fake_chembl == []
 
 
-@pytest.mark.parametrize("target", list(bl.TARGETS))
+@pytest.mark.parametrize("target", list(bl.CHEMBL_TARGETS))
 def test_generic_loader_matches_the_shortcut_and_uses_data_dir(
     fake_chembl, tmp_path, target
 ):
     df = bl.load_bioactivity_data(target, data_dir=tmp_path)
-    assert (tmp_path / bl.TARGETS[target]["csv_name"]).exists()
+    assert (tmp_path / bl.CHEMBL_TARGETS[target]["csv_name"]).exists()
     shortcut = getattr(bl, f"load_{target}")(
-        csv_path=tmp_path / bl.TARGETS[target]["csv_name"]
+        csv_path=tmp_path / bl.CHEMBL_TARGETS[target]["csv_name"]
     )
     pd.testing.assert_frame_equal(df, shortcut)
 

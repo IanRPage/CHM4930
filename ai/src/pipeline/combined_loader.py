@@ -26,6 +26,7 @@ from pipeline.bioactivity_loader import (
     BACE1_CSV_PATH,
     EGFR_CSV_PATH,
     PIC50_ACTIVE_THRESHOLD,
+    is_active,
     load_bace1,
     load_egfr,
 )
@@ -68,7 +69,7 @@ def add_active_labels(
     out = df.copy()
     for target in TARGETS:
         pic50 = out[f"pIC50_{target}"]
-        active = (pic50 >= threshold).astype(float).where(pic50.notna())
+        active = is_active(pic50, threshold).astype(float).where(pic50.notna())
         out.insert(
             out.columns.get_loc(f"pIC50_{target}") + 1, f"active_{target}", active
         )
@@ -85,7 +86,17 @@ def load_combined(
     return add_active_labels(pd.read_csv(path), threshold)
 
 
-def _write_combined(refresh: bool, data_dir: Path, path: Path) -> None:
+def build_combined(
+    refresh: bool = False,
+    overwrite: bool = False,
+    data_dir: Path = DATA_DIR,
+    path: Path = COMBINED_CSV_PATH,
+) -> None:
+    if path.exists() and not overwrite:
+        raise FileExistsError(
+            f"{path}: snapshot already exists; re-snapshot with "
+            "`python -m pipeline.combined_loader --refresh`"
+        )
     sources = {
         "bace1": load_bace1(csv_path=data_dir / BACE1_CSV_PATH.name, refresh=refresh),
         "egfr": load_egfr(csv_path=data_dir / EGFR_CSV_PATH.name, refresh=refresh),
@@ -93,17 +104,6 @@ def _write_combined(refresh: bool, data_dir: Path, path: Path) -> None:
         "clintox": load_toxicity_data("clintox", refresh=refresh, data_dir=data_dir),
     }
     write_csv(combine_sources(sources), path)
-
-
-def build_combined(
-    refresh: bool = False, data_dir: Path = DATA_DIR, path: Path = COMBINED_CSV_PATH
-) -> None:
-    if path.exists():
-        raise FileExistsError(
-            f"{path}: snapshot already exists; re-snapshot with "
-            "`python -m pipeline.combined_loader --refresh`"
-        )
-    _write_combined(refresh, data_dir, path)
 
 
 # pairwise compound counts, diagonal is each source's size
@@ -129,7 +129,9 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     if args.refresh:
-        _write_combined(refresh=True, data_dir=DATA_DIR, path=COMBINED_CSV_PATH)
+        build_combined(
+            refresh=True, overwrite=True, data_dir=DATA_DIR, path=COMBINED_CSV_PATH
+        )
     elif not COMBINED_CSV_PATH.exists():
         build_combined(data_dir=DATA_DIR, path=COMBINED_CSV_PATH)
     df = load_combined(threshold=args.threshold, path=COMBINED_CSV_PATH)

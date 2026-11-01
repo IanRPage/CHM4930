@@ -1,0 +1,50 @@
+"""
+Late fusion of projected modality embeddings with optional presence masking.
+"""
+
+from collections.abc import Mapping
+
+import torch
+from torch import nn
+
+from mufu.contract import D_MODEL, FUSED_DIM, MODALITIES, check_keys, check_tensor
+
+
+class LateFusion(nn.Module):
+    """
+    Late fusion of the projected modality vectors into the shared latent L.
+
+    `mask` is an optional (B, len(MODALITIES)) bool tensor whose column i gates
+    MODALITIES[i], where None means all present. Each row must retain at least
+    one modality; random mask sampling belongs to the training caller.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Linear(FUSED_DIM, FUSED_DIM),
+            nn.LayerNorm(FUSED_DIM),
+            nn.GELU(),
+        )
+
+    def forward(
+        self,
+        projected: Mapping[str, torch.Tensor],
+        mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        check_keys("projected", set(projected), set(MODALITIES))
+        size = len(projected[MODALITIES[0]])
+        for m in MODALITIES:
+            check_tensor(m, projected[m], (size, D_MODEL), "float")
+        if mask is None:
+            fused = torch.cat([projected[m] for m in MODALITIES], dim=1)
+        else:
+            check_tensor("mask", mask, (size, len(MODALITIES)), "bool")
+            if not mask.any(dim=1).all():
+                raise ValueError("mask: each sample must retain at least one modality")
+            mask = mask.to(device=projected[MODALITIES[0]].device)
+            fused = torch.cat(
+                [projected[m] * mask[:, i : i + 1] for i, m in enumerate(MODALITIES)],
+                dim=1,
+            )
+        return self.block(fused)

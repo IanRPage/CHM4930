@@ -1,6 +1,10 @@
+"""
+Graph Isomorphism Network with Edge features (GINE) encoder for PyTorch Geometric
+molecular graphs.
+"""
+
 from collections.abc import Sequence
 
-import torch.nn.functional as F
 from torch import nn
 from torch_geometric.nn import GINEConv, global_add_pool
 
@@ -13,12 +17,12 @@ class GNNEncoder(nn.Module):
     def __init__(
         self,
         # selected from BACE1 hyperparameter sweep
-        hidden_dims: Sequence[int] = (128, 128),
+        hidden_dims: Sequence[int] = (256, 256, 128),
         dropout: float = 0.1,
     ) -> None:
         super().__init__()
 
-        self.dropout = dropout
+        self.mp_dropout = nn.Dropout(dropout)
         self.out_dim = hidden_dims[-1]
         self.pool_norm = nn.BatchNorm1d(self.out_dim)
 
@@ -52,7 +56,7 @@ class GNNEncoder(nn.Module):
         for conv in self.mp_layers:
             x = conv(x, edge_index, edge_attr=edge_attr)
             # add dropout between layers
-            x = F.dropout(x, p=self.dropout, training=self.training)
+            x = self.mp_dropout(x)
 
         # atom embeddings converted to one molecular embedding, retaining atom multiplicity
         x = global_add_pool(x, batch)

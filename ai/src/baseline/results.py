@@ -1,20 +1,24 @@
 """
-Record baseline metrics in the tracked CSV `ai/data/baseline/results.csv`.
+Record benchmark metrics in the tracked CSV `ai/data/baseline/results.csv`.
 
-Each row is one measurement, tagged with the snapshot hash and git commit it came from.
-Re-running a baseline replaces that model's rows and drops other models' rows from an older
-snapshot, so the file only ever describes one snapshot.
+Each row is one seed's measurement. What is constant per `(model, encoder, seed)` run
+(params, snapshot hash, git commit, date) is stored once in `results_runs.csv` next to
+it. `load_results()` joins the two, and readers aggregate across seeds with
+`summarize_seeds()`. Re-running replaces the `(model, encoder, seed)` rows being written
+and refuses to drop other models' rows from an older snapshot unless
+`allow_drop_stale=True`.
 """
 
 import datetime
 import hashlib
+import json
 import logging
+import shutil
 import subprocess
 from pathlib import Path
 
 import pandas as pd
 
-from pipeline.cache import write_csv
 from pipeline.combined_loader import COMBINED_CSV_PATH
 
 log = logging.getLogger(__name__)
@@ -26,6 +30,7 @@ COLUMNS = [
     "dataset",
     "endpoint",
     "split",
+    "seed",
     "metric",
     "value",
     "n_labeled",
@@ -35,11 +40,98 @@ COLUMNS = [
     "git_commit",
     "date",
 ]
-SORT_KEYS = ["model", "dataset", "endpoint", "split", "metric"]
+RUN_KEYS = ["model", "encoder", "seed"]
+RUN_INFO = ["params", "data_sha256", "git_commit", "date"]
+RUN_COLUMNS = RUN_KEYS + RUN_INFO
+METRIC_COLUMNS = [c for c in COLUMNS if c not in RUN_INFO]
+SORT_KEYS = ["model", "encoder", "dataset", "endpoint", "split", "seed", "metric"]
+SUMMARY_GROUP_KEYS = [
+    c for c in COLUMNS if c not in ("seed", "value", "git_commit", "date")
+]
+SUMMARY_COLUMNS = [
+    "model",
+    "encoder",
+    "dataset",
+    "endpoint",
+    "split",
+    "metric",
+    "value",
+    "std",
+    "n_seeds",
+    "n_labeled",
+    "n_positive",
+    "params",
+    "data_sha256",
+]
+
+
+def runs_path(path: Path = RESULTS_PATH) -> Path:
+    return path.with_name(path.stem + "_runs.csv")
+
+
+def load_results(path: Path = RESULTS_PATH) -> pd.DataFrame:
+    """
+    Metric rows joined with their run's params, snapshot hash, git commit and date.
+    """
+    if not path.exists():
+        return pd.DataFrame(columns=COLUMNS)
+    metrics = pd.read_csv(path)
+    runs = pd.read_csv(runs_path(path))
+    for df in (metrics, runs):
+        df["seed"] = df["seed"].astype("Int64")
+    return metrics.merge(runs, on=RUN_KEYS, how="left", validate="many_to_one")[COLUMNS]
+
+
+def write_results(out: pd.DataFrame, path: Path) -> None:
+    """
+    Split joined rows into the metric and run files. Both are written to temp files and
+    the old files backed up before either is replaced. If a replace fails, the old pair
+    is restored, so the two files never disagree.
+    """
+    runs = out[RUN_COLUMNS].drop_duplicates()
+    if runs.duplicated(RUN_KEYS).any():
+        raise ValueError("a run has more than one params, sha256, commit or date")
+    pairs = [
+        (out[METRIC_COLUMNS], path),
+        (runs.sort_values(RUN_KEYS, ignore_index=True), runs_path(path)),
+    ]
+    targets = [target for _, target in pairs]
+    tmps = [t.with_name(t.name + ".tmp") for t in targets]
+    baks = [t.with_name(t.name + ".bak") for t in targets]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        for (df, _), tmp in zip(pairs, tmps):
+            df.to_csv(tmp, index=False)
+        for target, bak in zip(targets, baks):
+            if target.exists():
+                shutil.copy2(target, bak)
+        try:
+            for target, tmp in zip(targets, tmps):
+                tmp.replace(target)
+        except BaseException:
+            for target, bak in zip(targets, baks):
+                if bak.exists():
+                    bak.replace(target)
+                else:
+                    target.unlink(missing_ok=True)
+            raise
+    finally:
+        for leftover in (*tmps, *baks):
+            leftover.unlink(missing_ok=True)
+    log.info("wrote %d rows to %s", len(out), path)
+
+
+def params_json(params: dict) -> str:
+    return json.dumps(params, sort_keys=True)
 
 
 def file_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """Hash a dataset CSV using LF bytes, including in an existing CRLF checkout.
+
+    This matches the committed snapshot and historical results without rewriting
+    the file. All bytes other than CRLF line endings remain significant.
+    """
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def git_commit() -> str:
@@ -54,7 +146,15 @@ def git_commit() -> str:
 
     try:
         commit = git("rev-parse", "--short", "HEAD")
-        dirty = git("status", "--porcelain", "--untracked-files=no")
+        dirty = git(
+            "status",
+            "--porcelain",
+            "--untracked-files=no",
+            "--",
+            ":/",
+            f":(exclude){RESULTS_PATH}",
+            f":(exclude){runs_path()}",
+        )
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
     return f"{commit}-dirty" if dirty else commit
@@ -65,25 +165,53 @@ def record_results(
     model: str,
     path: Path = RESULTS_PATH,
     data_path: Path = COMBINED_CSV_PATH,
+    *,
+    allow_drop_stale: bool = False,
+    commit: str | None = None,
 ) -> pd.DataFrame:
     sha = file_sha256(data_path)
     new = pd.DataFrame(rows).assign(
         model=model,
         data_sha256=sha,
-        git_commit=git_commit(),
+        git_commit=git_commit() if commit is None else commit,
         date=datetime.datetime.now(datetime.UTC).date().isoformat(),
     )
     new = new.reindex(columns=COLUMNS)
+    new["seed"] = new["seed"].astype("Int64")
     if path.exists():
-        old = pd.read_csv(path)
-        others = old[old["model"] != model]
-        stale = others["data_sha256"] != sha
-        if stale.any():
+        old = load_results(path)
+        stale = old["data_sha256"] != sha
+        stale_others = sorted(
+            old.loc[stale & (old["model"] != model), "model"].unique()
+        )
+        if stale_others:
+            if not allow_drop_stale:
+                raise ValueError(
+                    f"refusing to drop results for {stale_others} from a different "
+                    "snapshot; pass allow_drop_stale=True to overwrite"
+                )
             log.warning(
                 "dropping results for %s: computed on a different snapshot",
-                sorted(others.loc[stale, "model"].unique()),
+                stale_others,
             )
-        new = pd.concat([others[~stale], new], ignore_index=True)
+        replaced = pd.MultiIndex.from_frame(new[["model", "encoder", "seed"]])
+        keep = ~stale & ~pd.MultiIndex.from_frame(
+            old[["model", "encoder", "seed"]]
+        ).isin(replaced)
+        new = pd.concat([old[keep], new], ignore_index=True)
     out = new[COLUMNS].sort_values(SORT_KEYS, ignore_index=True)
-    write_csv(out, path)
+    out["seed"] = out["seed"].astype("Int64")
+    write_results(out, path)
     return out
+
+
+def summarize_seeds(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame(columns=SUMMARY_COLUMNS)
+    grouped = df.groupby(SUMMARY_GROUP_KEYS, dropna=False, as_index=False).agg(
+        value=("value", "mean"),
+        std=("value", lambda s: s.std(ddof=1)),
+        n_seeds=("value", "count"),
+    )
+    sort_cols = [k for k in SORT_KEYS if k != "seed"]
+    return grouped[SUMMARY_COLUMNS].sort_values(sort_cols, ignore_index=True)

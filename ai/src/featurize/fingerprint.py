@@ -1,8 +1,14 @@
+"""
+Generate Morgan / ECFP4 circular fingerprint bit vectors from RDKit molecules.
+"""
+
 from functools import cache
 
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import rdFingerprintGenerator
+
+FINGERPRINT_BITS = 2048
 
 
 @cache
@@ -11,7 +17,7 @@ def _generator(n_bits: int):
 
 
 # ecfp4 bit vector with shape (n_bits, ), all uint8 dtype
-def mol_to_ecfp4(mol: Chem.Mol, n_bits: int = 2048) -> np.ndarray:
+def mol_to_ecfp4(mol: Chem.Mol, n_bits: int = FINGERPRINT_BITS) -> np.ndarray:
     if mol is None:
         raise ValueError("mol is None")
     if n_bits <= 0:
