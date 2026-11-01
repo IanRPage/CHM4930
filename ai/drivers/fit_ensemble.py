@@ -54,7 +54,8 @@ MAIN_METRICS = (
     ("egfr", "pIC50_EGFR", "rmse"),
     ("egfr", "pIC50_EGFR", "r2"),
     ("tox21", "macro_tox21", "roc_auc"),
-    ("clintox", "macro_clintox", "roc_auc"),
+    ("clintox", "CT_TOX", "roc_auc"),
+    ("clintox", "FDA_APPROVED", "roc_auc"),
 )
 PREDICTION_COLUMNS = ("smiles", *PIC50_COLUMNS, *ACTIVE_COLUMNS, *TOX_COLUMNS)
 

@@ -108,6 +108,8 @@ def test_model_card_uses_this_runs_metrics():
 
     assert {r.metric_value for r in card.data.eval_results} == {0.9}
     assert len(card.data.eval_results) == len(hub.CARD_METRICS)
+    index = card.data.to_dict()["model-index"][0]["results"]
+    assert len(index) == len({endpoint for _, endpoint, _, _ in hub.CARD_METRICS})
     assert "| 0.900 | 0.810 ± 0.010 | 0.510 |" in card.text
 
     with pytest.raises(ValueError, match="rerun fit_ensemble"):
