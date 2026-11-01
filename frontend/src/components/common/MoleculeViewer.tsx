@@ -16,11 +16,15 @@ export default function MoleculeViewer({ sdfUrl }: MoleculeViewerProps) {
 
     let viewer: ReturnType<typeof $3Dmol.createViewer>;
     try {
-      viewer = $3Dmol.createViewer(containerRef.current, {
-        backgroundColor: "white",
-        backgroundAlpha: 0,
-        antialias: true,
-      });
+      viewer = $3Dmol.createViewerGrid(
+        containerRef.current,
+        { rows: 1, cols: 1 },
+        {
+          backgroundColor: "white",
+          backgroundAlpha: 0,
+          antialias: true,
+        },
+      )[0][0];
     } catch (error) {
       console.error("Molecule viewer creation error:", error);
       return;
@@ -35,6 +39,8 @@ export default function MoleculeViewer({ sdfUrl }: MoleculeViewerProps) {
 
         const sdf = await response.text();
         if (cancelled) return;
+
+        viewer.setBackgroundColor(0xffffff, 0.0);
 
         viewer.addModel(sdf, "sdf");
 
