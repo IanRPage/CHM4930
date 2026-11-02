@@ -96,6 +96,12 @@ def fit_and_report(
 
     members = load_members(paths, smiles_encoder, device=device)
     ens_file = sidecar_path(checkpoint_dir, model_name)
+    ens_preds_path = run_dir / "predictions" / "test_ensemble.csv"
+    if refit and ens_preds_path.exists() and not overwrite_predictions:
+        raise FileExistsError(
+            f"refit would invalidate write-once {ens_preds_path}; "
+            "set overwrite_predictions = True or use a new run"
+        )
     if ens_file.exists() and not refit:
         params = load_ensemble_params(paths, checkpoint_dir, model_name)
         print(
@@ -120,7 +126,7 @@ def fit_and_report(
         df,
         "test",
         test_preds,
-        run_dir / "predictions" / "test_ensemble.csv",
+        ens_preds_path,
         overwrite=overwrite_predictions,
     )
 
