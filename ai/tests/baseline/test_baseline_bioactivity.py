@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from baseline import baseline_bioactivity as bb
-from baseline import benchmark, results
+from baseline import benchmark
 
 # keyed by atom count, which fake fingerprint puts in column 0
 # BACE1 labels molecules 1-9, EGFR labels 10-18
@@ -43,26 +43,12 @@ def fake_forests(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def recorded(monkeypatch, tmp_path):
-    calls = []
-    out_path = tmp_path / "results.csv"
-    data_path = tmp_path / "combined.csv"
-    data_path.write_text("smiles\nCCO\n")
-    monkeypatch.setattr(results, "git_commit", lambda: "abc1234")
+def env_paths(monkeypatch):
     monkeypatch.setattr(bb, "SEEDS", TEST_SEEDS)
     monkeypatch.setattr(benchmark, "SEEDS", TEST_SEEDS)
     monkeypatch.setattr(bb, "SPLIT_IDS", ("default",))
-
-    real_record = benchmark.record_results
-
-    def capture_record(rows, model, path=out_path, data_path=data_path, **kwargs):
-        calls.append((model, rows))
-        return real_record(
-            rows, model=model, path=out_path, data_path=data_path, **kwargs
-        )
-
-    monkeypatch.setattr(benchmark, "record_results", capture_record)
-    return calls
+    monkeypatch.setattr(benchmark, "rebuild_tracked_results", lambda **_: None)
+    return benchmark.RUNS_DIR
 
 
 @pytest.fixture
@@ -88,10 +74,8 @@ def test_main_selects_once_and_fits_each_target_per_seed(
 
     n_options = len(bb.MAX_FEATURES_OPTIONS)
     n_seeds = len(TEST_SEEDS)
-    # 2 targets * n_options for selection + 2 targets * n_seeds for benchmark
     assert len(fake_forests) == 2 * n_options + 2 * n_seeds
 
-    # Selection models: first n_options for BACE1, next n_options for EGFR, all seeded with SEEDS[0]
     for model in fake_forests[:n_options]:
         np.testing.assert_array_equal(model.X[:, 0], [1, 2, 3, 4])
         np.testing.assert_array_equal(model.y, [5.0, 6.0, 7.0, 8.0])
@@ -101,7 +85,6 @@ def test_main_selects_once_and_fits_each_target_per_seed(
         np.testing.assert_array_equal(model.y, [6.0, 7.0, 5.0, 8.0])
         assert model.config["random_state"] == TEST_SEEDS[0]
 
-    # Benchmark models: for each seed, BACE1 then EGFR with selected max_features='log2'
     bench_models = fake_forests[2 * n_options :]
     for s_idx, seed in enumerate(TEST_SEEDS):
         bace_model = bench_models[2 * s_idx]
@@ -120,19 +103,14 @@ def test_main_selects_once_and_fits_each_target_per_seed(
 
 @pytest.mark.parametrize("target", ["BACE1", "EGFR"])
 def test_main_records_val_and_test_rows_per_target_and_seed(
-    target, combined, fake_forests, recorded
+    target, combined, fake_forests, env_paths
 ):
     bb.main()
 
-    # one record_results call per seed, each holding only that seed's rows
-    assert [model for model, _ in recorded] == ["rf_bioactivity"] * len(TEST_SEEDS)
-    assert [{row["seed"] for row in rows} for _, rows in recorded] == [
-        {seed} for seed in TEST_SEEDS
-    ]
-    rows = pd.DataFrame([row for _, seed_rows in recorded for row in seed_rows])
-    # 2 targets * 2 splits * 7 metrics per seed
-    assert len(rows) == 28 * len(TEST_SEEDS)
-    rows = rows[rows["endpoint"] == f"pIC50_{target}"].set_index(
+    run_dir = env_paths / "rf_bioactivity_default"
+    scored = benchmark.score_run_predictions(run_dir, combined, include_test=True)
+    assert len(scored) == 28 * len(TEST_SEEDS)
+    rows = scored[scored["endpoint"] == f"pIC50_{target}"].set_index(
         ["split", "seed", "metric"]
     )
     assert sorted(rows.index) == sorted(

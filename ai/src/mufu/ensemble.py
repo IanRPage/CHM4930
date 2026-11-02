@@ -151,6 +151,19 @@ def _dropout_rates(members: Sequence[Member]) -> tuple[float, ...]:
     return rates.pop()
 
 
+def _fork_devices(members: Sequence[Member]) -> list[torch.device]:
+    devices: list[torch.device] = []
+    for m in members:
+        param = next(m.model.parameters(), None)
+        if (
+            param is not None
+            and param.device.type == "cuda"
+            and param.device not in devices
+        ):
+            devices.append(param.device)
+    return devices
+
+
 def fit_ensemble_conformal(
     members: Sequence[Member],
     val_dataset: MuFuDataset,
@@ -160,9 +173,11 @@ def fit_ensemble_conformal(
     batch_size: int = 64,
 ) -> EnsembleParams:
     rates = _dropout_rates(members)
-    mean, sigma = ensemble_predict(
-        members, val_dataset, n_samples=n_samples, batch_size=batch_size
-    )
+    with torch.random.fork_rng(devices=_fork_devices(members)):
+        torch.manual_seed(0)
+        mean, sigma = ensemble_predict(
+            members, val_dataset, n_samples=n_samples, batch_size=batch_size
+        )
     conformal = fit_conformal(
         np.column_stack([mean[c] for c in PIC50_COLUMNS]),
         sigma,
@@ -222,9 +237,11 @@ def predict_with_ensemble_intervals(
     if _dropout_rates(members) != conformal.dropout_rates:
         raise ValueError("dropout rates differ from those q was fitted with; refit q")
 
-    mean, sigma = ensemble_predict(
-        members, dataset, n_samples=conformal.n_samples, batch_size=batch_size
-    )
+    with torch.random.fork_rng(devices=_fork_devices(members)):
+        torch.manual_seed(0)
+        mean, sigma = ensemble_predict(
+            members, dataset, n_samples=conformal.n_samples, batch_size=batch_size
+        )
     pred = np.column_stack([mean[c] for c in PIC50_COLUMNS])
     bounds = conformal.intervals(pred, sigma)
     out: dict[str, list[str] | np.ndarray] = dict(mean)

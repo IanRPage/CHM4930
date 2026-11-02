@@ -107,7 +107,7 @@ def test_import_has_no_dataset_featurization_or_write_side_effects(script, monke
 
     monkeypatch.setattr(eb.BACE1Benchmark, "load", unexpected)
     monkeypatch.setattr(eb, "featurize_many", unexpected)
-    monkeypatch.setattr(bm, "record_results", unexpected)
+    monkeypatch.setattr(bm, "rebuild_tracked_results", unexpected)
     module = import_script(script)
     assert module.STAGES
 

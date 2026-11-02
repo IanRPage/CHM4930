@@ -3,12 +3,11 @@
 The deployed backend reaches the server through a named Cloudflare Tunnel
 (quick tunnels change URL on every restart).
 
-1. Download a published version or copy the five `mufu_seed_<seed>.pt` files and
-   `mufu_ensemble.json` into a folder only the server uses, e.g.
-   `~/.local/share/mufu/<version>/`. Don't serve `checkpoints/` directly:
-   training overwrites it, so a restart mid-training would fail to load, and one
-   after training would switch models unannounced. To ship a new model, copy it
-   to a new folder, update `MUFU_CHECKPOINT_DIR` and restart the server.
+1. Download a published version (`python drivers/download_mufu.py`) or point at an
+   immutable run's checkpoints directory, e.g. `~/.local/share/mufu/<version>/` or
+   `runs/<run_id>/checkpoints/`. Each run folder in `runs/<run_id>/` is write-once.
+   To ship a new model, point `MUFU_CHECKPOINT_DIR` at the new version or run's
+   `checkpoints/` folder and restart the server.
 2. Put the env vars in `~/.config/mufu/server.env` (`chmod 600`), with
    `MUFU_CHECKPOINT_DIR` set to that folder's absolute path, and
    `HF_HUB_OFFLINE=1`. Start the server once without it first: the first start downloads

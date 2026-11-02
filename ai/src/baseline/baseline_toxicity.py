@@ -12,7 +12,13 @@ validation set.
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
-from baseline.benchmark import SEEDS, SPLIT_IDS, load_benchmark_split, run_benchmark
+from baseline.benchmark import (
+    SEEDS,
+    SPLIT_IDS,
+    load_benchmark_split,
+    rebuild_if_promoted_present,
+    run_benchmark,
+)
 from evaluation import evaluation_metrics
 from featurize.fingerprint import FINGERPRINT_BITS, mol_to_ecfp4
 from pipeline.combined_loader import TOX_TASKS
@@ -146,6 +152,8 @@ def run_split(split_id):
         seeds=SEEDS,
         split_id=split_id,
         df=df,
+        overwrite_predictions=True,
+        promote=True,
     )
 
     groups = {"overall": list(TOX_TASKS)}
@@ -174,6 +182,7 @@ def run_split(split_id):
 def main():
     for split_id in SPLIT_IDS:
         run_split(split_id)
+    rebuild_if_promoted_present()
 
 
 if __name__ == "__main__":

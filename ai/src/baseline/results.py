@@ -1,19 +1,22 @@
 """
-Record benchmark metrics in the tracked CSV `ai/data/baseline/results.csv`.
+Read, write, and summarize benchmark metrics in `ai/data/baseline/results.csv`.
 
-Each row is one seed's measurement on one scaffold split (`split_id`). What is constant
-per `(model, encoder, split_id, seed)` run (params, hashes, commits, date) is stored once
-in `results_runs.csv` next to it, and `load_results()` joins the two. Re-running replaces
-the run rows being written and refuses to drop other models' rows from an older snapshot
-unless `allow_drop_stale=True`.
+Each row in `results.csv` is one seed's measurement on one scaffold split (`split_id`).
+What is constant per promoted `(model, encoder, split_id)` run (run_id, n_seeds, params,
+data/split hashes, code provenance, date) is stored once per run in `results_runs.csv`
+next to it, and `load_results()` joins the two.
 """
 
-import datetime
 import hashlib
 import json
 import logging
+import os
+import re
 import shutil
 import subprocess
+import tempfile
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
@@ -21,6 +24,10 @@ import pandas as pd
 from pipeline.combined_loader import COMBINED_CSV_PATH
 
 log = logging.getLogger(__name__)
+
+AI_ROOT = Path(__file__).resolve().parents[2]
+CODE_SUBTREES = ("src", "drivers", "environment.yml")
+_HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
 
 RESULTS_PATH = COMBINED_CSV_PATH.with_name("results.csv")
 DEFAULT_SPLIT_ID = "default"
@@ -40,20 +47,26 @@ COLUMNS = [
     "n_positive",
     "n_tasks",
     "dropped_tasks",
+    "run_id",
+    "n_seeds",
     "params",
     "data_sha256",
     "split_sha256",
-    "git_commit",
-    "eval_commit",
+    "base_commit",
+    "ai_tree",
+    "patch_sha256",
     "date",
 ]
-RUN_KEYS = ["model", "encoder", "split_id", "seed"]
+RUN_KEYS = ["model", "encoder", "split_id"]
 RUN_INFO = [
+    "run_id",
+    "n_seeds",
     "params",
     "data_sha256",
     "split_sha256",
-    "git_commit",
-    "eval_commit",
+    "base_commit",
+    "ai_tree",
+    "patch_sha256",
     "date",
 ]
 RUN_COLUMNS = RUN_KEYS + RUN_INFO
@@ -72,7 +85,18 @@ SUMMARY_GROUP_KEYS = [
     c
     for c in COLUMNS
     if c
-    not in ("seed", "value", "ci_low", "ci_high", "git_commit", "eval_commit", "date")
+    not in (
+        "seed",
+        "value",
+        "ci_low",
+        "ci_high",
+        "run_id",
+        "n_seeds",
+        "base_commit",
+        "ai_tree",
+        "patch_sha256",
+        "date",
+    )
 ]
 SUMMARY_COLUMNS = [
     "model",
@@ -108,32 +132,47 @@ SPLIT_SUMMARY_COLUMNS = [
 LOWER_IS_BETTER = frozenset({"rmse"})
 
 
+@dataclass(frozen=True)
+class CodeIdentity:
+    base_commit: str
+    ai_tree: str
+    patch: str
+    patch_sha256: str
+
+
 def runs_path(path: Path = RESULTS_PATH) -> Path:
     return path.with_name(path.stem + "_runs.csv")
 
 
 def load_results(path: Path = RESULTS_PATH) -> pd.DataFrame:
     """
-    Metric rows joined with their run's params, snapshot hash, git commit and date.
+    Metric rows joined with their promoted run's metadata from `results_runs.csv`.
     """
     if not path.exists():
         return pd.DataFrame(columns=COLUMNS)
-    metrics = pd.read_csv(path)
-    runs = pd.read_csv(runs_path(path))
-    for df in (metrics, runs):
-        df["seed"] = df["seed"].astype("Int64")
+    metrics = pd.read_csv(path, float_precision="round_trip")
+    runs = pd.read_csv(runs_path(path), dtype={"patch_sha256": str})
+    runs["patch_sha256"] = runs["patch_sha256"].fillna("").astype(str)
+    runs["n_seeds"] = runs["n_seeds"].astype("Int64")
+    metrics["seed"] = metrics["seed"].astype("Int64")
     return metrics.merge(runs, on=RUN_KEYS, how="left", validate="many_to_one")[COLUMNS]
 
 
-def write_results(out: pd.DataFrame, path: Path) -> None:
+def write_results(out: pd.DataFrame, path: Path = RESULTS_PATH) -> None:
     """
     Split joined rows into the metric and run files. Both are written to temp files and
     the old files backed up before either is replaced. If a replace fails, the old pair
     is restored, so the two files never disagree.
     """
+    out = out.reindex(columns=COLUMNS).sort_values(SORT_KEYS, ignore_index=True)
+    out["seed"] = out["seed"].astype("Int64")
+    out["n_seeds"] = out["n_seeds"].astype("Int64")
+    out["patch_sha256"] = out["patch_sha256"].fillna("").astype(str)
     runs = out[RUN_COLUMNS].drop_duplicates()
     if runs.duplicated(RUN_KEYS).any():
-        raise ValueError("a run has more than one params, sha256, commit or date")
+        raise ValueError(
+            "a run has more than one metadata record for the same (model, encoder, split_id)"
+        )
     pairs = [
         (out[METRIC_COLUMNS], path),
         (runs.sort_values(RUN_KEYS, ignore_index=True), runs_path(path)),
@@ -144,7 +183,7 @@ def write_results(out: pd.DataFrame, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         for (df, _), tmp in zip(pairs, tmps):
-            df.to_csv(tmp, index=False)
+            df.to_csv(tmp, index=False, lineterminator="\n")
         for target, bak in zip(targets, baks):
             if target.exists():
                 shutil.copy2(target, bak)
@@ -177,80 +216,147 @@ def file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
-def git_commit() -> str:
-    def git(*args):
-        return subprocess.run(
-            ["git", *args],
-            cwd=Path(__file__).resolve().parent,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-
-    try:
-        commit = git("rev-parse", "--short", "HEAD")
-        dirty = git(
-            "status",
-            "--porcelain",
-            "--untracked-files=no",
-            "--",
-            ":/",
-            f":(exclude){RESULTS_PATH}",
-            f":(exclude){runs_path()}",
-        )
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
-    return f"{commit}-dirty" if dirty else commit
-
-
-def record_results(
-    rows: list[dict],
-    model: str,
-    path: Path = RESULTS_PATH,
-    data_path: Path = COMBINED_CSV_PATH,
+def _git_stdout(
+    args: Sequence[str],
     *,
-    allow_drop_stale: bool = False,
-    commit: str | None = None,
-) -> pd.DataFrame:
-    """
-    `commit` is the commit that trained the model, the current one by default.
-    `eval_commit` is always the current one.
-    """
-    sha = file_sha256(data_path)
-    head = git_commit()
-    new = pd.DataFrame(rows).assign(
-        model=model,
-        data_sha256=sha,
-        git_commit=head if commit is None else commit,
-        eval_commit=head,
-        date=datetime.datetime.now(datetime.UTC).date().isoformat(),
-    )
-    new = new.reindex(columns=COLUMNS)
-    new["split_id"] = new["split_id"].fillna(DEFAULT_SPLIT_ID).astype(str)
-    new["seed"] = new["seed"].astype("Int64")
-    if path.exists():
-        old = load_results(path)
-        stale = old["data_sha256"] != sha
-        stale_others = sorted(
-            old.loc[stale & (old["model"] != model), "model"].unique()
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    input_text: str | None = None,
+) -> str:
+    return subprocess.run(
+        ["git", *args],
+        input=input_text,
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def _git_repo_and_prefix(ai_dir: Path = AI_ROOT) -> tuple[Path, str, list[str]]:
+    top = Path(
+        _git_stdout(["rev-parse", "--show-toplevel"], cwd=ai_dir).strip()
+    ).resolve()
+    rel = ai_dir.resolve().relative_to(top).as_posix()
+    rel_prefix = "" if rel in ("", ".") else rel
+    code_paths = [f"{rel_prefix}/{sub}" if rel_prefix else sub for sub in CODE_SUBTREES]
+    return top, rel_prefix, code_paths
+
+
+def _mktree_scoped(
+    full_tree: str,
+    *,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+) -> str:
+    entries = _git_stdout(["ls-tree", full_tree, *CODE_SUBTREES], cwd=cwd, env=env)
+    return _git_stdout(
+        ["mktree"],
+        cwd=cwd,
+        env=env,
+        input_text=entries if entries.endswith("\n") or not entries else entries + "\n",
+    ).strip()
+
+
+def _write_scoped_index_tree(top: Path, rel_prefix: str, env: dict[str, str]) -> str:
+    write_args = ["write-tree", *([f"--prefix={rel_prefix}/"] if rel_prefix else [])]
+    full_tree = _git_stdout(write_args, cwd=top, env=env).strip()
+    return _mktree_scoped(full_tree, cwd=top, env=env)
+
+
+def commit_ai_tree(rev: str = "HEAD", ai_dir: Path = AI_ROOT) -> str:
+    """Return the 40-char git tree SHA for `CODE_SUBTREES` under `ai/` at `rev`."""
+    top, rel_prefix, _ = _git_repo_and_prefix(ai_dir)
+    tree_spec = f"{rev}:{rel_prefix}" if rel_prefix else rev
+    return _mktree_scoped(tree_spec, cwd=top)
+
+
+def code_identity(ai_dir: Path = AI_ROOT) -> CodeIdentity:
+    """Compute reproducible code provenance for `CODE_SUBTREES` under `ai/`."""
+    top, rel_prefix, code_paths = _git_repo_and_prefix(ai_dir)
+    base_commit = _git_stdout(["rev-parse", "HEAD"], cwd=top).strip()
+    with tempfile.TemporaryDirectory() as tmp:
+        env = {**os.environ, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
+        _git_stdout(["read-tree", "HEAD"], cwd=top, env=env)
+        _git_stdout(["add", "-A", "--", *code_paths], cwd=top, env=env)
+        patch = _git_stdout(
+            ["diff", "--cached", "--binary", "HEAD", "--", *code_paths],
+            cwd=top,
+            env=env,
         )
-        if stale_others:
-            if not allow_drop_stale:
+        ai_tree = _write_scoped_index_tree(top, rel_prefix, env)
+    patch_sha256 = hashlib.sha256(patch.encode("utf-8")).hexdigest() if patch else ""
+    return CodeIdentity(
+        base_commit=base_commit,
+        ai_tree=ai_tree,
+        patch=patch,
+        patch_sha256=patch_sha256,
+    )
+
+
+def verify_code_identity(
+    base_commit: str,
+    ai_tree: str,
+    patch_sha256: str = "",
+    patch_path: Path | None = None,
+    ai_dir: Path = AI_ROOT,
+) -> None:
+    """Verify that `(base_commit, ai_tree, patch_sha256)` is reproducible in git."""
+    if not _HEX40_RE.match(base_commit or ""):
+        raise ValueError(f"base_commit must be a 40-char hex SHA, got {base_commit!r}")
+    if not _HEX40_RE.match(ai_tree or ""):
+        raise ValueError(f"ai_tree must be a 40-char hex SHA, got {ai_tree!r}")
+
+    top, rel_prefix, _ = _git_repo_and_prefix(ai_dir)
+    has_commit = (
+        subprocess.run(
+            ["git", "cat-file", "-e", f"{base_commit}^{{commit}}"],
+            cwd=top,
+            capture_output=True,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+    if not patch_sha256:
+        if has_commit:
+            expected_tree = commit_ai_tree(base_commit, ai_dir=ai_dir)
+            if expected_tree != ai_tree:
                 raise ValueError(
-                    f"refusing to drop results for {stale_others} from a different "
-                    "snapshot; pass allow_drop_stale=True to overwrite"
+                    f"ai_tree {ai_tree} does not match {base_commit} tree {expected_tree}"
                 )
-            log.warning(
-                "dropping results for %s: computed on a different snapshot",
-                stale_others,
-            )
-        replaced = pd.MultiIndex.from_frame(new[RUN_KEYS])
-        keep = ~stale & ~pd.MultiIndex.from_frame(old[RUN_KEYS]).isin(replaced)
-        new = pd.concat([old[keep], new], ignore_index=True)
-    out = new[COLUMNS].sort_values(SORT_KEYS, ignore_index=True)
-    out["seed"] = out["seed"].astype("Int64")
-    write_results(out, path)
-    return out
+            return
+        head_tree = commit_ai_tree("HEAD", ai_dir=ai_dir)
+        if head_tree == ai_tree:
+            return
+        raise ValueError(
+            f"base_commit {base_commit} is not in local git and ai_tree {ai_tree} "
+            f"does not match HEAD ({head_tree})"
+        )
+
+    if commit_ai_tree("HEAD", ai_dir=ai_dir) == ai_tree:
+        return
+    if not has_commit:
+        raise ValueError(f"patched run requires base_commit {base_commit} in local git")
+    if patch_path is None or not patch_path.exists():
+        raise ValueError(
+            f"run has patch_sha256={patch_sha256[:12]}... but patch.diff is missing"
+        )
+    actual_patch_sha = hashlib.sha256(patch_path.read_bytes()).hexdigest()
+    if actual_patch_sha != patch_sha256:
+        raise ValueError(
+            f"patch.diff sha256 ({actual_patch_sha}) != patch_sha256 ({patch_sha256})"
+        )
+    with tempfile.TemporaryDirectory() as tmp:
+        env = {**os.environ, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
+        _git_stdout(["read-tree", base_commit], cwd=top, env=env)
+        _git_stdout(["apply", "--cached", str(patch_path.resolve())], cwd=top, env=env)
+        reconstructed = _write_scoped_index_tree(top, rel_prefix, env)
+    if reconstructed != ai_tree:
+        raise ValueError(
+            f"applying patch.diff to {base_commit} produced {reconstructed}, expected {ai_tree}"
+        )
 
 
 def summarize_seeds(df: pd.DataFrame) -> pd.DataFrame:

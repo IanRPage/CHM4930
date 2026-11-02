@@ -1,10 +1,9 @@
 """
-Fit MC-Dropout conformal intervals for saved MuFu checkpoints.
+Fit MC-Dropout conformal intervals for saved MuFu checkpoints in `ai/runs/<run_id>/`.
 
 From ai/: python drivers/fit_mc_dropout.py
-
-Fits q on val, saves it next to each seed's checkpoint, and reports empirical coverage
-on test.
+Fits `q` on `val`, saves it next to each seed's checkpoint, and writes empirical test
+coverage to `ai/runs/<run_id>/logs/mc_dropout_coverage.csv`.
 """
 
 import sys
@@ -15,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import pandas as pd
 import torch
 
-from baseline.benchmark import SEEDS, load_benchmark_split
+from baseline.benchmark import SEEDS, load_benchmark_split, resolve_run_dir
 from encoders.smiles_encoder import SmilesEncoder
 from mufu.data.dataset import split_datasets
 from mufu.experiment import load_mufu_checkpoint
@@ -27,8 +26,7 @@ from mufu.mc_dropout import (
     predict_with_intervals,
 )
 
-AI_DIR = Path(__file__).resolve().parents[1]
-
+run_id = ""  # empty -> promoted default run
 model_name = "mufu"
 seeds = SEEDS
 n_samples = DEFAULT_T
@@ -41,15 +39,16 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         raise SystemExit("Set options at the top of this file, not as arguments.")
 
+    run_dir = resolve_run_dir(run_id, model=model_name)
     df = load_benchmark_split()
     datasets = split_datasets(df)
     smiles_encoder = SmilesEncoder(freeze=True, max_cache_size=len(df))
 
-    out_dir = AI_DIR / "outputs" / model_name
-    out_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir = run_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
     frames = []
     for seed in seeds:
-        ckpt_path = AI_DIR / "checkpoints" / f"{model_name}_seed_{seed}.pt"
+        ckpt_path = run_dir / "checkpoints" / f"{model_name}_seed_{seed}.pt"
         model, _ = load_mufu_checkpoint(ckpt_path, smiles_encoder, device=device)
         conformal = fit_mc_dropout(
             model,
@@ -67,7 +66,9 @@ if __name__ == "__main__":
         print(f"seed {seed}: q={conformal.q.round(3).tolist()}", flush=True)
 
     result = pd.concat(frames, ignore_index=True)
-    result.to_csv(out_dir / "mc_dropout_coverage.csv", index=False)
+    result.to_csv(
+        logs_dir / "mc_dropout_coverage.csv", index=False, lineterminator="\n"
+    )
     summary = result.groupby(["target", "nominal"])[["empirical", "mean_width"]].agg(
         ["mean", "std"]
     )
