@@ -8,53 +8,56 @@ import pytest
 from baseline import results
 
 
-@pytest.fixture
-def paths(tmp_path, monkeypatch):
-    monkeypatch.setattr(results, "git_commit", lambda: "abc1234")
-    data = tmp_path / "combined.csv"
-    data.write_text("smiles\nCCO\n")
-    return tmp_path / "baseline" / "results.csv", data
-
-
 def row(endpoint, split="test", seed=0, value=0.5, **extra):
     return {
+        "model": "m",
         "encoder": "ecfp4-2048",
         "dataset": "tox21",
         "endpoint": endpoint,
+        "split_id": "default",
         "split": split,
         "seed": seed,
         "metric": "roc_auc",
         "value": value,
         "n_labeled": 10,
         "n_positive": 3,
+        "run_id": "m_default",
+        "n_seeds": 2,
         "params": "{}",
+        "data_sha256": "d" * 64,
+        "split_sha256": "s" * 64,
+        "base_commit": "a" * 40,
+        "ai_tree": "b" * 40,
+        "patch_sha256": "",
+        "date": "2026-10-30",
         **extra,
     }
 
 
-def test_run_info_is_stored_once_per_run_and_joined_on_load(paths):
-    path, data = paths
-    rows = [row("T1"), row("T2"), row("T1", seed=1)]
-    recorded = results.record_results(rows, model="m", path=path, data_path=data)
+def test_run_info_is_stored_once_per_run_and_joined_on_load(tmp_path):
+    path = tmp_path / "baseline" / "results.csv"
+    df = pd.DataFrame([row("T1"), row("T2"), row("T1", seed=1)])
+    results.write_results(df, path)
 
     assert pd.read_csv(path).columns.tolist() == results.METRIC_COLUMNS
     runs = pd.read_csv(results.runs_path(path))
     assert runs.columns.tolist() == results.RUN_COLUMNS
-    assert runs["seed"].tolist() == [0, 1]
+    assert len(runs) == 1
+    assert runs.loc[0, "run_id"] == "m_default"
+    assert runs.loc[0, "n_seeds"] == 2
     written = results.load_results(path)
     assert written.columns.tolist() == results.COLUMNS
-    pd.testing.assert_frame_equal(written, recorded)
-    assert written.loc[0, "model"] == "m"
-    assert written.loc[0, "seed"] == 0
-    assert written.loc[0, "git_commit"] == "abc1234"
+    assert len(written) == 3
+    assert written.loc[0, "base_commit"] == "a" * 40
+    assert written.loc[0, "patch_sha256"] == ""
 
 
 @pytest.mark.parametrize("existing", [False, True])
-def test_failed_replace_restores_both_files(paths, monkeypatch, existing):
-    path, data = paths
+def test_failed_replace_restores_both_files(tmp_path, monkeypatch, existing):
+    path = tmp_path / "baseline" / "results.csv"
     runs = results.runs_path(path)
     if existing:
-        results.record_results([row("T1")], model="a", path=path, data_path=data)
+        results.write_results(pd.DataFrame([row("T1", model="a")]), path)
     before = {p: p.read_bytes() for p in (path, runs) if p.exists()}
     original = type(path).replace
     failed = []
@@ -68,24 +71,23 @@ def test_failed_replace_restores_both_files(paths, monkeypatch, existing):
     monkeypatch.setattr(type(path), "replace", fail_once_on_runs)
 
     with pytest.raises(OSError, match="disk full"):
-        results.record_results([row("T1")], model="b", path=path, data_path=data)
+        results.write_results(pd.DataFrame([row("T1", model="b")]), path)
     assert {p: p.read_bytes() for p in (path, runs) if p.exists()} == before
     assert not list(path.parent.glob("*.tmp")) + list(path.parent.glob("*.bak"))
 
 
 def test_load_results_on_missing_file_is_empty(tmp_path):
     loaded = results.load_results(tmp_path / "missing.csv")
-
     assert loaded.empty
     assert loaded.columns.tolist() == results.COLUMNS
 
 
-def test_run_with_inconsistent_run_info_is_rejected(paths):
-    path, data = paths
-    rows = [row("T1"), row("T2", params='{"lr": 1}')]
+def test_run_with_inconsistent_run_info_is_rejected(tmp_path):
+    path = tmp_path / "results.csv"
+    df = pd.DataFrame([row("T1"), row("T2", params='{"lr": 1}')])
 
     with pytest.raises(ValueError, match="more than one"):
-        results.record_results(rows, model="m", path=path, data_path=data)
+        results.write_results(df, path)
     assert not path.exists()
     assert not results.runs_path(path).exists()
 
@@ -100,67 +102,17 @@ def test_params_json_is_key_order_independent():
     assert first == second
 
 
-def test_rerun_replaces_only_that_models_rows(paths):
-    path, data = paths
-    results.record_results([row("T1"), row("T2")], model="a", path=path, data_path=data)
-    results.record_results([row("T1")], model="b", path=path, data_path=data)
-    results.record_results([row("T1", value=0.9)], model="a", path=path, data_path=data)
-    written = results.load_results(path)
-    assert len(written) == 2
-    assert written.set_index("model").loc["a", "value"] == 0.9
-    assert written["model"].tolist() == ["a", "b"]
-
-
-def test_other_models_stale_rows_are_dropped_only_with_opt_in(paths, caplog):
-    path, data = paths
-    results.record_results([row("T1")], model="a", path=path, data_path=data)
-    results.record_results([row("T1")], model="b", path=path, data_path=data)
-    before = path.read_bytes(), results.runs_path(path).read_bytes()
-    data.write_text("smiles\nCCN\n")
-
-    with pytest.raises(ValueError, match="different snapshot"):
-        results.record_results([row("T1")], model="a", path=path, data_path=data)
-    assert (path.read_bytes(), results.runs_path(path).read_bytes()) == before
-
-    results.record_results(
-        [row("T1")], model="a", path=path, data_path=data, allow_drop_stale=True
+def test_rows_are_sorted_by_seed_and_nan_values_kept(tmp_path):
+    path = tmp_path / "results.csv"
+    df = pd.DataFrame(
+        [
+            row("T2", "val", seed=0),
+            row("T1", "val", seed=0, value=np.nan),
+            row("T1", "test", seed=1),
+            row("T1", "test", seed=0),
+        ]
     )
-    written = results.load_results(path)
-    assert written["model"].tolist() == ["a"]
-    assert pd.read_csv(results.runs_path(path))["model"].tolist() == ["a"]
-    assert written["data_sha256"].tolist() == [results.file_sha256(data)]
-    assert "['b']" in caplog.text
-
-
-def test_rerun_replaces_only_matching_encoder_and_seed_rows(paths):
-    path, data = paths
-    rows = [row("T1", seed=s, encoder=e) for e in ("gnn", "ecfp") for s in (0, 1)]
-    results.record_results(rows, model="m", path=path, data_path=data)
-    results.record_results(
-        [row("T1", seed=0, value=0.9, encoder="ecfp")],
-        model="m",
-        path=path,
-        data_path=data,
-    )
-
-    written = results.load_results(path).set_index(["encoder", "seed"])["value"]
-    assert written.to_dict() == {
-        ("ecfp", 0): 0.9,
-        ("ecfp", 1): 0.5,
-        ("gnn", 0): 0.5,
-        ("gnn", 1): 0.5,
-    }
-
-
-def test_rows_are_sorted_by_seed_and_nan_values_kept(paths):
-    path, data = paths
-    rows = [
-        row("T2", "val", seed=0),
-        row("T1", "val", seed=0, value=np.nan),
-        row("T1", "test", seed=1),
-        row("T1", "test", seed=0),
-    ]
-    results.record_results(rows, model="m", path=path, data_path=data)
+    results.write_results(df, path)
     written = results.load_results(path)
     assert written[["endpoint", "split", "seed"]].values.tolist() == [
         ["T1", "test", 0],
@@ -171,32 +123,32 @@ def test_rows_are_sorted_by_seed_and_nan_values_kept(paths):
     assert np.isnan(written.loc[2, "value"])
 
 
-def test_summarize_seeds_computes_mean_ddof1_std_and_keeps_nan_keys(paths):
-    path, data = paths
-    rows = [
-        row("T1", "test", seed=0, value=0.6),
-        row("T1", "test", seed=1, value=0.8),
-        row("T1", "test", seed=2, value=1.0),
-        row("T1", "test", seed=3, value=np.nan),
-        row(
-            "macro_tox21",
-            "test",
-            seed=0,
-            value=0.5,
-            n_labeled=np.nan,
-            n_positive=np.nan,
-        ),
-        row(
-            "macro_tox21",
-            "test",
-            seed=1,
-            value=0.9,
-            n_labeled=np.nan,
-            n_positive=np.nan,
-        ),
-    ]
-    written = results.record_results(rows, model="m", path=path, data_path=data)
-    summary = results.summarize_seeds(written).set_index("endpoint")
+def test_summarize_seeds_computes_mean_ddof1_std_and_keeps_nan_keys():
+    df = pd.DataFrame(
+        [
+            row("T1", "test", seed=0, value=0.6),
+            row("T1", "test", seed=1, value=0.8),
+            row("T1", "test", seed=2, value=1.0),
+            row("T1", "test", seed=3, value=np.nan),
+            row(
+                "macro_tox21",
+                "test",
+                seed=0,
+                value=0.5,
+                n_labeled=np.nan,
+                n_positive=np.nan,
+            ),
+            row(
+                "macro_tox21",
+                "test",
+                seed=1,
+                value=0.9,
+                n_labeled=np.nan,
+                n_positive=np.nan,
+            ),
+        ]
+    )
+    summary = results.summarize_seeds(df).set_index("endpoint")
 
     assert list(summary.columns) == [
         c for c in results.SUMMARY_COLUMNS if c != "endpoint"
@@ -221,16 +173,6 @@ def test_summarize_seeds_empty_dataframe():
     assert summary.empty
 
 
-def test_data_sha256_tracks_the_snapshot_bytes(paths):
-    path, data = paths
-    first = results.file_sha256(data)
-    assert first == results.file_sha256(data)
-    results.record_results([row("T1")], model="m", path=path, data_path=data)
-    assert results.load_results(path).loc[0, "data_sha256"] == first
-    data.write_text("smiles\nCCN\n")
-    assert results.file_sha256(data) != first
-
-
 def test_lf_and_crlf_checksums_match_without_rewriting_files(tmp_path):
     lf = b"smiles,pIC50_BACE1\nCCO,6.0\nCCN,5.0\n"
     expected = hashlib.sha256(lf).hexdigest()
@@ -241,29 +183,63 @@ def test_lf_and_crlf_checksums_match_without_rewriting_files(tmp_path):
         assert path.read_bytes() == contents
 
 
-def test_git_commit_falls_back_when_git_is_unavailable(monkeypatch):
-    def missing(*args, **kwargs):
-        raise FileNotFoundError("git")
+def test_code_identity_scopes_to_code_subtrees_and_verifies_patches(tmp_path):
+    repo = tmp_path / "repo"
+    ai_dir = repo / "ai"
+    (ai_dir / "src").mkdir(parents=True)
+    (ai_dir / "drivers").mkdir(parents=True)
+    (ai_dir / "data" / "baseline").mkdir(parents=True)
+    (ai_dir / "src" / "mod.py").write_text("x = 1\n")
+    (ai_dir / "drivers" / "run.py").write_text("print(1)\n")
+    (ai_dir / "environment.yml").write_text("name: test\n")
+    (ai_dir / "README.md").write_text("# Doc\n")
 
-    monkeypatch.setattr(subprocess, "run", missing)
-    assert results.git_commit() == "unknown"
+    def git(*args):
+        subprocess.run(
+            ["git", *args],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
+    git("init")
+    git("config", "user.email", "test@example.com")
+    git("config", "user.name", "Test")
+    git("add", "-A")
+    git("commit", "-m", "initial")
 
-def test_git_commit_marks_a_dirty_tree_ignoring_results_csv(monkeypatch):
-    outputs = {"rev-parse": "abc1234", "status": " M file.py"}
-    status_args = []
+    clean = results.code_identity(ai_dir)
+    assert len(clean.base_commit) == 40
+    assert len(clean.ai_tree) == 40
+    assert clean.patch == ""
+    assert clean.patch_sha256 == ""
+    results.verify_code_identity(
+        clean.base_commit, clean.ai_tree, clean.patch_sha256, ai_dir=ai_dir
+    )
 
-    def run(args, **kwargs):
-        if args[1] == "status":
-            status_args.append(args)
-        return subprocess.CompletedProcess(args, 0, stdout=outputs[args[1]] + "\n")
+    # Editing docs or data/baseline does NOT change ai_tree or produce a patch
+    (ai_dir / "README.md").write_text("# Updated doc\n")
+    (ai_dir / "data" / "baseline" / "results.csv").write_text("a,b\n1,2\n")
+    after_doc = results.code_identity(ai_dir)
+    assert after_doc.ai_tree == clean.ai_tree
+    assert after_doc.patch == ""
 
-    monkeypatch.setattr(subprocess, "run", run)
-    assert results.git_commit() == "abc1234-dirty"
-    outputs["status"] = ""
-    assert results.git_commit() == "abc1234"
-    for excluded in (results.RESULTS_PATH, results.runs_path()):
-        assert all(f":(exclude){excluded}" in a for a in status_args)
+    # Editing src/ changes ai_tree and produces a reproducible patch
+    (ai_dir / "src" / "mod.py").write_text("x = 2\n")
+    dirty = results.code_identity(ai_dir)
+    assert dirty.base_commit == clean.base_commit
+    assert dirty.ai_tree != clean.ai_tree
+    assert dirty.patch_sha256 != ""
+    patch_file = tmp_path / "patch.diff"
+    patch_file.write_text(dirty.patch)
+    results.verify_code_identity(
+        dirty.base_commit,
+        dirty.ai_tree,
+        dirty.patch_sha256,
+        patch_path=patch_file,
+        ai_dir=ai_dir,
+    )
 
 
 def summary_rows(model, split_id, values, metric="rmse"):
@@ -297,23 +273,8 @@ def test_split_and_seed_variance_are_reported_separately():
     assert per_split.loc["default", "ci_low"] == pytest.approx(1.0)
     assert per_split.loc["default", "std"] == pytest.approx(np.sqrt(0.02))
 
-    (row,) = results.summarize_splits(df).to_dict("records")
-    assert row["value"] == pytest.approx(1.6)
-    assert row["split_std"] == pytest.approx(np.sqrt(0.5))
-    assert row["seed_std"] == pytest.approx(np.sqrt(0.02))
-    assert (row["n_splits"], row["n_seeds"]) == (2, 4)
-
-
-def test_rescored_run_keeps_training_commit_apart_from_eval_commit(paths):
-    path, data = paths
-    results.record_results([row("T1")], model="m", path=path, data_path=data)
-    results.record_results(
-        [row("T1", value=0.7)], model="m", path=path, data_path=data, commit="627f004"
-    )
-
-    (loaded,) = results.load_results(path).to_dict("records")
-    assert (loaded["value"], loaded["git_commit"], loaded["eval_commit"]) == (
-        0.7,
-        "627f004",
-        "abc1234",
-    )
+    (row_dict,) = results.summarize_splits(df).to_dict("records")
+    assert row_dict["value"] == pytest.approx(1.6)
+    assert row_dict["split_std"] == pytest.approx(np.sqrt(0.5))
+    assert row_dict["seed_std"] == pytest.approx(np.sqrt(0.02))
+    assert (row_dict["n_splits"], row_dict["n_seeds"]) == (2, 4)

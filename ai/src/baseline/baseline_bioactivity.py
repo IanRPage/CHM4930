@@ -9,10 +9,22 @@ Runs on every scaffold split in `SPLIT_IDS`, tuning `max_features` on each split
 validation set.
 """
 
+import json
+
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 
-from baseline.benchmark import SEEDS, SPLIT_IDS, load_benchmark_split, run_benchmark
+from baseline import benchmark
+from baseline.benchmark import (
+    SEEDS,
+    SPLIT_IDS,
+    load_benchmark_split,
+    promote_run,
+    rebuild_tracked_results,
+    run_benchmark,
+    score_run_predictions,
+)
+from baseline.results import summarize_seeds
 from evaluation import evaluation_metrics
 from featurize.fingerprint import FINGERPRINT_BITS, mol_to_ecfp4
 from pipeline.combined_loader import TARGETS
@@ -78,6 +90,19 @@ def select_max_features(data, seed=None):
     return best_max_features
 
 
+def _all_promoted_runs_present(promoted_path, runs_dir) -> bool:
+    if not promoted_path.exists():
+        return False
+    promoted = json.loads(promoted_path.read_text())
+    run_ids = [
+        run_id
+        for key, mapping in promoted.items()
+        if key != "tag" and isinstance(mapping, dict)
+        for run_id in mapping.values()
+    ]
+    return bool(run_ids) and all((runs_dir / r / "run.json").exists() for r in run_ids)
+
+
 def run_split(split_id):
     print(f"\n=== split {split_id} ===")
     df = load_benchmark_split(split_id=split_id)
@@ -108,7 +133,8 @@ def run_split(split_id):
         return predictions
 
     params = {"max_features": selected, "n_estimators": N_ESTIMATORS}
-    summary = run_benchmark(
+    run_dir = benchmark.RUNS_DIR / f"rf_bioactivity_{split_id}"
+    run_benchmark(
         fit_predict,
         model="rf_bioactivity",
         encoder=f"ecfp4-{FINGERPRINT_BITS}",
@@ -116,7 +142,17 @@ def run_split(split_id):
         seeds=SEEDS,
         split_id=split_id,
         df=df,
+        run_dir=run_dir,
+        overwrite_predictions=True,
     )
+    scored = score_run_predictions(run_dir, df, include_test=True, n_boot=0)
+    promote_run(
+        run_dir,
+        promoted_path=benchmark.PROMOTED_PATH,
+        runs_dir=benchmark.RUNS_DIR,
+        rebuild=False,
+    )
+    summary = summarize_seeds(scored)
 
     for target in TARGETS:
         data = prepared[target]
@@ -140,6 +176,11 @@ def run_split(split_id):
 def main():
     for split_id in SPLIT_IDS:
         run_split(split_id)
+    if _all_promoted_runs_present(benchmark.PROMOTED_PATH, benchmark.RUNS_DIR):
+        rebuild_tracked_results(
+            promoted_path=benchmark.PROMOTED_PATH,
+            runs_dir=benchmark.RUNS_DIR,
+        )
 
 
 if __name__ == "__main__":

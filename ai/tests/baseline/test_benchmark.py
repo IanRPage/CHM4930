@@ -1,3 +1,4 @@
+import json
 import random
 
 import numpy as np
@@ -6,14 +7,22 @@ import pytest
 import torch
 
 from baseline import benchmark, results
+from baseline.results import CodeIdentity
 from pipeline.bioactivity_loader import PIC50_ACTIVE_THRESHOLD
 from pipeline.combined_loader import COMBINED_CSV_PATH
 from pipeline.split import scaffold_split
 
+FAKE_IDENTITY = CodeIdentity(
+    base_commit="a" * 40,
+    ai_tree="b" * 40,
+    patch="",
+    patch_sha256="",
+)
+
 
 @pytest.fixture
 def paths(tmp_path, monkeypatch):
-    monkeypatch.setattr(results, "git_commit", lambda: "abc1234")
+    monkeypatch.setattr(benchmark, "code_identity", lambda: FAKE_IDENTITY)
     data = tmp_path / "combined.csv"
     data.write_text("smiles\nCCO\n")
     return tmp_path / "results.csv", data
@@ -59,7 +68,6 @@ def test_seed_everything_makes_random_numpy_and_torch_draws_repeat():
 
 
 def test_evaluate_bioactivity_with_and_without_explicit_active_scores(split_df):
-    # BACE1 has pIC50 only; EGFR provides both pIC50 and inverted active_EGFR on val
     predictions = {
         "val": {
             "pIC50_BACE1": [5.0, 7.0, np.nan],
@@ -86,13 +94,11 @@ def test_evaluate_bioactivity_with_and_without_explicit_active_scores(split_df):
     assert rows.loc[("pIC50_BACE1", "val", "rmse"), "n_positive"] == 1
     assert rows["ci_low"].isna().all()
 
-    # pIC50-derived ROC-AUC under pIC50_EGFR, classifier head ROC-AUC under active_EGFR
     assert rows.loc[("pIC50_EGFR", "val", "rmse"), "value"] == pytest.approx(0.0)
     assert rows.loc[("pIC50_EGFR", "val", "roc_auc"), "value"] == pytest.approx(1.0)
     assert rows.loc[("active_EGFR", "val", "roc_auc"), "value"] == pytest.approx(0.0)
     assert ("active_EGFR", "val", "rmse") not in rows.index
 
-    # Active-only predictions produce roc_auc under active_EGFR without pIC50_EGFR rows
     assert ("active_EGFR", "test", "roc_auc") in rows.index
     assert ("pIC50_EGFR", "test", "roc_auc") not in rows.index
     assert ("pIC50_EGFR", "test", "rmse") not in rows.index
@@ -113,7 +119,6 @@ def test_evaluate_toxicity_excludes_omitted_endpoints_from_macros(split_df):
     rows = pd.DataFrame(benchmark.evaluate_split_predictions(split_df, predictions))
     rows = rows[rows["metric"] == "roc_auc"].set_index(["endpoint", "split"])
 
-    # In val, only NR-AR (tox21) was predicted; CT_TOX (clintox) was omitted
     assert ("NR-AR", "val") in rows.index
     assert ("CT_TOX", "val") not in rows.index
     assert rows.loc[("NR-AR", "val"), "dataset"] == "tox21"
@@ -125,13 +130,11 @@ def test_evaluate_toxicity_excludes_omitted_endpoints_from_macros(split_df):
     assert np.isnan(rows.loc[("macro_clintox", "val"), "value"])
     assert rows.loc[("macro_overall", "val"), "value"] == pytest.approx(1.0)
     assert np.isnan(rows.loc[("macro_overall", "val"), "n_labeled"])
-    # omitted endpoints count as dropped, alongside ones with a single class
     assert rows.loc[("macro_overall", "val"), "n_tasks"] == 1
     dropped = rows.loc[("macro_overall", "val"), "dropped_tasks"].split(";")
     assert "CT_TOX" in dropped and "NR-AR" not in dropped
     assert len(dropped) == len(benchmark.TOX_TASKS) - 1
 
-    # In test, NR-AR has AUC 1.0 and CT_TOX has AUC 0.0 -> macro_overall is 0.5
     assert rows.loc[("CT_TOX", "test"), "dataset"] == "clintox"
     assert rows.loc[("CT_TOX", "test"), "value"] == pytest.approx(0.0)
     assert rows.loc[("macro_overall", "test"), "value"] == pytest.approx(0.5)
@@ -224,8 +227,13 @@ def test_bootstrap_ci_is_test_only_brackets_value_and_repeats_with_seed():
     assert rmse["ci_low"] < rmse["ci_high"]
 
 
-def test_run_benchmark_records_per_seed_and_returns_summary(split_df, paths):
+def test_run_benchmark_scores_val_only_and_promote_rebuilds_test(
+    split_df, paths, tmp_path, monkeypatch
+):
     path, data_path = paths
+    runs_dir = tmp_path / "runs"
+    run_dir = runs_dir / "stub_default"
+    promoted_path = tmp_path / "promoted.json"
     seen_seeds = []
 
     def fit_predict(df, seed):
@@ -243,35 +251,50 @@ def test_run_benchmark_records_per_seed_and_returns_summary(split_df, paths):
         params={"b": 2, "a": 1},
         seeds=(0, 1, 2),
         df=split_df,
-        path=path,
         data_path=data_path,
+        run_dir=run_dir,
     )
 
     assert seen_seeds == [0, 1, 2]
-    written = results.load_results(path)
-    assert (written["split_id"] == "default").all()
-    assert set(written["split_sha256"]) == {benchmark.split_sha256(split_df)}
-    test_rows = written[written["split"] == "test"]
-    assert test_rows["ci_low"].notna().any()
-    saved = pd.read_csv(benchmark.prediction_path("stub", "enc", "default", 2))
-    assert saved["smiles"].tolist() == ["CCCC", "CCCCC", "CCCCCC"]
-    assert saved["pIC50_BACE1"].tolist()[:2] == pytest.approx([4.4, 8.4])
-    # 2 splits * 7 metrics * 3 seeds = 42 rows
-    assert len(written) == 42
-    assert sorted(written["seed"].unique()) == [0, 1, 2]
-    assert (written["params"] == '{"a": 1, "b": 2}').all()
+    # Training does not touch results.csv or score test_metrics.csv
+    assert not path.exists()
+    assert (run_dir / "val_metrics.csv").exists()
+    assert not (run_dir / "test_metrics.csv").exists()
+    assert set(summary["split"]) == {"val"}
 
     indexed = summary.set_index(["split", "metric"])
     assert (indexed["n_seeds"] == 3).all()
-    # RMSE on [0.0, 0.2, 0.4] has mean 0.2 and sample std 0.2
     assert indexed.loc[("val", "rmse"), "value"] == pytest.approx(0.2)
     assert indexed.loc[("val", "rmse"), "std"] == pytest.approx(0.2)
-    assert indexed.loc[("test", "roc_auc"), "value"] == pytest.approx(1.0)
-    assert indexed.loc[("test", "roc_auc"), "std"] == pytest.approx(0.0)
+
+    saved = pd.read_csv(run_dir / "predictions" / "test_seed_2.csv")
+    assert saved["smiles"].tolist() == ["CCCC", "CCCCC", "CCCCCC"]
+    assert saved["pIC50_BACE1"].tolist()[:2] == pytest.approx([4.4, 8.4])
+
+    # Promoting the run scores test once (val n_boot=0, test n_boot>0) and writes results.csv
+    monkeypatch.setattr(
+        benchmark, "load_benchmark_split", lambda *a, **kw: split_df.copy()
+    )
+    benchmark.promote_run(
+        run_dir,
+        promoted_path=promoted_path,
+        runs_dir=runs_dir,
+        results_path=path,
+        data_path=data_path,
+        n_boot=50,
+    )
+    assert (run_dir / "test_metrics.csv").exists()
+    written = results.load_results(path)
+    # 2 splits * 7 metrics * 3 seeds = 42 rows
+    assert len(written) == 42
+    assert written[written["split"] == "val"]["ci_low"].isna().all()
+    assert written[written["split"] == "test"]["ci_low"].notna().any()
+    assert (written["run_id"] == "stub_default").all()
+    assert (written["params"] == '{"a": 1, "b": 2}').all()
 
 
-def test_run_benchmark_rejects_empty_seeds(split_df, paths):
-    path, data_path = paths
+def test_run_benchmark_rejects_empty_seeds(split_df, paths, tmp_path):
+    _, data_path = paths
     with pytest.raises(ValueError, match="seeds must not be empty"):
         benchmark.run_benchmark(
             lambda df, seed: {},
@@ -280,16 +303,16 @@ def test_run_benchmark_rejects_empty_seeds(split_df, paths):
             params={},
             seeds=(),
             df=split_df,
-            path=path,
             data_path=data_path,
+            run_dir=tmp_path / "run",
         )
 
 
 def test_run_benchmark_loads_from_data_path_when_df_is_none(
     snapshot_csv, tmp_path, monkeypatch
 ):
-    monkeypatch.setattr(results, "git_commit", lambda: "abc1234")
-    out_path = tmp_path / "results.csv"
+    monkeypatch.setattr(benchmark, "code_identity", lambda: FAKE_IDENTITY)
+    run_dir = tmp_path / "stub_default"
     seen_rows = []
 
     def fit_predict(df, seed):
@@ -307,22 +330,23 @@ def test_run_benchmark_loads_from_data_path_when_df_is_none(
         encoder="enc",
         params={},
         seeds=(0,),
-        path=out_path,
         data_path=snapshot_csv,
+        run_dir=run_dir,
     )
 
     assert seen_rows == [20]
-    written = results.load_results(out_path)
-    assert set(written["data_sha256"]) == {results.file_sha256(snapshot_csv)}
+    meta = json.loads((run_dir / "run.json").read_text())
+    assert meta["data_sha256"] == results.file_sha256(snapshot_csv)
 
 
 @pytest.mark.parametrize(
     "bad_predictions", [{}, {"val": {"pIC50_BACE1": [5.0, 7.0, np.nan]}}]
 )
 def test_run_benchmark_rejects_missing_split_predictions(
-    split_df, paths, bad_predictions
+    split_df, paths, bad_predictions, tmp_path
 ):
-    path, data_path = paths
+    _, data_path = paths
+    run_dir = tmp_path / "bad_run"
     with pytest.raises(ValueError, match="must return 'val' and 'test'"):
         benchmark.run_benchmark(
             lambda df, seed: bad_predictions,
@@ -331,35 +355,15 @@ def test_run_benchmark_rejects_missing_split_predictions(
             params={},
             seeds=(0,),
             df=split_df,
-            path=path,
             data_path=data_path,
+            run_dir=run_dir,
         )
-    assert not path.exists()
+    assert not run_dir.exists()
 
 
-def test_run_benchmark_passes_allow_drop_stale(split_df, paths):
+def test_crashed_run_stays_running_and_cannot_be_promoted(split_df, paths, tmp_path):
     path, data_path = paths
-    kwargs = {
-        "fit_predict": lambda df, seed: {
-            "val": {"pIC50_BACE1": [5.0, 7.0, np.nan]},
-            "test": {"pIC50_BACE1": [4.0, 8.0, np.nan]},
-        },
-        "encoder": "enc",
-        "params": {},
-        "seeds": (0,),
-        "df": split_df,
-        "path": path,
-        "data_path": data_path,
-    }
-    benchmark.run_benchmark(model="other", **kwargs)
-    data_path.write_text("smiles\nCCN\n")
-
-    benchmark.run_benchmark(model="stub", allow_drop_stale=True, **kwargs)
-    assert set(pd.read_csv(path)["model"]) == {"stub"}
-
-
-def test_run_benchmark_records_finished_seeds_before_a_crash(split_df, paths):
-    path, data_path = paths
+    run_dir = tmp_path / "runs" / "crashed"
 
     def fit_predict(df, seed):
         if seed == 1:
@@ -377,11 +381,21 @@ def test_run_benchmark_records_finished_seeds_before_a_crash(split_df, paths):
             params={},
             seeds=(0, 1),
             df=split_df,
-            path=path,
             data_path=data_path,
+            run_dir=run_dir,
         )
 
-    assert set(pd.read_csv(path)["seed"]) == {0}
+    meta = json.loads((run_dir / "run.json").read_text())
+    assert meta["status"] == "running"
+    assert meta["completed_seeds"] == [0]
+    with pytest.raises(ValueError, match="incomplete run"):
+        benchmark.promote_run(
+            run_dir,
+            promoted_path=tmp_path / "promoted.json",
+            runs_dir=tmp_path / "runs",
+            results_path=path,
+            data_path=data_path,
+        )
 
 
 def test_load_benchmark_split_delegates_to_combined_and_scaffold(monkeypatch):
@@ -461,7 +475,6 @@ def test_load_is_read_only_and_missing_snapshot_raises(
 def test_frozen_benchmark_matches_recorded_rf_checksum_and_counts(frozen_benchmark):
     recorded = results.load_results()
     rf = recorded[recorded["model"].isin(["rf_bioactivity", "rf_toxicity"])]
-    # per run: bio 2 targets * 2 splits * 7 metrics, tox 2 splits * (6 macro + 14 * 3)
     assert len(rf) == 124 * len(benchmark.SEEDS) * len(benchmark.SPLIT_IDS)
     assert set(rf["seed"]) == set(benchmark.SEEDS)
     assert set(rf["split_id"]) == set(benchmark.SPLIT_IDS)

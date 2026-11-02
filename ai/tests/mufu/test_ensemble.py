@@ -29,15 +29,14 @@ def checkpoints(labeled_dataset, tmp_path):
         datasets,
         encoder,
         CFG,
+        run_dir=tmp_path,
         model_name="mufu_test",
-        checkpoint_dir=tmp_path,
-        history_dir=tmp_path / "outputs",
         data_path=data_path,
     )
     for seed in range(3):
         torch.manual_seed(seed)
         fit_predict(None, seed)
-    return tmp_path, encoder
+    return tmp_path / "checkpoints", encoder
 
 
 @pytest.fixture

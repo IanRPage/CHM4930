@@ -6,22 +6,29 @@ one SMILES encoder so its embedding cache carries across seeds. `DEFAULT_CONFIG`
 `ENCODER` are the script and notebook defaults.
 """
 
-from collections.abc import Callable, Mapping
+import json
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
 
 import pandas as pd
 import torch
 
-from baseline.results import file_sha256, git_commit
+from baseline.benchmark import (
+    SEEDS,
+    evaluate_split_predictions,
+    load_benchmark_split,
+    load_split_predictions,
+)
+from baseline.results import CodeIdentity, code_identity, file_sha256
 from encoders.fingerprint_encoder import FingerprintEncoder
 from encoders.gnn_encoder import GNNEncoder
 from mufu.calibration import CalibrationParams, fit_calibration
-from mufu.contract import D_MODEL, MODALITY_DROPOUT_P, Encoder
+from mufu.contract import D_MODEL, MODALITY_DROPOUT_P, PIC50_COLUMNS, Encoder
 from mufu.data.dataset import MuFuDataset
 from mufu.loss.task_loss import dataset_pos_weights
 from mufu.mc_dropout import (
-    empirical_coverage,
+    DEFAULT_COVERAGES,
     fit_mc_dropout,
     predict_with_intervals,
 )
@@ -121,18 +128,28 @@ def make_fit_predict(
     smiles_encoder: Encoder,
     cfg: TrainConfig,
     *,
-    model_name: str,
-    checkpoint_dir: Path,
-    history_dir: Path,
+    run_dir: Path,
+    model_name: str = "mufu",
+    identity: CodeIdentity | None = None,
     data_path: Path = COMBINED_CSV_PATH,
     verbose: bool = False,
 ) -> Callable[[pd.DataFrame, int], dict]:
     if any(p.requires_grad for p in smiles_encoder.parameters()):
         raise ValueError("smiles_encoder must be frozen; it's shared across seeds")
     params = benchmark_params(cfg, smiles_encoder)
+    if identity is None:
+        identity = code_identity()
+    checkpoint_dir = run_dir / "checkpoints"
+    logs_dir = run_dir / "logs"
 
     # df unused, datasets already built from it and run_benchmark checks smiles
     def fit_predict(df: pd.DataFrame, seed: int) -> dict:
+        ckpt_path = checkpoint_dir / f"{model_name}_seed_{seed}.pt"
+        loss_path = logs_dir / f"seed_{seed}_loss.csv"
+        for p in (ckpt_path, loss_path):
+            if p.exists():
+                raise FileExistsError(f"refusing to overwrite write-once file {p}")
+
         model = MuFu(
             smiles_encoder,
             FingerprintEncoder(hidden_dims=cfg.fp_hidden_dims, dropout=cfg.fp_dropout),
@@ -161,7 +178,6 @@ def make_fit_predict(
             )
 
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        ckpt_path = checkpoint_dir / f"{model_name}_seed_{seed}.pt"
         torch.save(
             {
                 "model": cpu_state(model),
@@ -173,7 +189,9 @@ def make_fit_predict(
                 "best_val_loss": result.best_val_loss,
                 "seed": int(seed),
                 "params": params,
-                "git_commit": git_commit(),
+                "base_commit": identity.base_commit,
+                "ai_tree": identity.ai_tree,
+                "patch_sha256": identity.patch_sha256,
                 "data_sha256": file_sha256(data_path),
             },
             ckpt_path,
@@ -183,7 +201,7 @@ def make_fit_predict(
             model, datasets["val"], ckpt_path, batch_size=cfg.batch_size
         )
 
-        history_dir.mkdir(parents=True, exist_ok=True)
+        logs_dir.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(
             {
                 "epoch": range(1, len(result.train_losses) + 1),
@@ -193,24 +211,120 @@ def make_fit_predict(
                 "val_bio_cls_loss": result.val_task_losses["bio_cls"],
                 "val_tox_loss": result.val_task_losses["tox"],
             }
-        ).to_csv(history_dir / f"seed_{seed}_loss.csv", index=False)
-        empirical_coverage(
-            predict_with_intervals(
-                model, datasets["test"], conformal, batch_size=cfg.batch_size
-            ),
-            datasets["test"],
-            conformal.coverages,
-        ).to_csv(history_dir / f"seed_{seed}_mc_dropout_coverage.csv", index=False)
+        ).to_csv(loss_path, index=False, lineterminator="\n")
 
-        return {
-            split: predict(
+        val_preds = predict(
+            model,
+            datasets["val"],
+            batch_size=cfg.batch_size,
+            family_states=result.family_states,
+            calibration=calibration,
+        )
+        test_preds = dict(
+            predict(
                 model,
-                datasets[split],
+                datasets["test"],
                 batch_size=cfg.batch_size,
                 family_states=result.family_states,
                 calibration=calibration,
             )
-            for split in ("val", "test")
-        }
+        )
+        test_intervals = predict_with_intervals(
+            model, datasets["test"], conformal, batch_size=cfg.batch_size
+        )
+        for key, val in test_intervals.items():
+            if key not in test_preds:
+                test_preds[key] = val
+
+        return {"val": val_preds, "test": test_preds}
 
     return fit_predict
+
+
+def coverage_from_predictions_df(
+    pred_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    coverages: Sequence[float] = DEFAULT_COVERAGES,
+) -> pd.DataFrame:
+    """
+    Compute interval empirical coverage and mean width on `test_df` directly from a
+    saved prediction DataFrame containing `<col>_lo<pct>` and `<col>_hi<pct>` columns.
+    """
+    rows = []
+    for col in PIC50_COLUMNS:
+        target = col.removeprefix("pIC50_")
+        mask = test_df[col].notna().to_numpy()
+        y = test_df.loc[mask, col].to_numpy(dtype=float)
+        for cov in coverages:
+            pct = round(cov * 100)
+            lo = pred_df.loc[mask, f"{col}_lo{pct}"].to_numpy(dtype=float)
+            hi = pred_df.loc[mask, f"{col}_hi{pct}"].to_numpy(dtype=float)
+            rows.append(
+                {
+                    "target": target,
+                    "nominal": cov,
+                    "empirical": (
+                        float(((y >= lo) & (y <= hi)).mean())
+                        if len(y)
+                        else float("nan")
+                    ),
+                    "n": len(y),
+                    "mean_width": float((hi - lo).mean()) if len(y) else float("nan"),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def score_mufu_run_test(
+    run_dir: Path,
+    df: pd.DataFrame | None = None,
+) -> None:
+    """
+    Recompute derived test-set metrics and interval coverage in `run_dir` from saved
+    `predictions/*.csv` files.
+    """
+    meta = json.loads((run_dir / "run.json").read_text())
+    split_id = str(meta["split_id"])
+    model_name = str(meta.get("model", "mufu"))
+    seeds = [int(s) for s in meta.get("seeds", SEEDS)]
+    if df is None:
+        df = load_benchmark_split(split_id=split_id)
+    test_df = df[df["split"] == "test"].reset_index(drop=True)
+
+    # 1. Per-seed MC-Dropout test coverage (if interval columns are present in test_seed_*.csv)
+    mc_rows = []
+    for seed in seeds:
+        pred_path = run_dir / "predictions" / f"test_seed_{seed}.csv"
+        if not pred_path.exists():
+            continue
+        pred_df = pd.read_csv(pred_path, float_precision="round_trip")
+        if all(f"{col}_lo90" in pred_df.columns for col in PIC50_COLUMNS):
+            cov_df = coverage_from_predictions_df(pred_df, test_df)
+            cov_df.insert(0, "seed", seed)
+            mc_rows.append(cov_df)
+    if mc_rows:
+        logs_dir = run_dir / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        pd.concat(mc_rows, ignore_index=True).to_csv(
+            logs_dir / "mc_dropout_coverage.csv", index=False, lineterminator="\n"
+        )
+
+    # 2. Ensemble test metrics & coverage (if test_ensemble.csv is present)
+    ens_pred_path = run_dir / "predictions" / "test_ensemble.csv"
+    ens_sidecar = run_dir / "checkpoints" / f"{model_name}_ensemble.json"
+    if ens_pred_path.exists() and ens_sidecar.exists():
+        ens_preds = load_split_predictions(ens_pred_path)
+        ens_metrics = pd.DataFrame(
+            evaluate_split_predictions(df, {"test": ens_preds}, n_boot=0)
+        )
+        ens_metrics["ensemble_sha256"] = file_sha256(ens_sidecar)
+        ens_metrics.to_csv(
+            run_dir / "ensemble_metrics.csv", index=False, lineterminator="\n"
+        )
+
+        ens_df = pd.read_csv(ens_pred_path, float_precision="round_trip")
+        if all(f"{col}_lo90" in ens_df.columns for col in PIC50_COLUMNS):
+            ens_cov = coverage_from_predictions_df(ens_df, test_df)
+            ens_cov.to_csv(
+                run_dir / "ensemble_coverage.csv", index=False, lineterminator="\n"
+            )

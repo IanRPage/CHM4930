@@ -159,6 +159,7 @@ def fit_ensemble_conformal(
     coverages: tuple[float, ...] = DEFAULT_COVERAGES,
     batch_size: int = 64,
 ) -> EnsembleParams:
+    torch.manual_seed(0)
     rates = _dropout_rates(members)
     mean, sigma = ensemble_predict(
         members, val_dataset, n_samples=n_samples, batch_size=batch_size
@@ -222,6 +223,7 @@ def predict_with_ensemble_intervals(
     if _dropout_rates(members) != conformal.dropout_rates:
         raise ValueError("dropout rates differ from those q was fitted with; refit q")
 
+    torch.manual_seed(0)
     mean, sigma = ensemble_predict(
         members, dataset, n_samples=conformal.n_samples, batch_size=batch_size
     )

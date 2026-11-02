@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -41,15 +43,29 @@ def test_bucket_labels_close_the_last_bin():
 
 
 def test_similarity_table_scores_each_bucket_and_averages_seeds(split_df, tmp_path):
+    run_dir = tmp_path / "m_default"
+    run_dir.mkdir()
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "run_id": "m_default",
+                "model": "m",
+                "encoder": "enc",
+                "split_id": "default",
+                "seeds": [0, 1],
+            }
+        )
+    )
     test = split_df[split_df["split"] == "test"]
     for seed, offset in ((0, 0.0), (1, 0.2)):
-        benchmark.save_predictions(
+        benchmark.save_split_predictions(
             split_df,
+            "test",
             {"pIC50_BACE1": test["pIC50_BACE1"].to_numpy() + offset},
-            benchmark.prediction_path("m", "enc", "default", seed, tmp_path),
+            run_dir / "predictions" / f"test_seed_{seed}.csv",
         )
 
-    table = similarity.similarity_table(split_df, tmp_path)
+    table = similarity.similarity_table(split_df, [run_dir])
 
     buckets = similarity.bucket_labels(similarity.nearest_train_similarity(split_df))
     rmse = table[table["metric"] == "rmse"].set_index("bucket")

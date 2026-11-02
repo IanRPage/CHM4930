@@ -1,4 +1,5 @@
 import random
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -23,17 +24,15 @@ def isolate_benchmark_runtime(monkeypatch, tmp_path):
     threads = torch.get_num_threads()
     torch.set_num_threads(1)
 
-    record = bm.record_results
+    rebuild = bm.rebuild_tracked_results
 
-    def guarded_record(*args, **kwargs):
-        assert (
-            kwargs.get("path", results.RESULTS_PATH).resolve()
-            != results.RESULTS_PATH.resolve()
-        )
-        return record(*args, **kwargs)
+    def guarded_rebuild(*args, **kwargs):
+        target = Path(kwargs.get("results_path", bm.RESULTS_PATH)).resolve()
+        assert target != results.RESULTS_PATH.resolve()
+        return rebuild(*args, **kwargs)
 
-    monkeypatch.setattr(bm, "record_results", guarded_record)
-    monkeypatch.setattr(bm, "PREDICTIONS_DIR", tmp_path / "predictions")
+    monkeypatch.setattr(bm, "rebuild_tracked_results", guarded_rebuild)
+    monkeypatch.setattr(bm, "RUNS_DIR", tmp_path / "runs")
     monkeypatch.setattr(bm, "N_BOOT", 50)
     yield
     random.setstate(python_state)

@@ -5,32 +5,35 @@ import pandas as pd
 import pytest
 
 from baseline import baseline_toxicity as bt
-from baseline import benchmark, results
+from baseline import benchmark
+from baseline.results import CodeIdentity
 
 TEST_SEEDS = (0, 1)
+FAKE_IDENTITY = CodeIdentity(
+    base_commit="a" * 40,
+    ai_tree="b" * 40,
+    patch="",
+    patch_sha256="",
+)
 
 
 @pytest.fixture(autouse=True)
-def recorded(monkeypatch, tmp_path):
-    calls = []
+def env_paths(monkeypatch, tmp_path):
+    runs_dir = tmp_path / "runs"
+    promoted_path = tmp_path / "promoted.json"
     out_path = tmp_path / "results.csv"
     data_path = tmp_path / "combined.csv"
     data_path.write_text("smiles\nCCO\n")
-    monkeypatch.setattr(results, "git_commit", lambda: "abc1234")
+    monkeypatch.setattr(benchmark, "code_identity", lambda: FAKE_IDENTITY)
+    monkeypatch.setattr(benchmark, "RUNS_DIR", runs_dir)
+    monkeypatch.setattr(benchmark, "PROMOTED_PATH", promoted_path)
+    monkeypatch.setattr(benchmark, "RESULTS_PATH", out_path)
+    monkeypatch.setattr(benchmark, "COMBINED_CSV_PATH", data_path)
     monkeypatch.setattr(bt, "SEEDS", TEST_SEEDS)
     monkeypatch.setattr(benchmark, "SEEDS", TEST_SEEDS)
     monkeypatch.setattr(bt, "SPLIT_IDS", ("default",))
-
-    real_record = benchmark.record_results
-
-    def capture_record(rows, model, path=out_path, data_path=data_path, **kwargs):
-        calls.append((model, rows))
-        return real_record(
-            rows, model=model, path=out_path, data_path=data_path, **kwargs
-        )
-
-    monkeypatch.setattr(benchmark, "record_results", capture_record)
-    return calls
+    monkeypatch.setattr(bt, "rebuild_tracked_results", lambda **_: None)
+    return runs_dir
 
 
 @pytest.fixture
@@ -38,7 +41,6 @@ def fake_forests(monkeypatch):
     models = []
 
     class Forest:
-        # Deliberately reverse the class order to catch a hard-coded [:, 1].
         classes_ = np.array([1, 0])
 
         def __init__(self, **kwargs):
@@ -54,7 +56,6 @@ def fake_forests(monkeypatch):
 
         def predict_proba(self, X):
             self.predicted.extend(X[:, 0].tolist())
-            # Validation (6, 7) favors log2; test (8, 9) favors sqrt.
             scores = {
                 "sqrt": {6: 0.9, 7: 0.1, 8: 0.1, 9: 0.9},
                 "log2": {6: 0.1, 7: 0.9, 8: 0.9, 9: 0.1},
@@ -100,7 +101,7 @@ def combined(monkeypatch):
 
 
 def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
-    monkeypatch, capsys, combined, fake_forests, recorded
+    monkeypatch, capsys, combined, fake_forests, env_paths
 ):
     original = combined.copy(deep=True)
     monkeypatch.setattr(benchmark, "load_combined", lambda **_: combined)
@@ -120,10 +121,7 @@ def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
     monkeypatch.setattr(bt, "mol_to_ecfp4", fingerprint)
     bt.main()
 
-    # Unlabeled rows are removed only after splitting; each remaining row is
-    # featurized once, even if it has labels for multiple tasks.
     assert featurized == [2, 3, 4, 6, 7, 8, 9]
-    # 5 selection models (4 for T1, 1 sqrt fallback for T2) + 2 endpoints * 2 seeds = 9
     assert len(fake_forests) == 5 + 2 * len(TEST_SEEDS)
     for model in fake_forests[:4]:
         np.testing.assert_array_equal(model.X[:, 0], [2, 3])
@@ -147,9 +145,9 @@ def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
     assert "test tox21: macro ROC-AUC=0.0000 (1/1 evaluable endpoints)" in out
     assert "test clintox: macro ROC-AUC=nan (0/1 evaluable endpoints)" in out
 
-    assert [model for model, _ in recorded] == ["rf_toxicity"] * len(TEST_SEEDS)
-    rows = pd.DataFrame([row for _, seed_rows in recorded for row in seed_rows])
-    # per split: 3 macros * (roc_auc, pr_auc) + 2 tasks * (roc_auc, pr_auc, prevalence)
+    run_dir = env_paths / "rf_toxicity_default"
+    split_df = split_full_table(combined)
+    rows = benchmark.score_run_predictions(run_dir, split_df, include_test=True)
     assert len(rows) == 24 * len(TEST_SEEDS)
     assert (rows["encoder"] == "ecfp4-2048").all()
     prevalence = rows[rows["metric"] == "prevalence"].set_index(
@@ -187,23 +185,21 @@ def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
 
 
 def test_main_skips_untrainable_endpoint_and_excludes_it_from_macros(
-    monkeypatch, capsys, combined, fake_forests, recorded
+    monkeypatch, capsys, combined, fake_forests, env_paths
 ):
-    # Give T2 only class 1 in train, but two classes in test so an accidental
-    # inclusion in macro_overall would change the macro score.
     combined["T2"] = [np.nan, np.nan, 1, 1, np.nan, 0, 1, 0, 1]
     monkeypatch.setattr(benchmark, "load_combined", lambda **_: combined)
-    monkeypatch.setattr(
-        benchmark,
-        "scaffold_split",
-        lambda df: df.assign(split=["train"] * 4 + ["val"] * 3 + ["test"] * 2),
-    )
+    split_fn = lambda df: df.assign(split=["train"] * 4 + ["val"] * 3 + ["test"] * 2)
+    monkeypatch.setattr(benchmark, "scaffold_split", split_fn)
     monkeypatch.setattr(
         bt, "mol_to_ecfp4", lambda mol, n_bits: np.array([mol.GetNumAtoms()])
     )
     bt.main()
 
-    rows = pd.DataFrame([row for _, seed_rows in recorded for row in seed_rows])
+    run_dir = env_paths / "rf_toxicity_default"
+    rows = benchmark.score_run_predictions(
+        run_dir, split_fn(combined), include_test=True
+    )
     rows = rows[rows["metric"] == "roc_auc"].set_index(["endpoint", "split", "seed"])
     assert "T2" not in rows.index.get_level_values("endpoint")
     assert rows.loc[("macro_overall", "val", 0), "value"] == pytest.approx(1.0)

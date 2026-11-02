@@ -9,11 +9,12 @@ model is compared against.
 
 ```
 ai/
-├── data/baseline/   # frozen combined.csv snapshot and recorded results (tracked)
+├── data/baseline/   # frozen combined.csv snapshot, promoted.json and recorded results (tracked)
 ├── docs/            # design docs
-├── drivers/         # MuFu training, re-scoring, ensemble, publishing
+├── drivers/         # MuFu training, promotion, rebuilding, ensemble, publishing
 ├── experiments/     # sweeps and one-off controls
 ├── notebooks/       # exploration; benchmark-results.ipynb plots recorded results
+├── runs/            # self-contained per-run checkpoints, predictions and logs (gitignored)
 ├── src/
 │   ├── baseline/    # RF baselines, shared benchmark protocol, results recorder
 │   ├── encoders/    # MuFu's SMILES, fingerprint and graph encoders
@@ -79,9 +80,12 @@ PR-AUC sits next to ROC-AUC because several endpoints are rare (CT_TOX 9/144 pos
 NR-AR 11/704), where ROC-AUC looks good even when flagged compounds are mostly wrong.
 Spearman reflects ranking, which is how predictions get used to prioritize compounds.
 
-Results land in `data/baseline/results.csv` (one row per model, endpoint, split, seed
-and metric) and `results_runs.csv` (params, data/split hashes, training and scoring
-commits per run). [`notebooks/benchmark-results.ipynb`](notebooks/benchmark-results.ipynb)
+Promoted runs are listed in `data/baseline/promoted.json` and their metrics land in
+`data/baseline/results.csv` (one row per model, endpoint, split, seed and metric),
+`results_runs.csv` (one row per promoted run with `run_id`, `n_seeds`, `params`,
+`data_sha256`, `split_sha256`, `base_commit`, `ai_tree`, `patch_sha256` and `date`),
+`results_paired.csv` (validation and test paired bootstrap CIs), and
+`results_by_similarity.csv`. [`notebooks/benchmark-results.ipynb`](notebooks/benchmark-results.ipynb)
 plots them.
 
 ### Evaluating a MuFu change
@@ -89,28 +93,28 @@ plots them.
 Compare variants on validation and score only the one you keep on test: picking whichever
 variant does best on test inflates its test score.
 
-1. Make the change, set `model_name = "mufu_<name>"` in `drivers/train_mufu.py` (so v1.0.0's
-   checkpoints and rows aren't overwritten), and run `python drivers/train_mufu.py`.
-2. Compare it with `mufu` and RF in the Validation section of the results notebook. Repeat
-   1–2 until you have a version worth keeping.
-3. Score that version on test once, then read the notebook's test sections. A paired CI
-   that excludes 0 is a real difference from RF.
-
-   ```
-   PYTHONPATH=src python -m baseline.compare mufu_<name>
-   PYTHONPATH=src python -m baseline.similarity
-   ```
-
-4. If it beats `mufu`, publish it to Hugging Face.
-   - Commit the change, retrain with `model_name = "mufu"` on that clean commit (publishing
-     refuses dirty checkpoints), rerun step 3 for `mufu`, and commit the result CSVs.
-   - `hf auth login` with a write token, set `tag` in `drivers/publish_mufu.py`, and run it
-     with `dry_run = True` to review the model card, then `dry_run = False`.
-   - Tags are `vMAJOR.MINOR.PATCH`: minor for a drop-in retrained model, major if the
-     server or backend must change, patch for metadata only.
-
-To drop a variant, `git restore` the result CSVs and delete
-`outputs/predictions/mufu_<name>__*`.
+1. Make the change (optionally set `run_name = "<name>"` in `drivers/train_mufu.py`) and
+   run `python drivers/train_mufu.py`. Each run writes its checkpoints, `val`/`test`
+   predictions, `val_metrics.csv` and `val_paired.csv` into its own folder
+   `runs/<run_id>/` without touching `data/baseline/`.
+   (On a fresh clone, populate reference predictions once with
+   `python drivers/download_mufu.py`, which unpacks both the promoted MuFu run and
+   the bundled RF baseline runs into `runs/`.)
+2. Compare the candidate's per-seed validation metrics and paired CIs against `mufu` and
+   RF in the printed `val_paired.csv` or the Validation section of
+   `notebooks/benchmark-results.ipynb` (`CANDIDATE_RUNS = ["<run_id>"]`). Repeat 1–2
+   until you have a version worth keeping; discard losing runs by deleting
+   `runs/<run_id>/`.
+3. To promote the winner without retraining, set `run_id = "<run_id>"` (and `tag` if
+   bumping the version) in `drivers/promote_mufu.py` and run
+   `python drivers/promote_mufu.py`. This scores the saved test predictions once and
+   regenerates `data/baseline/promoted.json`, `results.csv`, `results_runs.csv`,
+   `results_paired.csv` and `results_by_similarity.csv`.
+4. Commit the code and `data/baseline/` changes, then publish to Hugging Face:
+   `hf auth login`, run `python drivers/publish_mufu.py` with `dry_run = True` to review
+   `runs/<run_id>/README.md`, then set `dry_run = False`. Tags are `vMAJOR.MINOR.PATCH`:
+   minor for a drop-in retrained model, major if the server or backend must change,
+   patch for metadata only.
 
 ## Results
 
@@ -132,8 +136,8 @@ mean ± std over all splits. MuFu has only been trained on the default split so 
 ¹ 6 unapproved compounds, so this CI is very wide. `macro_clintox` averages CT_TOX and
 FDA_APPROVED, which are near-complements, so report the two separately.
 
-- Paired bootstrap of MuFu − RF (same resampled test compounds for both, averaged over
-  seeds; `PYTHONPATH=src python -m baseline.compare` -> `data/baseline/results_paired.csv`):
+- Paired bootstrap of MuFu − RF (same resampled compounds for both, averaged over seeds;
+  `data/baseline/results_paired.csv`):
   RF is better on EGFR Spearman (−0.035 [−0.054, −0.015]) and Tox21 PR-AUC (−0.044
   [−0.081, −0.007]), and borderline on EGFR RMSE (+0.028 [+0.0003, +0.055]). MuFu is
   better on FDA_APPROVED ROC-AUC (+0.26 [0.03, 0.47], from 6 negatives). BACE-1, Tox21
@@ -142,13 +146,13 @@ FDA_APPROVED, which are near-complements, so report the two separately.
   about 20× its seed std (18–27×).
 - Error grows with distance from the training set: BACE-1 RMSE is about 0.74 for test
   compounds with nearest-train Tanimoto ≥ 0.6 and 1.2-1.4 below 0.4
-  (`PYTHONPATH=src python -m baseline.similarity` -> `data/baseline/results_by_similarity.csv`).
+  (`data/baseline/results_by_similarity.csv`).
 - Y-scrambling (`experiments/y_scramble.py`): RF refit on shuffled labels falls to
   R² < 0 and Spearman ≈ 0, so the pipeline isn't leaking test labels.
 
 ## Running models
 
-**RF baselines** (CPU, all 6 splits):
+**RF baselines** (CPU, all 6 splits; writes to `runs/rf_*_<split_id>/`):
 
 ```
 PYTHONPATH=src python -m baseline.baseline_bioactivity
@@ -158,18 +162,19 @@ PYTHONPATH=src python -m baseline.baseline_toxicity
 **MuFu** (GPU). Settings are at the top of each driver.
 
 ```
-python drivers/train_mufu.py      # 5 seeds, then the seed ensemble
-python drivers/rescore_mufu.py    # recompute results.csv rows from saved checkpoints
-python drivers/fit_ensemble.py    # refit the ensemble from saved checkpoints
-python drivers/fit_mc_dropout.py  # refit MC-Dropout q
+python drivers/train_mufu.py       # train 5 seeds + ensemble into runs/<run_id>/ (val only)
+python drivers/promote_mufu.py     # promote a run_id and rebuild data/baseline/*.csv
+python drivers/rebuild_results.py  # recompute data/baseline/*.csv from saved predictions
+python drivers/rescore_mufu.py     # recompute predictions/*.csv from saved checkpoints
+python drivers/fit_ensemble.py     # fit/evaluate ensemble from saved checkpoints
+python drivers/fit_mc_dropout.py   # refit per-seed MC-Dropout q
 ```
 
-Checkpoints go to `checkpoints/mufu_seed_<k>.pt` and loss logs to `outputs/mufu/`. Set
-`split_id = "scaffold-<k>"` in `train_mufu.py` to train on another split (written to a
-`<split_id>/` subdirectory, no ensemble). The ensemble averages each seed's
-Platt-calibrated outputs; pIC50 intervals combine MC-Dropout with between-seed spread
-([`docs/MC-Dropout.md`](docs/MC-Dropout.md)). Ensemble metrics go to
-`outputs/mufu/ensemble_metrics.csv`, not `results.csv`.
+Each run lives in `runs/<run_id>/` with `run.json`, `checkpoints/`, `predictions/` and
+`logs/`. Set `split_id = "scaffold-<k>"` in `train_mufu.py` to train on another split.
+The ensemble averages each seed's Platt-calibrated outputs; pIC50 intervals combine
+MC-Dropout with between-seed spread ([`docs/MC-Dropout.md`](docs/MC-Dropout.md)). Test-set
+ensemble metrics go to `runs/<run_id>/ensemble_metrics.csv`.
 
 **Encoder sweeps** (`experiments/{ECFP4,gnn,SMILES}_encoder_sweep.py <stage>`) tune each
 encoder alone on the BACE-1 rows of the default split and write to
@@ -183,7 +188,7 @@ probabilities; `GET /health` reports `loading` or `ready`. The contract is in
 [`backend/docs/predict-api.md`](../backend/docs/predict-api.md).
 
 ```sh
-export MUFU_CHECKPOINT_DIR=checkpoints   # five seed checkpoints + mufu_ensemble.json
+export MUFU_CHECKPOINT_DIR=runs/mufu_v1.0.0_default/checkpoints   # 5 seeds + mufu_ensemble.json
 export MUFU_API_KEY="$(openssl rand -hex 32)"
 PYTHONPATH=src python -m mufu_server
 

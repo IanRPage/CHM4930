@@ -1,14 +1,11 @@
 """
 Default-split test metrics bucketed by each compound's nearest-neighbour ECFP4 Tanimoto
-similarity to train, from the predictions `run_benchmark` saves. Writes the mean and std
-over seeds to `data/baseline/results_by_similarity.csv`.
-
-From `ai/`, with `PYTHONPATH=src`:
-
-    python -m baseline.similarity
+similarity to train, from the predictions saved in promoted run folders.
 """
 
+import json
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -62,10 +59,13 @@ def bucket_rows(
     test = df[df["split"] == "test"].reset_index(drop=True)
     if predictions["smiles"].tolist() != test["smiles"].tolist():
         raise ValueError("prediction SMILES do not match the test split")
+    score_cols = [
+        c for c in predictions.columns if c in benchmark.VALID_PREDICTION_COLS
+    ]
     rows = []
     for bucket in sorted(set(buckets)):
         in_bucket = buckets == bucket
-        scores = {c: predictions.loc[in_bucket, c].to_numpy() for c in predictions}
+        scores = {c: predictions.loc[in_bucket, c].to_numpy() for c in score_cols}
         scored = benchmark.evaluate_split_predictions(test[in_bucket], {"test": scores})
         rows += [
             {**row, "bucket": bucket, "n_compounds": int(in_bucket.sum())}
@@ -75,22 +75,32 @@ def bucket_rows(
     return rows
 
 
-def similarity_table(
-    df: pd.DataFrame, predictions_dir: Path | None = None
-) -> pd.DataFrame:
-    directory = predictions_dir or benchmark.PREDICTIONS_DIR
-    files = sorted(directory.glob("*__default__seed*.csv"))
-    if not files:
-        raise FileNotFoundError(f"no default-split predictions in {directory}")
-    buckets = bucket_labels(nearest_train_similarity(df))
+def similarity_table(df: pd.DataFrame, run_dirs: Sequence[Path]) -> pd.DataFrame:
+    if not run_dirs:
+        raise FileNotFoundError("no default-split run directories provided")
 
+    files_and_meta: list[tuple[str, str, int, Path]] = []
+    for run_dir in run_dirs:
+        meta_path = run_dir / "run.json"
+        if not meta_path.exists():
+            raise FileNotFoundError(f"missing run.json in {run_dir}")
+        meta = json.loads(meta_path.read_text())
+        model = str(meta["model"])
+        encoder = str(meta["encoder"])
+        seeds = tuple(meta.get("seeds", benchmark.SEEDS))
+        for seed in seeds:
+            pred_path = run_dir / "predictions" / f"test_seed_{int(seed)}.csv"
+            if not pred_path.exists():
+                raise FileNotFoundError(f"missing prediction file {pred_path}")
+            files_and_meta.append((model, encoder, int(seed), pred_path))
+
+    buckets = bucket_labels(nearest_train_similarity(df))
     rows = []
-    for path in files:
-        model, encoder, _, seed = path.stem.split("__")
+    for model, encoder, seed, pred_path in files_and_meta:
         rows += [
             {**row, "model": model, "encoder": encoder, "seed": seed}
             for row in bucket_rows(
-                df, pd.read_csv(path, float_precision="round_trip"), buckets
+                df, pd.read_csv(pred_path, float_precision="round_trip"), buckets
             )
         ]
     return (
@@ -102,16 +112,5 @@ def similarity_table(
             std=("value", lambda s: s.std(ddof=1)),
             n_seeds=("value", "count"),
         )
+        .sort_values(KEYS, ignore_index=True)
     )
-
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    table = similarity_table(benchmark.load_benchmark_split())
-    table.to_csv(SIMILARITY_PATH, index=False)
-    log.info("wrote %d rows to %s", len(table), SIMILARITY_PATH)
-    print(table.round(4).to_string(index=False))
-
-
-if __name__ == "__main__":
-    main()

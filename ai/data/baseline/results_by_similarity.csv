@@ -1,9 +1,9 @@
 model,encoder,dataset,endpoint,metric,bucket,n_compounds,n_labeled,value,std,n_seeds
-mufu,molformer-ecfp4-gine,bace1,pIC50_BACE1,rmse,"[0.0, 0.3)",227,17.0,1.3923257639436943,0.12596812535566598,5
-mufu,molformer-ecfp4-gine,bace1,pIC50_BACE1,rmse,"[0.3, 0.4)",332,46.0,1.331901644352798,0.03958855559459062,5
-mufu,molformer-ecfp4-gine,bace1,pIC50_BACE1,rmse,"[0.4, 0.5)",268,35.0,0.9680615289332899,0.061800308441664,5
-mufu,molformer-ecfp4-gine,bace1,pIC50_BACE1,rmse,"[0.5, 0.6)",308,55.0,0.9296391701220801,0.06300978933291922,5
-mufu,molformer-ecfp4-gine,bace1,pIC50_BACE1,rmse,"[0.6, 1.0]",1570,657.0,0.7388838381327396,0.010412116043992805,5
+mufu,molformer-ecfp4-gine,bace1,pIC50_BACE1,rmse,"[0.0, 0.3)",227,17.0,1.3923257466205818,0.12596810656121138,5
+mufu,molformer-ecfp4-gine,bace1,pIC50_BACE1,rmse,"[0.3, 0.4)",332,46.0,1.3319016362032805,0.03958853246356709,5
+mufu,molformer-ecfp4-gine,bace1,pIC50_BACE1,rmse,"[0.4, 0.5)",268,35.0,0.9680615391463041,0.06180030915151613,5
+mufu,molformer-ecfp4-gine,bace1,pIC50_BACE1,rmse,"[0.5, 0.6)",308,55.0,0.9296391902170804,0.06300979324027052,5
+mufu,molformer-ecfp4-gine,bace1,pIC50_BACE1,rmse,"[0.6, 1.0]",1570,657.0,0.7388838378833384,0.010412117116859918,5
 mufu,molformer-ecfp4-gine,bace1,pIC50_BACE1,roc_auc,"[0.0, 0.3)",227,17.0,0.3884615384615384,0.0797555436666451,5
 mufu,molformer-ecfp4-gine,bace1,pIC50_BACE1,roc_auc,"[0.3, 0.4)",332,46.0,0.5305361305361306,0.06872702542743521,5
 mufu,molformer-ecfp4-gine,bace1,pIC50_BACE1,roc_auc,"[0.4, 0.5)",268,35.0,0.7946969696969697,0.05728344857161728,5
@@ -24,11 +24,11 @@ mufu,molformer-ecfp4-gine,clintox,macro_clintox,roc_auc,"[0.3, 0.4)",332,,0.8743
 mufu,molformer-ecfp4-gine,clintox,macro_clintox,roc_auc,"[0.4, 0.5)",268,,0.8269088669950738,0.10003443171030259,5
 mufu,molformer-ecfp4-gine,clintox,macro_clintox,roc_auc,"[0.5, 0.6)",308,,,,0
 mufu,molformer-ecfp4-gine,clintox,macro_clintox,roc_auc,"[0.6, 1.0]",1570,,,,0
-mufu,molformer-ecfp4-gine,egfr,pIC50_EGFR,rmse,"[0.0, 0.3)",227,25.0,0.9747180755624939,0.09879478345802295,5
-mufu,molformer-ecfp4-gine,egfr,pIC50_EGFR,rmse,"[0.3, 0.4)",332,51.0,1.3592186901899013,0.08571056550596465,5
-mufu,molformer-ecfp4-gine,egfr,pIC50_EGFR,rmse,"[0.4, 0.5)",268,54.0,1.1981900495119888,0.08148425907355462,5
-mufu,molformer-ecfp4-gine,egfr,pIC50_EGFR,rmse,"[0.5, 0.6)",308,114.0,1.0475852078419823,0.04066898916407526,5
-mufu,molformer-ecfp4-gine,egfr,pIC50_EGFR,rmse,"[0.6, 1.0]",1570,791.0,0.8152805062871724,0.011543545901675917,5
+mufu,molformer-ecfp4-gine,egfr,pIC50_EGFR,rmse,"[0.0, 0.3)",227,25.0,0.9747180808866226,0.09879479253124437,5
+mufu,molformer-ecfp4-gine,egfr,pIC50_EGFR,rmse,"[0.3, 0.4)",332,51.0,1.3592186754791258,0.08571059765441003,5
+mufu,molformer-ecfp4-gine,egfr,pIC50_EGFR,rmse,"[0.4, 0.5)",268,54.0,1.1981900521573834,0.08148427907731026,5
+mufu,molformer-ecfp4-gine,egfr,pIC50_EGFR,rmse,"[0.5, 0.6)",308,114.0,1.0475851940187801,0.04066899350125002,5
+mufu,molformer-ecfp4-gine,egfr,pIC50_EGFR,rmse,"[0.6, 1.0]",1570,791.0,0.8152805045590782,0.011543541396030978,5
 mufu,molformer-ecfp4-gine,egfr,pIC50_EGFR,roc_auc,"[0.0, 0.3)",227,25.0,0.7558441558441558,0.09735929773501975,5
 mufu,molformer-ecfp4-gine,egfr,pIC50_EGFR,roc_auc,"[0.3, 0.4)",332,51.0,0.586111111111111,0.028190520684891418,5
 mufu,molformer-ecfp4-gine,egfr,pIC50_EGFR,roc_auc,"[0.4, 0.5)",268,54.0,0.734375,0.05873884411402084,5
