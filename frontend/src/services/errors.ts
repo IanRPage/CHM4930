@@ -8,13 +8,13 @@ export type PredictErrorKind =
   | "invalid-response";
 
 const MESSAGES: Record<PredictErrorKind, string> = {
-  "invalid-smiles": "Invalid SMILES",
-  busy: "Model server is busy, try again shortly",
-  unavailable: "Model server is unavailable",
-  timeout: "Prediction timed out",
-  server: "Server error, try again later",
-  network: "Can't reach the server, check your connection",
-  "invalid-response": "Server returned an invalid response",
+  "invalid-smiles": "Invalid SMILES. Check your SMILES string and try again.",
+  busy: "The model is busy. Please wait a moment and try again.",
+  unavailable: "The model is currently unavailable. Please try again later.",
+  timeout: "The prediction took too long. Please try again.",
+  server: "We couldn't complete the prediction. Please try again later.",
+  network: "Can't reach the server. Check your connection and try again.",
+  "invalid-response": "We couldn't read the prediction. Please try again.",
 };
 
 export class PredictError extends Error {
@@ -29,10 +29,15 @@ export class PredictError extends Error {
   }
 }
 
-// Only 400 passes the backend message through: it's the validation text
+// Preserve validation details and add recovery guidance; other errors use friendly copy.
 export function errorFromStatus(status: number, message: string | undefined) {
   if (status === 400) {
-    return new PredictError("invalid-smiles", message, status);
+    const detail = message?.trim().replace(/[.!?]+$/, "");
+    return new PredictError(
+      "invalid-smiles",
+      detail ? `${detail}. Check your SMILES string and try again.` : undefined,
+      status,
+    );
   }
   if (status === 503) {
     const kind = message && /busy/i.test(message) ? "busy" : "unavailable";

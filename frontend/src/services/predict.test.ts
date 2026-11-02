@@ -91,33 +91,68 @@ describe("predict", () => {
       400,
       { error: "smiles must not be empty" },
       "invalid-smiles",
-      "smiles must not be empty",
+      "smiles must not be empty. Check your SMILES string and try again.",
+    ],
+    [
+      400,
+      { error: "Invalid SMILES." },
+      "invalid-smiles",
+      "Invalid SMILES. Check your SMILES string and try again.",
+    ],
+    [
+      400,
+      { error: "   " },
+      "invalid-smiles",
+      "Invalid SMILES. Check your SMILES string and try again.",
+    ],
+    [
+      400,
+      {},
+      "invalid-smiles",
+      "Invalid SMILES. Check your SMILES string and try again.",
     ],
     [
       503,
       { error: "Model server is busy, try again shortly" },
       "busy",
-      "Model server is busy, try again shortly",
+      "The model is busy. Please wait a moment and try again.",
     ],
     [
       503,
       { error: "Model server is unavailable" },
       "unavailable",
-      "Model server is unavailable",
+      "The model is currently unavailable. Please try again later.",
     ],
     [
       504,
       { error: "Model server timed out" },
       "timeout",
-      "Prediction timed out",
+      "The prediction took too long. Please try again.",
     ],
     [
       502,
       { error: "Model server returned an invalid response" },
       "server",
-      "Server error, try again later",
+      "We couldn't complete the prediction. Please try again later.",
     ],
-    [500, "<html>oops</html>", "server", "Server error, try again later"],
+    [
+      500,
+      "<html>oops</html>",
+      "server",
+      "We couldn't complete the prediction. Please try again later.",
+    ],
+    [
+      503,
+      { error: "Model is BUSY" },
+      "busy",
+      "The model is busy. Please wait a moment and try again.",
+    ],
+    [
+      503,
+      {},
+      "unavailable",
+      "The model is currently unavailable. Please try again later.",
+    ],
   ])(
     "maps a %i response to a typed error",
     async (status, body, kind, message) => {
@@ -133,19 +168,28 @@ describe("predict", () => {
   ])("rejects a %s success body", async (_name, body) => {
     reply(200, body);
     const err = await predictError(predict("CCO"));
-    expect(err.kind).toBe("invalid-response");
+    expect(err).toMatchObject({
+      kind: "invalid-response",
+      message: "We couldn't read the prediction. Please try again.",
+    });
   });
 
   it("maps a failed request to a network error", async () => {
     fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
     const err = await predictError(predict("CCO"));
-    expect(err.kind).toBe("network");
+    expect(err).toMatchObject({
+      kind: "network",
+      message: "Can't reach the server. Check your connection and try again.",
+    });
   });
 
   it("times out on its own", async () => {
     hang();
     const err = await predictError(predict("CCO", { timeoutMs: 10 }));
-    expect(err.kind).toBe("timeout");
+    expect(err).toMatchObject({
+      kind: "timeout",
+      message: "The prediction took too long. Please try again.",
+    });
   });
 
   it("rethrows caller aborts as is", async () => {
