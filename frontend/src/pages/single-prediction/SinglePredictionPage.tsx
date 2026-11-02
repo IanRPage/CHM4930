@@ -30,33 +30,70 @@ export default function SinglePredictionPage() {
   const [smiles, setSmiles] = useState("");
   const [tab, setTab] = useState<Tab>("input");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<PredictError | null>(null);
   const [result, setResult] = useState<PredictResponse | null>(null);
   const controller = useRef<AbortController | null>(null);
+  const resultsTab = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => () => controller.current?.abort(), []);
 
+  useEffect(() => {
+    // A new result triggers the automatic tab switch; manual navigation does not.
+    if (result) resultsTab.current?.focus();
+  }, [result]);
+
   async function onSubmit() {
-    controller.current?.abort();
+    // The ref also guards submissions before React renders the disabled button.
+    if (controller.current) return;
+    setError(null);
+    setResult(null);
+    const input = smiles.trim();
+    if (!input) {
+      setError(
+        new PredictError(
+          "invalid-smiles",
+          "Enter a SMILES string to predict a molecule.",
+        ),
+      );
+      return;
+    }
+
     const current = new AbortController();
     controller.current = current;
     setLoading(true);
-    setError(null);
-    setResult(null);
     try {
-      setResult(await predict(smiles, { signal: current.signal }));
+      const prediction = await predict(input, { signal: current.signal });
+      if (current.signal.aborted || controller.current !== current) return;
+      setResult(prediction);
       setTab("results");
     } catch (err) {
-      if (current.signal.aborted) return;
+      if (current.signal.aborted || controller.current !== current) return;
+      if (
+        (err instanceof DOMException || err instanceof Error) &&
+        err.name === "AbortError"
+      )
+        return;
       setError(
-        err instanceof PredictError ? err.message : "Something went wrong",
+        err instanceof PredictError
+          ? err
+          : new PredictError(
+              "server",
+              "Something went wrong. Please try again.",
+            ),
       );
+    } finally {
+      if (controller.current === current && !current.signal.aborted) {
+        controller.current = null;
+        setLoading(false);
+      }
     }
-    setLoading(false);
   }
 
-  function onClear() {
-    setSmiles("");
+  function onSmilesChange(value: string) {
+    controller.current?.abort();
+    controller.current = null;
+    setLoading(false);
+    setSmiles(value);
     setError(null);
     setResult(null);
   }
@@ -77,6 +114,7 @@ export default function SinglePredictionPage() {
           Input Molecule
         </button>
         <button
+          ref={resultsTab}
           type="button"
           role="tab"
           aria-selected={tab === "results"}
@@ -99,11 +137,11 @@ export default function SinglePredictionPage() {
       {tab === "input" && (
         <InputMolecule
           smiles={smiles}
-          onSmilesChange={setSmiles}
+          onSmilesChange={onSmilesChange}
           loading={loading}
           error={error}
           onSubmit={onSubmit}
-          onClear={onClear}
+          onClear={() => onSmilesChange("")}
         />
       )}
 
