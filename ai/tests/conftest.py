@@ -1,4 +1,5 @@
 import random
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -7,13 +8,20 @@ import torch
 
 from baseline import benchmark as bm
 from baseline import results
+from mufu import experiment
 from pipeline.combined_loader import COMBINED_CSV_PATH
 
 CYCLOALKANE_SMILES = ["C1" + "C" * (n - 1) + "1" for n in range(3, 23)]
+FAKE_IDENTITY = results.CodeIdentity(
+    base_commit="a" * 40,
+    ai_tree="b" * 40,
+    patch="",
+    patch_sha256="",
+)
 
 
 @pytest.fixture(autouse=True)
-def isolate_benchmark_runtime(monkeypatch):
+def isolate_benchmark_runtime(monkeypatch, tmp_path):
     python_state = random.getstate()
     numpy_state = np.random.get_state()
     torch_state = torch.get_rng_state()
@@ -23,16 +31,19 @@ def isolate_benchmark_runtime(monkeypatch):
     threads = torch.get_num_threads()
     torch.set_num_threads(1)
 
-    record = bm.record_results
+    rebuild = bm.rebuild_tracked_results
 
-    def guarded_record(*args, **kwargs):
-        assert (
-            kwargs.get("path", results.RESULTS_PATH).resolve()
-            != results.RESULTS_PATH.resolve()
-        )
-        return record(*args, **kwargs)
+    def guarded_rebuild(*args, **kwargs):
+        target = Path(kwargs.get("results_path", bm.RESULTS_PATH)).resolve()
+        assert target != results.RESULTS_PATH.resolve()
+        return rebuild(*args, **kwargs)
 
-    monkeypatch.setattr(bm, "record_results", guarded_record)
+    monkeypatch.setattr(bm, "rebuild_tracked_results", guarded_rebuild)
+    monkeypatch.setattr(bm, "code_identity", lambda: FAKE_IDENTITY)
+    monkeypatch.setattr(experiment, "code_identity", lambda: FAKE_IDENTITY)
+    monkeypatch.setattr(bm, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(bm, "PROMOTED_PATH", tmp_path / "promoted.json")
+    monkeypatch.setattr(bm, "N_BOOT", 50)
     yield
     random.setstate(python_state)
     np.random.set_state(numpy_state)

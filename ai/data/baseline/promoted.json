@@ -1,0 +1,22 @@
+{
+  "tag": "v1.0.0",
+  "mufu": {
+    "default": "mufu_v1.0.0_default"
+  },
+  "rf_bioactivity": {
+    "default": "rf_bioactivity_default",
+    "scaffold-0": "rf_bioactivity_scaffold-0",
+    "scaffold-1": "rf_bioactivity_scaffold-1",
+    "scaffold-2": "rf_bioactivity_scaffold-2",
+    "scaffold-3": "rf_bioactivity_scaffold-3",
+    "scaffold-4": "rf_bioactivity_scaffold-4"
+  },
+  "rf_toxicity": {
+    "default": "rf_toxicity_default",
+    "scaffold-0": "rf_toxicity_scaffold-0",
+    "scaffold-1": "rf_toxicity_scaffold-1",
+    "scaffold-2": "rf_toxicity_scaffold-2",
+    "scaffold-3": "rf_toxicity_scaffold-3",
+    "scaffold-4": "rf_toxicity_scaffold-4"
+  }
+}

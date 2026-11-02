@@ -1,0 +1,19 @@
+.coming-soon {
+  max-width: 1104px;
+  margin: 0 auto;
+  padding: 9px 16px 32px;
+}
+
+.coming-soon-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.coming-soon-card p {
+  margin: 0;
+  font-size: 15px;
+  color: var(--slate-600);
+}

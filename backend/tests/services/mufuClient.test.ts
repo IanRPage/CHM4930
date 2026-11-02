@@ -68,6 +68,42 @@ describe("MuFuClient", () => {
   });
 });
 
+describe("MuFuClient.modelVersion", () => {
+  it("fetches /health and returns the model version when ready", async () => {
+    const fetchMock = mockFetch().mockResolvedValue(
+      jsonResponse({ status: "ready", model_version: "mufu-test" }),
+    );
+
+    const version = await new MuFuClient({
+      url: `${BASE_URL}/`,
+      apiKey: API_KEY,
+    }).modelVersion();
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe(`${BASE_URL}/health`);
+    expect(init).toMatchObject({ redirect: "error" });
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+    expect(version).toBe("mufu-test");
+  });
+
+  it.each([
+    ["loading", jsonResponse({ status: "loading", model_version: null })],
+    ["empty version", jsonResponse({ status: "ready", model_version: "" })],
+    ["upstream 503", new Response(UPSTREAM_BODY, { status: 503 })],
+    ["non-JSON", new Response("<html>down</html>")],
+  ])("returns null on %s", async (_name, response) => {
+    mockFetch().mockResolvedValue(response);
+
+    await expect(client().modelVersion()).resolves.toBeNull();
+  });
+
+  it("returns null when the server is unreachable", async () => {
+    mockFetch().mockRejectedValue(new TypeError("fetch failed"));
+
+    await expect(client().modelVersion()).resolves.toBeNull();
+  });
+});
+
 describe("MuFuClient.predict", () => {
   it("posts the SMILES with the API key and maps the response", async () => {
     const raw = rawResponse();

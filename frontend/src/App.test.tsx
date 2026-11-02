@@ -1,8 +1,12 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import App from "./App.tsx";
+
+vi.mock("./components/common/MoleculeViewer.tsx", () => ({
+  default: () => null,
+}));
 
 function renderAt(path: string) {
   return render(
@@ -37,8 +41,30 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
-  it("navigates with the sidebar", async () => {
+  it("navigates with the sidebar, including Coming Soon routes", async () => {
     renderAt("/");
+    await userEvent.click(
+      screen.getByRole("link", { name: "Batch Prediction" }),
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Batch Prediction" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Coming Soon")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Batch Prediction" })).toHaveClass(
+      "active",
+    );
+
+    await userEvent.click(
+      screen.getByRole("link", { name: "Dataset Explorer" }),
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Dataset Explorer" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Coming Soon")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Dataset Explorer" })).toHaveClass(
+      "active",
+    );
+
     await userEvent.click(screen.getByRole("link", { name: "About" }));
     expect(
       screen.getByRole("heading", { level: 1, name: "About MuFu" }),

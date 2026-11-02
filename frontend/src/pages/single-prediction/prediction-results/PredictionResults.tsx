@@ -3,6 +3,7 @@ import Card from "../../../components/common/Card.tsx";
 import type { PredictResponse } from "../../../types/predict.ts";
 import ApprovalPanel from "./ApprovalPanel.tsx";
 import BioactivityPanel from "./BioactivityPanel.tsx";
+import { downloadPredictionCsv } from "./exportCsv.ts";
 import "./PredictionResults.css";
 import ToxicityPanel from "./ToxicityPanel.tsx";
 
@@ -19,7 +20,16 @@ export default function PredictionResults({
         </p>
       )}
       <Card className="predict-properties">
-        <h2>Predicted Properties</h2>
+        <div className="predict-properties-head">
+          <h2>Predicted Properties</h2>
+          <button
+            type="button"
+            className="predict-download"
+            onClick={() => downloadPredictionCsv(result)}
+          >
+            Download CSV
+          </button>
+        </div>
         <BioactivityPanel result={result} />
         <ToxicityPanel result={result} />
         <ApprovalPanel output={result.fdaApproved} />

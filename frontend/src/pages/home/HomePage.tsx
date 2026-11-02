@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
-import heroMolecule from "../../assets/hero-molecule.svg";
+import MoleculeViewer from "../../components/common/MoleculeViewer.tsx";
+import temozolomideSdf from "../../assets/temozolomide-3d.sdf?url";
 import arrowRight from "../../assets/icon-arrow-right.svg";
 import batchIcon from "../../assets/icon-batch.svg";
 import boltIcon from "../../assets/icon-bolt.svg";
@@ -90,13 +91,9 @@ export default function HomePage() {
             multimodal deep learning model.
           </p>
         </div>
-        <img
-          className="home-graphic"
-          src={heroMolecule}
-          alt=""
-          width={300}
-          height={230}
-        />
+        <div className="home-graphic">
+          <MoleculeViewer sdfUrl={temozolomideSdf} />
+        </div>
       </section>
 
       <section className="home-cards">

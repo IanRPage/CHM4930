@@ -16,6 +16,8 @@ def test_regression_perfect_predictions():
 
     assert result["rmse"] == pytest.approx(0.0)
     assert result["r2"] == pytest.approx(1.0)
+    assert result["spearman"] == pytest.approx(1.0)
+    assert result["kendall"] == pytest.approx(1.0)
 
 
 def test_regression_known_error():
@@ -32,6 +34,15 @@ def test_regression_known_error():
 
     assert result["rmse"] == pytest.approx(expected_rmse)
     assert result["r2"] < 1.0
+    # monotone error keeps the order
+    assert result["spearman"] == pytest.approx(1.0)
+
+
+def test_regression_rank_correlation_is_nan_on_constant_predictions():
+    result = ev.evaluation_metrics([1.0, 2.0, 3.0], [2.0, 2.0, 2.0], "regression")
+
+    assert np.isnan(result["spearman"])
+    assert np.isnan(result["kendall"])
 
 
 def test_regression_rejects_different_shapes():
@@ -54,11 +65,12 @@ def test_classification_perfect_predictions():
     )
 
     assert result["roc_auc"] == pytest.approx(1.0)
+    assert result["pr_auc"] == pytest.approx(1.0)
 
 
 def test_classification_known_result():
     y_true = [0, 1, 0, 1]
-    y_score = [0.1, 0.8, 0.4, 0.7]
+    y_score = [0.1, 0.4, 0.8, 0.7]
 
     result = ev.evaluation_metrics(
         y_true,
@@ -66,7 +78,9 @@ def test_classification_known_result():
         task_type="classification",
     )
 
-    assert 0.0 <= result["roc_auc"] <= 1.0
+    assert result["roc_auc"] == pytest.approx(0.5)
+    # ranked 0.8(neg), 0.7(pos), 0.4(pos): precision 1/2 then 2/3
+    assert result["pr_auc"] == pytest.approx((1 / 2 + 2 / 3) / 2)
 
 
 def test_classification_rejects_different_shapes():
@@ -133,6 +147,7 @@ def test_multitask_skips_single_class_task():
 
     assert result["per_task_roc_auc"][0] == pytest.approx(1.0)
     assert np.isnan(result["per_task_roc_auc"][1])
+    assert np.isnan(result["per_task_pr_auc"][1])
     assert result["mean_roc_auc"] == pytest.approx(1.0)
 
 

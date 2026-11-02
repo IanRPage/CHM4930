@@ -44,7 +44,7 @@ Older lines are affected by
 ```bash
 npm ci
 cp .env.example .env   # optional, loaded by dev and start
-npm run dev            # tsx watch, GET /api/health -> {"status":"ok"}
+npm run dev            # tsx watch, GET /api/health -> {"status":"ok","modelVersion":...}
 ```
 
 Env vars (`MUFU_API_URL`, `MUFU_API_KEY`, `PORT`): see `.env.example`.

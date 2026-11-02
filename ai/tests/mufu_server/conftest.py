@@ -78,16 +78,16 @@ def ensemble_dir(labeled_dataset, encoder, tmp_path_factory):
         {split: labeled_dataset for split in ("train", "val", "test")},
         encoder,
         CFG,
+        run_dir=tmp_path,
         model_name="mufu",
-        checkpoint_dir=tmp_path,
-        history_dir=tmp_path / "outputs",
         data_path=data_path,
     )
+    ckpt_dir = tmp_path / "checkpoints"
     with torch.random.fork_rng(devices=[]):
         for seed in SEEDS:
             torch.manual_seed(seed)
             fit_predict(None, seed)
-        paths = ensemble.member_paths(tmp_path, "mufu", SEEDS)
+        paths = ensemble.member_paths(ckpt_dir, "mufu", SEEDS)
         params = ensemble.fit_ensemble_conformal(
             ensemble.load_members(paths, encoder),
             labeled_dataset,
@@ -95,8 +95,8 @@ def ensemble_dir(labeled_dataset, encoder, tmp_path_factory):
             coverages=(0.9, 0.95),
             batch_size=4,
         )
-    ensemble.save_ensemble(params, tmp_path, "mufu")
-    return tmp_path
+    ensemble.save_ensemble(params, ckpt_dir, "mufu")
+    return ckpt_dir
 
 
 def settings(checkpoint_dir: Path, **overrides) -> Settings:

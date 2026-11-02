@@ -2,6 +2,7 @@ import json
 import random
 
 import pandas as pd
+import pytest
 import torch
 from conftest import SmallSmilesEncoder
 
@@ -27,11 +28,11 @@ def test_benchmark_params_drops_runtime_fields_and_adds_model_settings():
 
 
 def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
-    labeled_dataset, tmp_path, monkeypatch
+    labeled_dataset, tmp_path
 ):
-    monkeypatch.setattr(experiment, "git_commit", lambda: "abc1234")
     data_path = tmp_path / "combined.csv"
     data_path.write_text("smiles\nCCO\n")
+    run_dir = tmp_path / "run_1"
     datasets = {split: labeled_dataset for split in ("train", "val", "test")}
     cfg = TrainConfig(
         batch_size=4, epochs=2, patience=2, gnn_hidden_dims=(32, 16), device="cpu"
@@ -41,9 +42,8 @@ def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
         datasets,
         encoder,
         cfg,
+        run_dir=run_dir,
         model_name="mufu_test",
-        checkpoint_dir=tmp_path / "checkpoints",
-        history_dir=tmp_path / "outputs",
         data_path=data_path,
     )
 
@@ -54,27 +54,21 @@ def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
     assert set(preds) == {"val", "test"}
     for split_preds in preds.values():
         assert split_preds["smiles"] == labeled_dataset.smiles
-    saved = torch.load(
-        tmp_path / "checkpoints" / "mufu_test_seed_3.pt", weights_only=True
-    )
+    assert "pIC50_BACE1_lo90" in preds["test"]
+    ckpt_path = run_dir / "checkpoints" / "mufu_test_seed_3.pt"
+    saved = torch.load(ckpt_path, weights_only=True)
     assert saved["seed"] == 3
     assert saved["params"] == experiment.benchmark_params(cfg, encoder)
-    assert saved["git_commit"] == "abc1234"
+    assert saved["base_commit"] == "a" * 40
+    assert saved["ai_tree"] == "b" * 40
+    assert saved["patch_sha256"] == ""
     assert saved["data_sha256"] == results.file_sha256(data_path)
     assert 1 <= saved["epoch"] <= 2
     assert all(t.device.type == "cpu" for t in saved["model"].values())
     assert not any(k.startswith("smiles_encoder.") for k in saved["model"])
-    conformal = load_conformal(tmp_path / "checkpoints" / "mufu_test_seed_3.pt")
+    conformal = load_conformal(ckpt_path)
     assert conformal.q.shape == (N_BIO, len(conformal.coverages))
-    coverage = pd.read_csv(tmp_path / "outputs" / "seed_3_mc_dropout_coverage.csv")
-    assert list(coverage.columns) == [
-        "target",
-        "nominal",
-        "empirical",
-        "n",
-        "mean_width",
-    ]
-    history = pd.read_csv(tmp_path / "outputs" / "seed_3_loss.csv")
+    history = pd.read_csv(run_dir / "logs" / "seed_3_loss.csv")
     assert list(history.columns) == [
         "epoch",
         "train_loss",
@@ -85,16 +79,20 @@ def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
     ]
     assert len(history) == 2
 
-    loaded_model, meta = experiment.load_mufu_checkpoint(
-        tmp_path / "checkpoints" / "mufu_test_seed_3.pt", encoder
-    )
-    re_preds = experiment.predict(
+    # Write-once check: calling fit_predict again for the same seed refuses to overwrite
+    with pytest.raises(FileExistsError, match="write-once"):
+        fit_predict(pd.DataFrame(), 3)
+
+    loaded_model, meta = experiment.load_mufu_checkpoint(ckpt_path, encoder)
+    re_preds = experiment.predict_mufu_splits(
         loaded_model,
-        labeled_dataset,
+        datasets,
+        seed=3,
         batch_size=cfg.batch_size,
         family_states=meta["family_states"],
         calibration=meta["calibration"],
-    )
+        conformal=conformal,
+    )["test"]
     for col in preds["test"]:
         if col == "smiles":
             assert re_preds[col] == preds["test"][col]

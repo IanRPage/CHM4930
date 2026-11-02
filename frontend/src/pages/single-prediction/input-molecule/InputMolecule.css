@@ -51,8 +51,33 @@
   cursor: default;
 }
 
+.predict-input button.predict-clear {
+  padding: 0 18px;
+  border: 1px solid var(--slate-200);
+  background: var(--slate-100);
+  font-size: 14px;
+  color: var(--slate-700);
+}
+
+.predict-input button.predict-clear:disabled {
+  background: var(--slate-100);
+  color: var(--slate-400);
+}
+
+.predict-status,
 .predict-error {
   margin: 12px 0 0;
   font-size: 14px;
+}
+
+.predict-status {
+  color: var(--slate-600);
+}
+
+.predict-status:empty {
+  margin: 0;
+}
+
+.predict-error {
   color: var(--red-700);
 }
