@@ -6,7 +6,6 @@ and scores both models on them, with the delta averaged over seeds.
 
 import json
 import logging
-import multiprocessing as mp
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
@@ -133,32 +132,15 @@ def paired_bootstrap(
         scores = {c: preds[c].to_numpy() for c in columns}
         return benchmark._split_tables(split_df, scores, split)
 
-    pairs = [(tables(run_a, name_a, s), tables(run_b, name_b, s)) for s in seeds]
-
-    def delta(idx):
-        return np.mean(
-            [
-                _paired_values(ta, idx, endpoint, metrics)
-                - _paired_values(tb, idx, endpoint, metrics)
-                for ta, tb in pairs
-            ],
-            axis=0,
-        )
+    _FORK_PAIRS = [(tables(run_a, name_a, s), tables(run_b, name_b, s)) for s in seeds]
+    _FORK_ENDPOINT = endpoint
+    _FORK_METRICS = tuple(metrics)
 
     n = len(split_df)
     rng = np.random.default_rng(boot_seed)
     sels = [rng.integers(0, n, n) for _ in range(n_boot)]
-    if n_boot >= 200 and "fork" in mp.get_all_start_methods():
-        _FORK_PAIRS = pairs
-        _FORK_ENDPOINT = endpoint
-        _FORK_METRICS = tuple(metrics)
-        chunk_size = max(1, (n_boot + 19) // 20)
-        chunks = [sels[i : i + chunk_size] for i in range(0, n_boot, chunk_size)]
-        with mp.get_context("fork").Pool() as pool:
-            boots = np.vstack(pool.map(_paired_boot_chunk, chunks))
-    else:
-        boots = np.array([delta(idx) for idx in sels], dtype=float)
-    point = delta(np.arange(n))
+    boots = benchmark._fork_boot_chunks(_paired_boot_chunk, sels)
+    point = _paired_boot_chunk([np.arange(n)])[0]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         low, high = np.nanpercentile(boots, [2.5, 97.5], axis=0)
@@ -202,8 +184,9 @@ def compare_run_against_baselines(
     include_promoted_mufu: bool = True,
     seeds: Sequence[int] | None = None,
     n_boot: int = benchmark.N_BOOT,
+    save: bool = True,
 ) -> pd.DataFrame:
-    """Paired bootstrap of `run_dir` against promoted baselines on `split`, saved to `<split>_paired.csv`."""
+    """Paired bootstrap of `run_dir` against promoted baselines on `split`, optionally saved to `<split>_paired.csv`."""
     meta = json.loads((run_dir / "run.json").read_text())
     split_id = str(meta.get("split_id", DEFAULT_SPLIT_ID))
     if seeds is None:
@@ -284,6 +267,6 @@ def compare_run_against_baselines(
         )
 
     out = pd.DataFrame(rows, columns=PAIRED_COLUMNS)
-    out_path = run_dir / f"{split}_paired.csv"
-    out.to_csv(out_path, index=False, lineterminator="\n")
+    if save:
+        out.to_csv(run_dir / f"{split}_paired.csv", index=False, lineterminator="\n")
     return out

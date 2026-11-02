@@ -12,18 +12,13 @@ validation set.
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 
-from baseline import benchmark
 from baseline.benchmark import (
     SEEDS,
     SPLIT_IDS,
     load_benchmark_split,
-    missing_promoted_runs,
-    promote_run,
-    rebuild_tracked_results,
+    rebuild_if_promoted_present,
     run_benchmark,
-    score_run_predictions,
 )
-from baseline.results import summarize_seeds
 from evaluation import evaluation_metrics
 from featurize.fingerprint import FINGERPRINT_BITS, mol_to_ecfp4
 from pipeline.combined_loader import TARGETS
@@ -119,8 +114,7 @@ def run_split(split_id):
         return predictions
 
     params = {"max_features": selected, "n_estimators": N_ESTIMATORS}
-    run_dir = benchmark.RUNS_DIR / f"rf_bioactivity_{split_id}"
-    run_benchmark(
+    summary = run_benchmark(
         fit_predict,
         model="rf_bioactivity",
         encoder=f"ecfp4-{FINGERPRINT_BITS}",
@@ -128,17 +122,9 @@ def run_split(split_id):
         seeds=SEEDS,
         split_id=split_id,
         df=df,
-        run_dir=run_dir,
         overwrite_predictions=True,
+        promote=True,
     )
-    scored = score_run_predictions(run_dir, df, include_test=True, n_boot=0)
-    promote_run(
-        run_dir,
-        promoted_path=benchmark.PROMOTED_PATH,
-        runs_dir=benchmark.RUNS_DIR,
-        rebuild=False,
-    )
-    summary = summarize_seeds(scored)
 
     for target in TARGETS:
         data = prepared[target]
@@ -162,18 +148,7 @@ def run_split(split_id):
 def main():
     for split_id in SPLIT_IDS:
         run_split(split_id)
-    missing = missing_promoted_runs(benchmark.PROMOTED_PATH, benchmark.RUNS_DIR)
-    if not missing:
-        rebuild_tracked_results(
-            promoted_path=benchmark.PROMOTED_PATH,
-            runs_dir=benchmark.RUNS_DIR,
-        )
-    else:
-        print(
-            f"Skipped rebuilding data/baseline/*.csv: missing promoted runs {missing} "
-            "in runs/ (run `python drivers/download_mufu.py`, then "
-            "`python drivers/rebuild_results.py`)."
-        )
+    rebuild_if_promoted_present()
 
 
 if __name__ == "__main__":

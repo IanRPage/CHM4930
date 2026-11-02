@@ -4,7 +4,6 @@ Fit or evaluate the MuFu seed ensemble from checkpoints in `ai/runs/<run_id>/`.
 From ai/: python drivers/fit_ensemble.py
 """
 
-import json
 import sys
 from pathlib import Path
 
@@ -14,10 +13,10 @@ import pandas as pd
 import torch
 
 from baseline.benchmark import (
-    PROMOTED_PATH,
-    RUNS_DIR,
     SEEDS,
+    is_promoted_run,
     load_benchmark_split,
+    resolve_run_dir,
     save_split_predictions,
 )
 from baseline.results import DEFAULT_SPLIT_ID, load_results, summarize_seeds
@@ -55,19 +54,6 @@ MAIN_METRICS = (
     ("clintox", "CT_TOX", "roc_auc"),
     ("clintox", "FDA_APPROVED", "roc_auc"),
 )
-
-
-def resolve_run_dir(explicit_run_id: str = "") -> Path:
-    if explicit_run_id:
-        return RUNS_DIR / explicit_run_id
-    if PROMOTED_PATH.exists():
-        promoted = json.loads(PROMOTED_PATH.read_text())
-        default_id = promoted.get(model_name, {}).get(DEFAULT_SPLIT_ID)
-        if default_id:
-            return RUNS_DIR / default_id
-    raise FileNotFoundError(
-        "Set `run_id` at the top of the file or promote a default MuFu run first."
-    )
 
 
 def print_test_comparison(metrics: pd.DataFrame, single: pd.DataFrame) -> None:
@@ -138,12 +124,7 @@ def fit_and_report(
         overwrite=overwrite_predictions,
     )
 
-    is_promoted = False
-    if PROMOTED_PATH.exists():
-        promoted = json.loads(PROMOTED_PATH.read_text())
-        is_promoted = promoted.get(model_name, {}).get(DEFAULT_SPLIT_ID) == run_dir.name
-
-    if is_promoted:
+    if is_promoted_run(run_dir, model=model_name):
         score_mufu_run_test(run_dir, df)
         metrics = pd.read_csv(run_dir / "ensemble_metrics.csv")
         coverage = pd.read_csv(run_dir / "ensemble_coverage.csv")
@@ -166,7 +147,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         raise SystemExit("Set options at the top of this file, not as arguments.")
 
-    target_dir = resolve_run_dir(run_id)
+    target_dir = resolve_run_dir(run_id, model=model_name)
     df = load_benchmark_split()
     fit_and_report(
         df,

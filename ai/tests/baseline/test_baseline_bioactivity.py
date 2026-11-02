@@ -64,7 +64,7 @@ def env_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(bb, "SEEDS", TEST_SEEDS)
     monkeypatch.setattr(benchmark, "SEEDS", TEST_SEEDS)
     monkeypatch.setattr(bb, "SPLIT_IDS", ("default",))
-    monkeypatch.setattr(bb, "rebuild_tracked_results", lambda **_: None)
+    monkeypatch.setattr(benchmark, "rebuild_tracked_results", lambda **_: None)
     return runs_dir
 
 

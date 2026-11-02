@@ -6,7 +6,6 @@ Fits `q` on `val`, saves it next to each seed's checkpoint, and writes empirical
 coverage to `ai/runs/<run_id>/logs/mc_dropout_coverage.csv`.
 """
 
-import json
 import sys
 from pathlib import Path
 
@@ -15,8 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import pandas as pd
 import torch
 
-from baseline.benchmark import PROMOTED_PATH, RUNS_DIR, SEEDS, load_benchmark_split
-from baseline.results import DEFAULT_SPLIT_ID
+from baseline.benchmark import SEEDS, load_benchmark_split, resolve_run_dir
 from encoders.smiles_encoder import SmilesEncoder
 from mufu.data.dataset import split_datasets
 from mufu.experiment import load_mufu_checkpoint
@@ -37,24 +35,11 @@ batch_size = 64
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-def resolve_run_dir(explicit_run_id: str = "") -> Path:
-    if explicit_run_id:
-        return RUNS_DIR / explicit_run_id
-    if PROMOTED_PATH.exists():
-        promoted = json.loads(PROMOTED_PATH.read_text())
-        default_id = promoted.get(model_name, {}).get(DEFAULT_SPLIT_ID)
-        if default_id:
-            return RUNS_DIR / default_id
-    raise FileNotFoundError(
-        "Set `run_id` at the top of the file or promote a default MuFu run first."
-    )
-
-
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         raise SystemExit("Set options at the top of this file, not as arguments.")
 
-    run_dir = resolve_run_dir(run_id)
+    run_dir = resolve_run_dir(run_id, model=model_name)
     df = load_benchmark_split()
     datasets = split_datasets(df)
     smiles_encoder = SmilesEncoder(freeze=True, max_cache_size=len(df))

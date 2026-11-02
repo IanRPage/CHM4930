@@ -13,11 +13,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import torch
 
 from baseline.benchmark import (
-    PROMOTED_PATH,
-    RUNS_DIR,
     SEEDS,
+    is_promoted_run,
     load_benchmark_split,
     rebuild_tracked_results,
+    resolve_run_dir,
     save_split_predictions,
     score_run_predictions,
 )
@@ -43,24 +43,11 @@ overwrite_predictions = False
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-def resolve_run_dir(explicit_run_id: str = "") -> Path:
-    if explicit_run_id:
-        return RUNS_DIR / explicit_run_id
-    if PROMOTED_PATH.exists():
-        promoted = json.loads(PROMOTED_PATH.read_text())
-        default_id = promoted.get(model_name, {}).get(DEFAULT_SPLIT_ID)
-        if default_id:
-            return RUNS_DIR / default_id
-    raise FileNotFoundError(
-        "Set `run_id` at the top of the file or promote a default MuFu run first."
-    )
-
-
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         raise SystemExit("Set options at the top of this file, not as arguments.")
 
-    run_dir = resolve_run_dir(run_id)
+    run_dir = resolve_run_dir(run_id, model=model_name)
     meta = json.loads((run_dir / "run.json").read_text())
     seeds = tuple(int(s) for s in meta.get("seeds", SEEDS))
     split_id = str(meta.get("split_id", DEFAULT_SPLIT_ID))
@@ -140,12 +127,7 @@ if __name__ == "__main__":
             overwrite=overwrite_predictions,
         )
 
-    is_promoted = False
-    if PROMOTED_PATH.exists():
-        promoted = json.loads(PROMOTED_PATH.read_text())
-        is_promoted = promoted.get(model_name, {}).get(split_id) == run_dir.name
-
-    if is_promoted:
+    if is_promoted_run(run_dir, model=model_name, split_id=split_id):
         all_rows = rebuild_tracked_results()
         scored = all_rows[all_rows["run_id"] == run_dir.name]
     else:

@@ -262,6 +262,18 @@ def _score_boot_chunk(chunk: list[np.ndarray]) -> np.ndarray:
     )
 
 
+def _fork_boot_chunks(
+    chunk_fn: Callable[[list[np.ndarray]], np.ndarray],
+    sels: list[np.ndarray],
+) -> np.ndarray:
+    if len(sels) >= 200 and "fork" in mp.get_all_start_methods():
+        chunk_size = max(1, (len(sels) + 19) // 20)
+        chunks = [sels[i : i + chunk_size] for i in range(0, len(sels), chunk_size)]
+        with mp.get_context("fork").Pool() as pool:
+            return np.vstack(pool.map(chunk_fn, chunks))
+    return chunk_fn(sels)
+
+
 def _bootstrap_ci(
     bio: list[dict], tox: dict | None, n_rows: int, n_boot: int, seed: int
 ) -> np.ndarray:
@@ -270,19 +282,10 @@ def _bootstrap_ci(
     by every endpoint. Draws where a metric is undefined are skipped.
     """
     global _FORK_BIO, _FORK_TOX
+    _FORK_BIO, _FORK_TOX = bio, tox
     rng = np.random.default_rng(seed)
     sels = [rng.integers(0, n_rows, n_rows) for _ in range(n_boot)]
-    if n_boot >= 200 and "fork" in mp.get_all_start_methods():
-        _FORK_BIO, _FORK_TOX = bio, tox
-        chunk_size = max(1, (n_boot + 19) // 20)
-        chunks = [sels[i : i + chunk_size] for i in range(0, n_boot, chunk_size)]
-        with mp.get_context("fork").Pool() as pool:
-            draws = np.vstack(pool.map(_score_boot_chunk, chunks))
-    else:
-        draws = np.array(
-            [[row["value"] for row in _score(bio, tox, sel)] for sel in sels],
-            dtype=float,
-        )
+    draws = _fork_boot_chunks(_score_boot_chunk, sels)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         return np.nanpercentile(draws, [2.5, 97.5], axis=0)
@@ -417,6 +420,7 @@ def run_benchmark(
     identity: CodeIdentity | None = None,
     mark_complete: bool = True,
     overwrite_predictions: bool = False,
+    promote: bool = False,
 ) -> pd.DataFrame:
     """Run `fit_predict` across `seeds`, save predictions to `run_dir`, and return `val` summary."""
     if seeds is None:
@@ -536,6 +540,13 @@ def run_benchmark(
     if mark_complete:
         run_meta["status"] = "complete"
         _write_run_json(run_dir, run_meta)
+
+    if promote:
+        scored = score_run_predictions(
+            run_dir, df, include_test=True, n_boot=0, data_path=data_path
+        )
+        promote_run(run_dir, runs_dir=runs_dir, data_path=data_path, rebuild=False)
+        return summarize_seeds(scored)
 
     full_val_df = val_df.assign(
         run_id=run_id,
@@ -661,6 +672,43 @@ def score_run_predictions(
     return out
 
 
+def resolve_run_dir(
+    run_id: str = "",
+    *,
+    model: str = "mufu",
+    split_id: str = DEFAULT_SPLIT_ID,
+    promoted_path: Path | None = None,
+    runs_dir: Path | None = None,
+) -> Path:
+    """Resolve `run_id` under `runs_dir`, defaulting to the promoted `(model, split_id)` run."""
+    base = runs_dir or RUNS_DIR
+    if run_id:
+        return base / run_id
+    prom = promoted_path or PROMOTED_PATH
+    if prom.exists():
+        promoted = json.loads(prom.read_text())
+        default_id = promoted.get(model, {}).get(split_id)
+        if default_id:
+            return base / str(default_id)
+    raise FileNotFoundError(
+        "Set `run_id` at the top of the file or promote a default MuFu run first."
+    )
+
+
+def is_promoted_run(
+    run_dir: Path,
+    *,
+    model: str = "mufu",
+    split_id: str = DEFAULT_SPLIT_ID,
+    promoted_path: Path | None = None,
+) -> bool:
+    prom = promoted_path or PROMOTED_PATH
+    if not prom.exists():
+        return False
+    promoted = json.loads(prom.read_text())
+    return promoted.get(model, {}).get(split_id) == run_dir.name
+
+
 def missing_promoted_runs(
     promoted_path: Path | None = None,
     runs_dir: Path | None = None,
@@ -682,6 +730,21 @@ def missing_promoted_runs(
     if not run_ids:
         return [promoted_path.name]
     return [r for r in run_ids if not (runs_dir / r / "run.json").exists()]
+
+
+def rebuild_if_promoted_present(
+    promoted_path: Path | None = None,
+    runs_dir: Path | None = None,
+) -> None:
+    missing = missing_promoted_runs(promoted_path, runs_dir)
+    if not missing:
+        rebuild_tracked_results(promoted_path=promoted_path, runs_dir=runs_dir)
+    else:
+        print(
+            f"Skipped rebuilding data/baseline/*.csv: missing promoted runs {missing} "
+            "in runs/ (run `python drivers/download_mufu.py`, then "
+            "`python drivers/rebuild_results.py`)."
+        )
 
 
 def promote_run(
@@ -825,33 +888,21 @@ def rebuild_tracked_results(
     if mufu_default_id:
         mufu_dir = runs_dir / mufu_default_id
         default_df = get_split(DEFAULT_SPLIT_ID)
-        mufu_meta = json.loads((mufu_dir / "run.json").read_text())
-        mufu_seeds = tuple(int(s) for s in mufu_meta.get("seeds", SEEDS))
-        paired_rows: list[dict] = []
-        for split in ("val", "test"):
-            for endpoint, metrics in compare.HEADLINE.items():
-                rf_model = (
-                    "rf_bioactivity" if endpoint.startswith("pIC50_") else "rf_toxicity"
-                )
-                rf_id = promoted.get(rf_model, {}).get(DEFAULT_SPLIT_ID)
-                if not rf_id:
-                    continue
-                rf_dir = runs_dir / rf_id
-                paired_rows += compare.paired_bootstrap(
-                    default_df,
-                    mufu_dir,
-                    rf_dir,
-                    endpoint,
-                    metrics,
-                    split=split,
-                    split_id=DEFAULT_SPLIT_ID,
-                    seeds=mufu_seeds,
-                    n_boot=n_boot,
-                    label_a="mufu",
-                    label_b=rf_model,
-                )
-        if paired_rows:
-            paired_df = pd.DataFrame(paired_rows, columns=compare.PAIRED_COLUMNS)
+        paired_parts = [
+            compare.compare_run_against_baselines(
+                mufu_dir,
+                default_df,
+                split=split,
+                promoted_path=promoted_path,
+                runs_dir=runs_dir,
+                include_promoted_mufu=False,
+                n_boot=n_boot,
+                save=False,
+            )
+            for split in ("val", "test")
+        ]
+        if any(not p.empty for p in paired_parts):
+            paired_df = pd.concat(paired_parts, ignore_index=True)
 
     sim_out_path = similarity_path or results_path.with_name(
         "results_by_similarity.csv"
