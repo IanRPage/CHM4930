@@ -229,7 +229,11 @@ def make_fit_predict(
                 calibration=calibration,
             )
         )
-        with torch.random.fork_rng(devices=[]):
+        param = next(model.parameters(), None)
+        devices = (
+            [param.device] if param is not None and param.device.type == "cuda" else []
+        )
+        with torch.random.fork_rng(devices=devices):
             torch.manual_seed(int(seed))
             test_intervals = predict_with_intervals(
                 model, datasets["test"], conformal, batch_size=cfg.batch_size

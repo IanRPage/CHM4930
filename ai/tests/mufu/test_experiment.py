@@ -93,14 +93,24 @@ def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
         fit_predict(pd.DataFrame(), 3)
 
     loaded_model, meta = experiment.load_mufu_checkpoint(ckpt_path, encoder)
-    re_preds = experiment.predict(
-        loaded_model,
-        labeled_dataset,
-        batch_size=cfg.batch_size,
-        family_states=meta["family_states"],
-        calibration=meta["calibration"],
+    re_preds = dict(
+        experiment.predict(
+            loaded_model,
+            labeled_dataset,
+            batch_size=cfg.batch_size,
+            family_states=meta["family_states"],
+            calibration=meta["calibration"],
+        )
     )
-    for col in re_preds:
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(3)
+        re_intervals = experiment.predict_with_intervals(
+            loaded_model, labeled_dataset, conformal, batch_size=cfg.batch_size
+        )
+    for k, v in re_intervals.items():
+        if k not in re_preds:
+            re_preds[k] = v
+    for col in preds["test"]:
         if col == "smiles":
             assert re_preds[col] == preds["test"][col]
         else:

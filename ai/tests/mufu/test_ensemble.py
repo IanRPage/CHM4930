@@ -101,9 +101,16 @@ def test_saved_ensemble_round_trips_and_predicts_intervals(fitted, labeled_datas
     ckpt_dir, paths, members, params = fitted
 
     loaded = ensemble.load_ensemble_params(paths, ckpt_dir, "mufu_test")
+    torch.manual_seed(42)
+    rng_before = torch.get_rng_state()
     preds = ensemble.predict_with_ensemble_intervals(
         members, labeled_dataset, loaded, batch_size=4
     )
+    assert torch.equal(torch.get_rng_state(), rng_before)
+    ensemble.fit_ensemble_conformal(
+        members, labeled_dataset, n_samples=4, coverages=COVERAGES, batch_size=4
+    )
+    assert torch.equal(torch.get_rng_state(), rng_before)
 
     assert loaded.conformal.q.shape == (N_BIO, len(COVERAGES))
     assert loaded.conformal.n_samples == 4

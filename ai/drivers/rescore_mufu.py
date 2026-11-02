@@ -114,7 +114,13 @@ if __name__ == "__main__":
         )
         if conformal_sidecar_path(ckpt_path).exists():
             conformal = load_conformal(ckpt_path)
-            with torch.random.fork_rng(devices=[]):
+            param = next(model.parameters(), None)
+            devices = (
+                [param.device]
+                if param is not None and param.device.type == "cuda"
+                else []
+            )
+            with torch.random.fork_rng(devices=devices):
                 torch.manual_seed(int(seed))
                 intervals = predict_with_intervals(
                     model, datasets["test"], conformal, batch_size=batch_size
