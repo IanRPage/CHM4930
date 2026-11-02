@@ -1,10 +1,7 @@
 """
-Promote a complete MuFu run in `ai/runs/<run_id>/` to be the tracked default run.
+Promote a completed MuFu run in `ai/runs/<run_id>/` and rebuild `ai/data/baseline/`.
 
 From ai/: python drivers/promote_mufu.py
-Scores the held-out `test` predictions (`test_metrics.csv`) and rebuilds
-`ai/data/baseline/promoted.json`, `results.csv`, `results_runs.csv`,
-`results_paired.csv`, and `results_by_similarity.csv` without retraining.
 """
 
 import json
@@ -19,9 +16,8 @@ from baseline.benchmark import PROMOTED_PATH, RUNS_DIR, promote_run
 from baseline.compare import PAIRED_PATH
 from baseline.results import summarize_seeds
 
-# set `run_id` to winning run in `ai/runs/<run_id>/` before running
 run_id = ""
-tag: str | None = None  # None -> keep promoted["tag"]; set e.g. "v1.1.0" to bump
+tag: str | None = None  # None keeps current tag
 
 
 if __name__ == "__main__":

@@ -359,7 +359,6 @@ def verify_code_identity(
             f"does not match HEAD ({head_tree})"
         )
 
-    # Non-empty patch_sha256: valid if already committed to HEAD, or reconstructable from base_commit + patch.diff
     if commit_ai_tree("HEAD", ai_dir=ai_dir) == ai_tree:
         return
     if not has_commit:

@@ -203,12 +203,7 @@ def compare_run_against_baselines(
     seeds: Sequence[int] | None = None,
     n_boot: int = benchmark.N_BOOT,
 ) -> pd.DataFrame:
-    """
-    Compute per-seed paired bootstrap CIs for `run_dir` on `split` against promoted
-    baselines (and promoted `mufu` if `run_dir` is a candidate run) and save to
-    `run_dir / f"{split}_paired.csv"`. Missing local reference run folders log a warning
-    instead of failing.
-    """
+    """Paired bootstrap of `run_dir` against promoted baselines on `split`, saved to `<split>_paired.csv`."""
     meta = json.loads((run_dir / "run.json").read_text())
     split_id = str(meta.get("split_id", DEFAULT_SPLIT_ID))
     if seeds is None:
@@ -227,7 +222,6 @@ def compare_run_against_baselines(
     promoted = json.loads(prom_path.read_text())
     rows: list[dict] = []
 
-    # 1. Compare against promoted mufu (if different from run_dir)
     mufu_id = promoted.get("mufu", {}).get(split_id)
     if include_promoted_mufu and mufu_id and mufu_id != run_dir.name:
         mufu_dir = base_runs_dir / mufu_id
@@ -255,7 +249,6 @@ def compare_run_against_baselines(
                 mufu_dir,
             )
 
-    # 2. Compare against promoted RF baselines
     for endpoint, metrics in HEADLINE.items():
         rf_model = "rf_bioactivity" if endpoint.startswith("pIC50_") else "rf_toxicity"
         rf_id = promoted.get(rf_model, {}).get(split_id)

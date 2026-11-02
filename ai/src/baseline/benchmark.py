@@ -1,17 +1,13 @@
 """
 Shared benchmark setup so every model is evaluated on the same split, rows, and seeds.
 
-Models provide a `fit_predict(df, seed)` callable that returns a mapping of split name
-(`"val"`, `"test"`) to `{label_column: scores}` aligned with `df[df["split"] == split]`.
-`run_benchmark()` runs `fit_predict` across `SEEDS` on one scaffold split, writes
-write-once per-seed predictions (`val` and `test`) to `ai/runs/<run_id>/predictions/`,
-scores `val` only during training (`val_metrics.csv`), and returns the seed-aggregated
-validation summary table.
+Models provide `fit_predict(df, seed)` returning `"val"` and `"test"` predictions
+(`{column: scores}`) aligned with `df[df["split"] == split]`. `run_benchmark()` runs
+`fit_predict` across `SEEDS`, saves predictions to `ai/runs/<run_id>/predictions/`,
+scores `val` only, and returns the validation seed summary.
 
-Held-out `test` predictions are scored once when a run is promoted via `promote_run()` /
-`rebuild_tracked_results()`, which regenerates `ai/data/baseline/results.csv`,
-`results_runs.csv`, `results_paired.csv`, and `results_by_similarity.csv` directly from
-the promoted runs' saved `predictions/*.csv` files.
+`promote_run()` and `rebuild_tracked_results()` score saved `test` predictions and
+write `ai/data/baseline/*.csv`.
 """
 
 import datetime
@@ -341,7 +337,6 @@ def evaluate_split_predictions(
 
 
 def verify_predictions_df_match(new_df: pd.DataFrame, existing_path: Path) -> None:
-    """Verify `new_df` matches `existing_path` (`smiles` exact, numeric within `allclose`)."""
     old_df = pd.read_csv(existing_path, float_precision="round_trip")
     if list(old_df.columns) != list(new_df.columns):
         raise FileExistsError(
@@ -423,10 +418,7 @@ def run_benchmark(
     mark_complete: bool = True,
     overwrite_predictions: bool = False,
 ) -> pd.DataFrame:
-    """
-    Run `fit_predict` across `seeds` on `split_id`, write predictions and `run.json` to
-    `runs/<run_id>/`, score `val` only (`n_boot=0`), and return the `val` seed summary.
-    """
+    """Run `fit_predict` across `seeds`, save predictions to `run_dir`, and return `val` summary."""
     if seeds is None:
         seeds = SEEDS
     if not seeds:
@@ -495,7 +487,6 @@ def run_benchmark(
                 df, {"val": predictions["val"]}, n_boot=0, boot_seed=int(seed)
             )
         ]
-        # Validate test predictions too (n_boot=0, without recording test metrics)
         evaluate_split_predictions(
             df, {"test": predictions["test"]}, n_boot=0, boot_seed=int(seed)
         )
@@ -568,11 +559,7 @@ def score_run_predictions(
     n_boot: int = N_BOOT,
     data_path: Path = COMBINED_CSV_PATH,
 ) -> pd.DataFrame:
-    """
-    Recompute `val_metrics.csv` (with `n_boot=0`, leaving `ci_low`/`ci_high` empty on `val`
-    rows) and, when `include_test=True`, `test_metrics.csv` (with `n_boot=n_boot`, computing
-    bootstrap CIs on `test` rows) directly from `run_dir / "predictions"`.
-    """
+    """Score saved `val` (`n_boot=0`) and optional `test` (`n_boot=n_boot`) predictions in `run_dir`."""
     meta_path = run_dir / "run.json"
     if not meta_path.exists():
         raise FileNotFoundError(f"missing run.json in {run_dir}")
@@ -678,10 +665,7 @@ def missing_promoted_runs(
     promoted_path: Path | None = None,
     runs_dir: Path | None = None,
 ) -> list[str]:
-    """
-    Return the list of promoted `run_id`s in `promoted.json` whose `run.json` is not
-    present in `runs_dir` (or `["promoted.json"]` if `promoted_path` is missing/empty).
-    """
+    """Promoted `run_id`s in `promoted.json` missing a local `run.json` in `runs_dir`."""
     if promoted_path is None:
         promoted_path = PROMOTED_PATH
     if runs_dir is None:
@@ -711,10 +695,7 @@ def promote_run(
     rebuild: bool = True,
     n_boot: int = N_BOOT,
 ) -> pd.DataFrame | None:
-    """
-    Register `run_dir` as the promoted run for its `(model, split_id)` in `promoted.json`
-    and optionally rebuild the tracked CSV tables in `ai/data/baseline/`.
-    """
+    """Register `run_dir` in `promoted.json` and optionally rebuild `data/baseline/*.csv`."""
     if promoted_path is None:
         promoted_path = PROMOTED_PATH
     if runs_dir is None:
@@ -788,12 +769,7 @@ def rebuild_tracked_results(
     data_path: Path = COMBINED_CSV_PATH,
     n_boot: int = N_BOOT,
 ) -> pd.DataFrame:
-    """
-    Recompute all tracked benchmark CSVs (`results.csv`, `results_runs.csv`,
-    `results_paired.csv`, `results_by_similarity.csv`) and per-run metric CSVs
-    directly from the promoted runs' saved `predictions/*.csv` files (`val` with `n_boot=0`,
-    `test` with `n_boot=n_boot`).
-    """
+    """Recompute `data/baseline/*.csv` and per-run metric CSVs from promoted runs' saved predictions."""
     from baseline import compare, similarity
 
     if promoted_path is None:
@@ -842,7 +818,6 @@ def rebuild_tracked_results(
     if len(shas) > 1:
         raise ValueError(f"promoted runs disagree on data_sha256: {shas}")
 
-    # Rebuild results_paired.csv (val and test on default split) if promoted mufu + rf exist
     pair_out_path = paired_path or results_path.with_name("results_paired.csv")
     paired_df: pd.DataFrame | None = None
     mufu_dir: Path | None = None
@@ -878,7 +853,6 @@ def rebuild_tracked_results(
         if paired_rows:
             paired_df = pd.DataFrame(paired_rows, columns=compare.PAIRED_COLUMNS)
 
-    # Rebuild results_by_similarity.csv on default split
     sim_out_path = similarity_path or results_path.with_name(
         "results_by_similarity.csv"
     )

@@ -1,11 +1,7 @@
 """
-Recompute `predictions/{val,test}_seed_*.csv` and `val_metrics.csv` from saved MuFu
-checkpoints in `ai/runs/<run_id>/checkpoints/` without retraining.
+Recompute predictions and metrics from saved checkpoints in `ai/runs/<run_id>/`.
 
 From ai/: python drivers/rescore_mufu.py
-If `predictions/*.csv` already exist and `overwrite_predictions = False`, verifies the
-recomputed predictions match the saved files (`np.allclose`). If the run is promoted in
-`promoted.json`, also calls `rebuild_tracked_results()`.
 """
 
 import json
@@ -40,7 +36,7 @@ from mufu.mc_dropout import (
 from mufu.train import predict
 from pipeline.combined_loader import COMBINED_CSV_PATH
 
-run_id = ""  # empty -> promoted["mufu"]["default"] from data/baseline/promoted.json
+run_id = ""  # empty -> promoted default run
 model_name = "mufu"
 batch_size = 64
 overwrite_predictions = False

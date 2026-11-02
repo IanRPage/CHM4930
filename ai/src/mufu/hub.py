@@ -2,9 +2,8 @@
 Publish and download versions of MuFu on the HuggingFace Hub.
 
 A version is every file the served model needs from one training run, tagged
-`vMAJOR.MINOR.PATCH`, with a `version.json` naming the tag and code provenance
-(plus `run.json`, optional `patch.diff`, and `predictions/`). Each upload replaces
-every file in one commit, so a tag never mixes versions.
+`vMAJOR.MINOR.PATCH`, with a `version.json` naming the tag and code provenance.
+Each upload replaces every file in one commit, so a tag never mixes versions.
 """
 
 import json
@@ -406,10 +405,7 @@ def upload_version(
 def load_tagged_version(
     directory: Path, tag: str, model_name: str = "mufu", seeds: Sequence[int] = SEEDS
 ) -> Version:
-    """
-    `load_version`, and checks `version.json` names `tag` and matches the checkpoints'
-    provenance (supporting both new `base_commit`/`ai_tree` and legacy `v1.0.0` `git_commit`).
-    """
+    """`load_version`, plus check `version.json` matches `tag` and checkpoint provenance."""
     version = load_version(directory, model_name, seeds)
     info = json.loads((directory / VERSION_FILE).read_text())
     if info.get("tag") != tag:
@@ -458,12 +454,7 @@ def populate_run_from_download(
     model_name: str = "mufu",
     seeds: Sequence[int] = SEEDS,
 ) -> Path:
-    """
-    Populate `ai/runs/<run_id>/` (and `ai/runs/rf_*/` if bundled) from a downloaded
-    HF tag directory. For `v1.0.1+`, copies `run.json`, metrics, `predictions/*.csv`,
-    and bundled `baselines/rf_*/` runs. For legacy `v1.0.0` (which has no `run.json`
-    on HF), synthesizes `run.json` from the tracked `mufu` row in `results_runs.csv`.
-    """
+    """Unpack a downloaded HF snapshot into `runs/<run_id>/` (and bundled `runs/rf_*/`)."""
     version = load_tagged_version(downloaded_dir, tag, model_name, seeds)
     dl_run_json = downloaded_dir / "run.json"
     if dl_run_json.exists():

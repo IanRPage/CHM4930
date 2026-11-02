@@ -1,10 +1,9 @@
 """
-Train a candidate MuFu run on the shared benchmark seeds.
+Train a MuFu run on the shared benchmark seeds.
 
 From ai/: python drivers/train_mufu.py
-Writes checkpoints, predictions (`val` and `test`), loss logs, `val_metrics.csv`, and
-`val_paired.csv` into `ai/runs/<run_id>/`. Does not score `test` or modify
-`ai/data/baseline/results.csv`; promote a winning run with `drivers/promote_mufu.py`.
+Writes checkpoints, predictions, logs and validation metrics to `ai/runs/<run_id>/`.
+Promote a winning run with `drivers/promote_mufu.py`.
 """
 
 import json

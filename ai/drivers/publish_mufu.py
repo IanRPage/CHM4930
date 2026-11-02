@@ -20,8 +20,8 @@ from baseline.results import DEFAULT_SPLIT_ID, load_results
 from mufu.hub import load_version, model_card, upload_version
 
 repo_id = "CHM4930/mufu"
-run_id = ""  # empty -> promoted["mufu"]["default"] from data/baseline/promoted.json
-tag = ""  # empty -> promoted["tag"] from data/baseline/promoted.json
+run_id = ""  # empty -> promoted default run
+tag = ""  # empty -> promoted["tag"]
 model_name = "mufu"
 dry_run = True
 

@@ -1,14 +1,7 @@
 """
-Fit (or load) the MuFu seed ensemble from saved checkpoints in `ai/runs/<run_id>/`.
+Fit or evaluate the MuFu seed ensemble from checkpoints in `ai/runs/<run_id>/`.
 
 From ai/: python drivers/fit_ensemble.py
-Settings are below; `train_mufu.py` calls `fit_and_report` after training.
-
-If `checkpoints/<model_name>_ensemble.json` already exists and `refit = False`, loads it
-without refitting (preserving its exact bytes and sha256); otherwise fits `q` on `val`
-and saves `<model_name>_ensemble.json`. Writes `predictions/test_ensemble.csv`. If the
-run is promoted in `promoted.json`, also refreshes `ensemble_metrics.csv` and
-`ensemble_coverage.csv`.
 """
 
 import json
@@ -42,7 +35,7 @@ from mufu.ensemble import (
 from mufu.experiment import score_mufu_run_test
 from mufu.mc_dropout import DEFAULT_COVERAGES, DEFAULT_T
 
-run_id = ""  # empty -> promoted["mufu"]["default"] from data/baseline/promoted.json
+run_id = ""  # empty -> promoted default run
 model_name = "mufu"
 seeds = SEEDS
 n_samples = DEFAULT_T

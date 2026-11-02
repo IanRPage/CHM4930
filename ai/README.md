@@ -80,13 +80,10 @@ PR-AUC sits next to ROC-AUC because several endpoints are rare (CT_TOX 9/144 pos
 NR-AR 11/704), where ROC-AUC looks good even when flagged compounds are mostly wrong.
 Spearman reflects ranking, which is how predictions get used to prioritize compounds.
 
-Promoted runs are listed in `data/baseline/promoted.json` and their metrics land in
-`data/baseline/results.csv` (one row per model, endpoint, split, seed and metric),
-`results_runs.csv` (one row per promoted run with `run_id`, `n_seeds`, `params`,
-`data_sha256`, `split_sha256`, `base_commit`, `ai_tree`, `patch_sha256` and `date`),
-`results_paired.csv` (validation and test paired bootstrap CIs), and
-`results_by_similarity.csv`. [`notebooks/benchmark-results.ipynb`](notebooks/benchmark-results.ipynb)
-plots them.
+Promoted runs are listed in `data/baseline/promoted.json`. Their metrics land in
+`data/baseline/results.csv` (one row per model, endpoint, split, seed and metric) and
+`results_runs.csv` (params, data/split hashes and code identity per run).
+[`notebooks/benchmark-results.ipynb`](notebooks/benchmark-results.ipynb) plots them.
 
 ### Evaluating a MuFu change
 
@@ -94,24 +91,17 @@ Compare variants on validation and score only the one you keep on test: picking 
 variant does best on test inflates its test score.
 
 1. Make the change (optionally set `run_name = "<name>"` in `drivers/train_mufu.py`) and
-   run `python drivers/train_mufu.py`. Each run writes its checkpoints, `val`/`test`
-   predictions, `val_metrics.csv` and `val_paired.csv` into its own folder
-   `runs/<run_id>/` without touching `data/baseline/`.
-   (On a fresh clone, populate reference predictions once with
-   `python drivers/download_mufu.py`, which unpacks both the promoted MuFu run and
-   the bundled RF baseline runs into `runs/`.)
-2. Compare the candidate's per-seed validation metrics and paired CIs against `mufu` and
-   RF in the printed `val_paired.csv` or the Validation section of
-   `notebooks/benchmark-results.ipynb` (`CANDIDATE_RUNS = ["<run_id>"]`). Repeat 1–2
-   until you have a version worth keeping; discard losing runs by deleting
-   `runs/<run_id>/`.
-3. To promote the winner without retraining, set `run_id = "<run_id>"` (and `tag` if
-   bumping the version) in `drivers/promote_mufu.py` and run
-   `python drivers/promote_mufu.py`. This scores the saved test predictions once and
-   regenerates `data/baseline/promoted.json`, `results.csv`, `results_runs.csv`,
-   `results_paired.csv` and `results_by_similarity.csv`.
-4. Commit the code and `data/baseline/` changes, then publish to Hugging Face:
-   `hf auth login`, run `python drivers/publish_mufu.py` with `dry_run = True` to review
+   run `python drivers/train_mufu.py`. It writes checkpoints, predictions and validation
+   metrics to `runs/<run_id>/` without touching `data/baseline/`. (On a fresh clone, run
+   `python drivers/download_mufu.py` once to populate reference runs in `runs/`.)
+2. Compare against `mufu` and RF in the printed `val_paired.csv` or the Validation
+   section of `notebooks/benchmark-results.ipynb` (`CANDIDATE_RUNS = ["<run_id>"]`).
+   Repeat 1–2 until you have a winner; drop losing runs by deleting `runs/<run_id>/`.
+3. Set `run_id = "<run_id>"` in `drivers/promote_mufu.py` (and `tag` if bumping the
+   version) and run `python drivers/promote_mufu.py` to score saved test predictions and
+   update `data/baseline/`.
+4. Commit the code and `data/baseline/`, then publish to Hugging Face: `hf auth login`,
+   run `python drivers/publish_mufu.py` with `dry_run = True` to review
    `runs/<run_id>/README.md`, then set `dry_run = False`. Tags are `vMAJOR.MINOR.PATCH`:
    minor for a drop-in retrained model, major if the server or backend must change,
    patch for metadata only.
@@ -162,10 +152,10 @@ PYTHONPATH=src python -m baseline.baseline_toxicity
 **MuFu** (GPU). Settings are at the top of each driver.
 
 ```
-python drivers/train_mufu.py       # train 5 seeds + ensemble into runs/<run_id>/ (val only)
-python drivers/promote_mufu.py     # promote a run_id and rebuild data/baseline/*.csv
-python drivers/rebuild_results.py  # recompute data/baseline/*.csv from saved predictions
-python drivers/rescore_mufu.py     # recompute predictions/*.csv from saved checkpoints
+python drivers/train_mufu.py       # train 5 seeds into runs/<run_id>/ (val only)
+python drivers/promote_mufu.py     # promote a run and rebuild data/baseline/*.csv
+python drivers/rebuild_results.py  # rebuild data/baseline/*.csv from saved predictions
+python drivers/rescore_mufu.py     # recompute predictions from saved checkpoints
 python drivers/fit_ensemble.py     # fit/evaluate ensemble from saved checkpoints
 python drivers/fit_mc_dropout.py   # refit per-seed MC-Dropout q
 ```

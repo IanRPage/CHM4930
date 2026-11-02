@@ -1,10 +1,7 @@
 """
-Rebuild tracked benchmark CSVs (`results.csv`, `results_runs.csv`, `results_paired.csv`,
-`results_by_similarity.csv`) from the promoted runs' saved `predictions/*.csv` files
-without modifying `promoted.json`.
+Rebuild `ai/data/baseline/*.csv` from the promoted runs' saved predictions.
 
 From ai/: python drivers/rebuild_results.py
-Use this after changing metric or aggregation code when saved predictions are still valid.
 """
 
 import sys

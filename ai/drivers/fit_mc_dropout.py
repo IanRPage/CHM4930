@@ -28,7 +28,7 @@ from mufu.mc_dropout import (
     predict_with_intervals,
 )
 
-run_id = ""  # empty -> promoted["mufu"]["default"] from data/baseline/promoted.json
+run_id = ""  # empty -> promoted default run
 model_name = "mufu"
 seeds = SEEDS
 n_samples = DEFAULT_T

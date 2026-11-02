@@ -252,10 +252,7 @@ def coverage_from_predictions_df(
     test_df: pd.DataFrame,
     coverages: Sequence[float] = DEFAULT_COVERAGES,
 ) -> pd.DataFrame:
-    """
-    Compute interval empirical coverage and mean width on `test_df` directly from a
-    saved prediction DataFrame containing `<col>_lo<pct>` and `<col>_hi<pct>` columns.
-    """
+    """Empirical coverage and mean interval width on `test_df` from saved prediction columns."""
     rows = []
     for col in PIC50_COLUMNS:
         target = col.removeprefix("pIC50_")
@@ -285,10 +282,7 @@ def score_mufu_run_test(
     run_dir: Path,
     df: pd.DataFrame | None = None,
 ) -> None:
-    """
-    Recompute derived test-set metrics and interval coverage in `run_dir` from saved
-    `predictions/*.csv` files.
-    """
+    """Write MC-Dropout coverage and ensemble test metrics/coverage from saved predictions."""
     meta = json.loads((run_dir / "run.json").read_text())
     split_id = str(meta["split_id"])
     model_name = str(meta.get("model", "mufu"))
@@ -297,7 +291,6 @@ def score_mufu_run_test(
         df = load_benchmark_split(split_id=split_id)
     test_df = df[df["split"] == "test"].reset_index(drop=True)
 
-    # 1. Per-seed MC-Dropout test coverage (if interval columns are present in test_seed_*.csv)
     mc_rows = []
     for seed in seeds:
         pred_path = run_dir / "predictions" / f"test_seed_{seed}.csv"
@@ -315,7 +308,6 @@ def score_mufu_run_test(
             logs_dir / "mc_dropout_coverage.csv", index=False, lineterminator="\n"
         )
 
-    # 2. Ensemble test metrics & coverage (if test_ensemble.csv is present)
     ens_pred_path = run_dir / "predictions" / "test_ensemble.csv"
     ens_sidecar = run_dir / "checkpoints" / f"{model_name}_ensemble.json"
     if ens_pred_path.exists() and ens_sidecar.exists():

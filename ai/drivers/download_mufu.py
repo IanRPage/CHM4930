@@ -1,6 +1,5 @@
 """
-Download a published MuFu model from the HuggingFace Hub and populate its local
-run folder in `ai/runs/<run_id>/` (plus bundled `ai/runs/rf_*/` baseline folders).
+Download a published MuFu model from the HuggingFace Hub and unpack `ai/runs/`.
 
 From ai/: python drivers/download_mufu.py
 """
