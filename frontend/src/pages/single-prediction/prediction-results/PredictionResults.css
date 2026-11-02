@@ -37,3 +37,33 @@
   font-size: 13px;
   color: var(--slate-500);
 }
+
+.predict-properties-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.predict-download {
+  padding: 9px 14px;
+  border: 1px solid var(--slate-300);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--slate-700);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.predict-download:hover {
+  background: var(--blue-50);
+  border-color: var(--blue-300);
+}
+
+.predict-download:focus-visible {
+  outline: 2px solid var(--blue-600);
+  outline-offset: 2px;
+}
