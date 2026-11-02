@@ -29,6 +29,7 @@ from mufu.data.dataset import MuFuDataset
 from mufu.loss.task_loss import dataset_pos_weights
 from mufu.mc_dropout import (
     DEFAULT_COVERAGES,
+    ConformalParams,
     fit_mc_dropout,
     predict_with_intervals,
 )
@@ -123,6 +124,48 @@ def load_mufu_checkpoint(
     }
 
 
+def predict_mufu_splits(
+    model: MuFu,
+    datasets: Mapping[str, MuFuDataset],
+    *,
+    seed: int,
+    batch_size: int,
+    family_states: Mapping[str, Mapping[str, torch.Tensor]] | None = None,
+    calibration: CalibrationParams | None = None,
+    conformal: ConformalParams | None = None,
+) -> dict[str, dict]:
+    val_preds = predict(
+        model,
+        datasets["val"],
+        batch_size=batch_size,
+        family_states=family_states,
+        calibration=calibration,
+    )
+    test_preds = dict(
+        predict(
+            model,
+            datasets["test"],
+            batch_size=batch_size,
+            family_states=family_states,
+            calibration=calibration,
+        )
+    )
+    if conformal is not None:
+        param = next(model.parameters(), None)
+        devices = (
+            [param.device] if param is not None and param.device.type == "cuda" else []
+        )
+        with torch.random.fork_rng(devices=devices):
+            torch.manual_seed(int(seed))
+            intervals = predict_with_intervals(
+                model, datasets["test"], conformal, batch_size=batch_size
+            )
+        for key, val in intervals.items():
+            if key not in test_preds:
+                test_preds[key] = val
+    return {"val": val_preds, "test": test_preds}
+
+
 def make_fit_predict(
     datasets: Mapping[str, MuFuDataset],
     smiles_encoder: Encoder,
@@ -213,36 +256,15 @@ def make_fit_predict(
             }
         ).to_csv(loss_path, index=False, lineterminator="\n")
 
-        val_preds = predict(
+        return predict_mufu_splits(
             model,
-            datasets["val"],
+            datasets,
+            seed=int(seed),
             batch_size=cfg.batch_size,
             family_states=result.family_states,
             calibration=calibration,
+            conformal=conformal,
         )
-        test_preds = dict(
-            predict(
-                model,
-                datasets["test"],
-                batch_size=cfg.batch_size,
-                family_states=result.family_states,
-                calibration=calibration,
-            )
-        )
-        param = next(model.parameters(), None)
-        devices = (
-            [param.device] if param is not None and param.device.type == "cuda" else []
-        )
-        with torch.random.fork_rng(devices=devices):
-            torch.manual_seed(int(seed))
-            test_intervals = predict_with_intervals(
-                model, datasets["test"], conformal, batch_size=cfg.batch_size
-            )
-        for key, val in test_intervals.items():
-            if key not in test_preds:
-                test_preds[key] = val
-
-        return {"val": val_preds, "test": test_preds}
 
     return fit_predict
 

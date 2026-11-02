@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -215,15 +216,28 @@ def file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
-def _git_repo_and_prefix(ai_dir: Path = AI_ROOT) -> tuple[Path, str, list[str]]:
-    top_str = subprocess.run(
-        ["git", "rev-parse", "--show-toplevel"],
-        cwd=ai_dir,
+def _git_stdout(
+    args: Sequence[str],
+    *,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    input_text: str | None = None,
+) -> str:
+    return subprocess.run(
+        ["git", *args],
+        input=input_text,
+        cwd=cwd,
+        env=env,
         capture_output=True,
         text=True,
         check=True,
-    ).stdout.strip()
-    top = Path(top_str).resolve()
+    ).stdout
+
+
+def _git_repo_and_prefix(ai_dir: Path = AI_ROOT) -> tuple[Path, str, list[str]]:
+    top = Path(
+        _git_stdout(["rev-parse", "--show-toplevel"], cwd=ai_dir).strip()
+    ).resolve()
     rel = ai_dir.resolve().relative_to(top).as_posix()
     rel_prefix = "" if rel in ("", ".") else rel
     code_paths = [f"{rel_prefix}/{sub}" if rel_prefix else sub for sub in CODE_SUBTREES]
@@ -236,23 +250,19 @@ def _mktree_scoped(
     cwd: Path,
     env: dict[str, str] | None = None,
 ) -> str:
-    entries = subprocess.run(
-        ["git", "ls-tree", full_tree, *CODE_SUBTREES],
+    entries = _git_stdout(["ls-tree", full_tree, *CODE_SUBTREES], cwd=cwd, env=env)
+    return _git_stdout(
+        ["mktree"],
         cwd=cwd,
         env=env,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    return subprocess.run(
-        ["git", "mktree"],
-        input=entries if entries.endswith("\n") or not entries else entries + "\n",
-        cwd=cwd,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
+        input_text=entries if entries.endswith("\n") or not entries else entries + "\n",
+    ).strip()
+
+
+def _write_scoped_index_tree(top: Path, rel_prefix: str, env: dict[str, str]) -> str:
+    write_args = ["write-tree", *([f"--prefix={rel_prefix}/"] if rel_prefix else [])]
+    full_tree = _git_stdout(write_args, cwd=top, env=env).strip()
+    return _mktree_scoped(full_tree, cwd=top, env=env)
 
 
 def commit_ai_tree(rev: str = "HEAD", ai_dir: Path = AI_ROOT) -> str:
@@ -265,51 +275,17 @@ def commit_ai_tree(rev: str = "HEAD", ai_dir: Path = AI_ROOT) -> str:
 def code_identity(ai_dir: Path = AI_ROOT) -> CodeIdentity:
     """Compute reproducible code provenance for `CODE_SUBTREES` under `ai/`."""
     top, rel_prefix, code_paths = _git_repo_and_prefix(ai_dir)
-    base_commit = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=top,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
+    base_commit = _git_stdout(["rev-parse", "HEAD"], cwd=top).strip()
     with tempfile.TemporaryDirectory() as tmp:
         env = {**os.environ, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
-        subprocess.run(
-            ["git", "read-tree", "HEAD"],
+        _git_stdout(["read-tree", "HEAD"], cwd=top, env=env)
+        _git_stdout(["add", "-A", "--", *code_paths], cwd=top, env=env)
+        patch = _git_stdout(
+            ["diff", "--cached", "--binary", "HEAD", "--", *code_paths],
             cwd=top,
             env=env,
-            capture_output=True,
-            text=True,
-            check=True,
         )
-        subprocess.run(
-            ["git", "add", "-A", "--", *code_paths],
-            cwd=top,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        patch = subprocess.run(
-            ["git", "diff", "--cached", "--binary", "HEAD", "--", *code_paths],
-            cwd=top,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout
-        write_cmd = ["git", "write-tree"]
-        if rel_prefix:
-            write_cmd.append(f"--prefix={rel_prefix}/")
-        full_tree = subprocess.run(
-            write_cmd,
-            cwd=top,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-        ai_tree = _mktree_scoped(full_tree, cwd=top, env=env)
+        ai_tree = _write_scoped_index_tree(top, rel_prefix, env)
     patch_sha256 = hashlib.sha256(patch.encode("utf-8")).hexdigest() if patch else ""
     return CodeIdentity(
         base_commit=base_commit,
@@ -374,34 +350,9 @@ def verify_code_identity(
         )
     with tempfile.TemporaryDirectory() as tmp:
         env = {**os.environ, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
-        subprocess.run(
-            ["git", "read-tree", base_commit],
-            cwd=top,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        subprocess.run(
-            ["git", "apply", "--cached", str(patch_path.resolve())],
-            cwd=top,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        write_cmd = ["git", "write-tree"]
-        if rel_prefix:
-            write_cmd.append(f"--prefix={rel_prefix}/")
-        full_tree = subprocess.run(
-            write_cmd,
-            cwd=top,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
-        reconstructed = _mktree_scoped(full_tree, cwd=top, env=env)
+        _git_stdout(["read-tree", base_commit], cwd=top, env=env)
+        _git_stdout(["apply", "--cached", str(patch_path.resolve())], cwd=top, env=env)
+        reconstructed = _write_scoped_index_tree(top, rel_prefix, env)
     if reconstructed != ai_tree:
         raise ValueError(
             f"applying patch.diff to {base_commit} produced {reconstructed}, expected {ai_tree}"

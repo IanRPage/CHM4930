@@ -25,15 +25,9 @@ from baseline.results import DEFAULT_SPLIT_ID, file_sha256, summarize_seeds
 from encoders.smiles_encoder import SmilesEncoder
 from mufu.data.dataset import split_datasets
 from mufu.ensemble import member_paths
-from mufu.experiment import load_mufu_checkpoint
-from mufu.mc_dropout import (
-    load_conformal,
-    predict_with_intervals,
-)
-from mufu.mc_dropout import (
-    sidecar_path as conformal_sidecar_path,
-)
-from mufu.train import predict
+from mufu.experiment import load_mufu_checkpoint, predict_mufu_splits
+from mufu.mc_dropout import load_conformal
+from mufu.mc_dropout import sidecar_path as conformal_sidecar_path
 from pipeline.combined_loader import COMBINED_CSV_PATH
 
 run_id = ""  # empty -> promoted default run
@@ -79,53 +73,28 @@ if __name__ == "__main__":
         model, loaded_meta = load_mufu_checkpoint(
             ckpt_path, smiles_encoder, device=device
         )
-        val_preds = predict(
+        conformal = (
+            load_conformal(ckpt_path)
+            if conformal_sidecar_path(ckpt_path).exists()
+            else None
+        )
+        preds = predict_mufu_splits(
             model,
-            datasets["val"],
+            datasets,
+            seed=int(seed),
             batch_size=batch_size,
             family_states=loaded_meta["family_states"],
             calibration=loaded_meta["calibration"],
+            conformal=conformal,
         )
-        test_preds = dict(
-            predict(
-                model,
-                datasets["test"],
-                batch_size=batch_size,
-                family_states=loaded_meta["family_states"],
-                calibration=loaded_meta["calibration"],
+        for split in ("val", "test"):
+            save_split_predictions(
+                df,
+                split,
+                preds[split],
+                preds_dir / f"{split}_seed_{seed}.csv",
+                overwrite=overwrite_predictions,
             )
-        )
-        if conformal_sidecar_path(ckpt_path).exists():
-            conformal = load_conformal(ckpt_path)
-            param = next(model.parameters(), None)
-            devices = (
-                [param.device]
-                if param is not None and param.device.type == "cuda"
-                else []
-            )
-            with torch.random.fork_rng(devices=devices):
-                torch.manual_seed(int(seed))
-                intervals = predict_with_intervals(
-                    model, datasets["test"], conformal, batch_size=batch_size
-                )
-            for key, val in intervals.items():
-                if key not in test_preds:
-                    test_preds[key] = val
-
-        save_split_predictions(
-            df,
-            "val",
-            val_preds,
-            preds_dir / f"val_seed_{seed}.csv",
-            overwrite=overwrite_predictions,
-        )
-        save_split_predictions(
-            df,
-            "test",
-            test_preds,
-            preds_dir / f"test_seed_{seed}.csv",
-            overwrite=overwrite_predictions,
-        )
 
     if is_promoted_run(run_dir, model=model_name, split_id=split_id):
         all_rows = rebuild_tracked_results()

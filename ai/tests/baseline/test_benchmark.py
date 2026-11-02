@@ -7,22 +7,13 @@ import pytest
 import torch
 
 from baseline import benchmark, results
-from baseline.results import CodeIdentity
 from pipeline.bioactivity_loader import PIC50_ACTIVE_THRESHOLD
 from pipeline.combined_loader import COMBINED_CSV_PATH
 from pipeline.split import scaffold_split
 
-FAKE_IDENTITY = CodeIdentity(
-    base_commit="a" * 40,
-    ai_tree="b" * 40,
-    patch="",
-    patch_sha256="",
-)
-
 
 @pytest.fixture
-def paths(tmp_path, monkeypatch):
-    monkeypatch.setattr(benchmark, "code_identity", lambda: FAKE_IDENTITY)
+def paths(tmp_path):
     data = tmp_path / "combined.csv"
     data.write_text("smiles\nCCO\n")
     return tmp_path / "results.csv", data
@@ -334,10 +325,7 @@ def test_run_benchmark_rejects_empty_seeds(split_df, paths, tmp_path):
         )
 
 
-def test_run_benchmark_loads_from_data_path_when_df_is_none(
-    snapshot_csv, tmp_path, monkeypatch
-):
-    monkeypatch.setattr(benchmark, "code_identity", lambda: FAKE_IDENTITY)
+def test_run_benchmark_loads_from_data_path_when_df_is_none(snapshot_csv, tmp_path):
     run_dir = tmp_path / "stub_default"
     seen_rows = []
 

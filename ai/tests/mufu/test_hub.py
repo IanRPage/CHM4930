@@ -187,16 +187,13 @@ class FakeApi:
         self.tags.append(tag)
 
 
-def test_upload_includes_run_json_predictions_and_tags_once(tmp_path):
-    run_dir = tmp_path / "m_v1_default"
-    ckpt_dir = run_dir / "checkpoints"
-    ckpt_dir.mkdir(parents=True)
-    write_run(ckpt_dir)
+def write_run_folder(run_dir, model="m", score=6.0):
+    (run_dir / "predictions").mkdir(parents=True, exist_ok=True)
     (run_dir / "run.json").write_text(
         json.dumps(
             {
-                "run_id": "m_v1_default",
-                "model": "m",
+                "run_id": run_dir.name,
+                "model": model,
                 "encoder": "e",
                 "split_id": "default",
                 "seeds": list(SEEDS),
@@ -212,35 +209,20 @@ def test_upload_includes_run_json_predictions_and_tags_once(tmp_path):
             }
         )
     )
-    preds_dir = run_dir / "predictions"
-    preds_dir.mkdir()
-    (preds_dir / "val_seed_0.csv").write_text("smiles,pIC50_BACE1\nCCO,6.0\n")
-
-    rf_dir = tmp_path / "rf_bioactivity_default"
-    rf_dir.mkdir()
-    (rf_dir / "run.json").write_text(
-        json.dumps(
-            {
-                "run_id": "rf_bioactivity_default",
-                "model": "rf_bioactivity",
-                "encoder": "ECFP4",
-                "split_id": "default",
-                "seeds": list(SEEDS),
-                "completed_seeds": list(SEEDS),
-                "status": "complete",
-                "params": "{}",
-                "data_sha256": DATA,
-                "split_sha256": "s" * 64,
-                "base_commit": COMMIT,
-                "ai_tree": TREE,
-                "patch_sha256": "",
-                "date": "2026-10-30",
-            }
-        )
+    (run_dir / "predictions" / "val_seed_0.csv").write_text(
+        f"smiles,pIC50_BACE1\nCCO,{score}\n"
     )
-    rf_preds = rf_dir / "predictions"
-    rf_preds.mkdir()
-    (rf_preds / "val_seed_0.csv").write_text("smiles,pIC50_BACE1\nCCO,5.5\n")
+
+
+def test_upload_includes_run_json_predictions_and_tags_once(tmp_path):
+    run_dir = tmp_path / "m_v1_default"
+    ckpt_dir = run_dir / "checkpoints"
+    ckpt_dir.mkdir(parents=True)
+    write_run(ckpt_dir)
+    write_run_folder(run_dir, model="m", score=6.0)
+    write_run_folder(
+        tmp_path / "rf_bioactivity_default", model="rf_bioactivity", score=5.5
+    )
 
     version = hub.load_version(ckpt_dir, "m", SEEDS)
     api = FakeApi([".gitattributes", "README.md", "m_seed_3.pt"])
@@ -269,21 +251,16 @@ def test_upload_includes_run_json_predictions_and_tags_once(tmp_path):
     with pytest.raises(ValueError, match="not v1.1.0"):
         hub.load_tagged_version(ckpt_dir, "v1.1.0", "m", SEEDS)
 
-    # Also verify populate_run_from_download unpacks bundled baselines/rf_*
     dl_snapshot = tmp_path / "dl_snapshot"
     dl_snapshot.mkdir()
     write_run(dl_snapshot)
     (dl_snapshot / "version.json").write_bytes(added["version.json"].path_or_fileobj)
+    write_run_folder(dl_snapshot, model="m", score=6.0)
     (dl_snapshot / "run.json").write_text((run_dir / "run.json").read_text())
-    (dl_snapshot / "predictions").mkdir()
-    (dl_snapshot / "predictions" / "val_seed_0.csv").write_text(
-        "smiles,pIC50_BACE1\nCCO,6.0\n"
-    )
-    dl_rf = dl_snapshot / "baselines" / "rf_bioactivity_default"
-    (dl_rf / "predictions").mkdir(parents=True)
-    (dl_rf / "run.json").write_text((rf_dir / "run.json").read_text())
-    (dl_rf / "predictions" / "val_seed_0.csv").write_text(
-        "smiles,pIC50_BACE1\nCCO,5.5\n"
+    write_run_folder(
+        dl_snapshot / "baselines" / "rf_bioactivity_default",
+        model="rf_bioactivity",
+        score=5.5,
     )
     unpacked_runs = tmp_path / "unpacked_runs"
     hub.populate_run_from_download(

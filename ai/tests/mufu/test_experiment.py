@@ -7,18 +7,10 @@ import torch
 from conftest import SmallSmilesEncoder
 
 from baseline import results
-from baseline.results import CodeIdentity
 from mufu import experiment
 from mufu.contract import D_MODEL, MODALITY_DROPOUT_P, N_BIO
 from mufu.mc_dropout import load_conformal
 from mufu.train import TrainConfig
-
-FAKE_IDENTITY = CodeIdentity(
-    base_commit="a" * 40,
-    ai_tree="b" * 40,
-    patch="",
-    patch_sha256="",
-)
 
 
 def test_benchmark_params_drops_runtime_fields_and_adds_model_settings():
@@ -52,7 +44,6 @@ def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
         cfg,
         run_dir=run_dir,
         model_name="mufu_test",
-        identity=FAKE_IDENTITY,
         data_path=data_path,
     )
 
@@ -68,8 +59,8 @@ def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
     saved = torch.load(ckpt_path, weights_only=True)
     assert saved["seed"] == 3
     assert saved["params"] == experiment.benchmark_params(cfg, encoder)
-    assert saved["base_commit"] == FAKE_IDENTITY.base_commit
-    assert saved["ai_tree"] == FAKE_IDENTITY.ai_tree
+    assert saved["base_commit"] == "a" * 40
+    assert saved["ai_tree"] == "b" * 40
     assert saved["patch_sha256"] == ""
     assert saved["data_sha256"] == results.file_sha256(data_path)
     assert 1 <= saved["epoch"] <= 2
@@ -93,23 +84,15 @@ def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
         fit_predict(pd.DataFrame(), 3)
 
     loaded_model, meta = experiment.load_mufu_checkpoint(ckpt_path, encoder)
-    re_preds = dict(
-        experiment.predict(
-            loaded_model,
-            labeled_dataset,
-            batch_size=cfg.batch_size,
-            family_states=meta["family_states"],
-            calibration=meta["calibration"],
-        )
-    )
-    with torch.random.fork_rng(devices=[]):
-        torch.manual_seed(3)
-        re_intervals = experiment.predict_with_intervals(
-            loaded_model, labeled_dataset, conformal, batch_size=cfg.batch_size
-        )
-    for k, v in re_intervals.items():
-        if k not in re_preds:
-            re_preds[k] = v
+    re_preds = experiment.predict_mufu_splits(
+        loaded_model,
+        datasets,
+        seed=3,
+        batch_size=cfg.batch_size,
+        family_states=meta["family_states"],
+        calibration=meta["calibration"],
+        conformal=conformal,
+    )["test"]
     for col in preds["test"]:
         if col == "smiles":
             assert re_preds[col] == preds["test"][col]

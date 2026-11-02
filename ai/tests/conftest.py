@@ -8,9 +8,16 @@ import torch
 
 from baseline import benchmark as bm
 from baseline import results
+from mufu import experiment
 from pipeline.combined_loader import COMBINED_CSV_PATH
 
 CYCLOALKANE_SMILES = ["C1" + "C" * (n - 1) + "1" for n in range(3, 23)]
+FAKE_IDENTITY = results.CodeIdentity(
+    base_commit="a" * 40,
+    ai_tree="b" * 40,
+    patch="",
+    patch_sha256="",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +39,10 @@ def isolate_benchmark_runtime(monkeypatch, tmp_path):
         return rebuild(*args, **kwargs)
 
     monkeypatch.setattr(bm, "rebuild_tracked_results", guarded_rebuild)
+    monkeypatch.setattr(bm, "code_identity", lambda: FAKE_IDENTITY)
+    monkeypatch.setattr(experiment, "code_identity", lambda: FAKE_IDENTITY)
     monkeypatch.setattr(bm, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(bm, "PROMOTED_PATH", tmp_path / "promoted.json")
     monkeypatch.setattr(bm, "N_BOOT", 50)
     yield
     random.setstate(python_state)

@@ -401,6 +401,39 @@ def _write_run_json(run_dir: Path, meta: dict) -> None:
     tmp.replace(run_dir / "run.json")
 
 
+def _load_run_meta(
+    run_dir: Path, *, require_complete: bool = False, action: str = "score test on"
+) -> tuple[dict, list[int]]:
+    meta_path = run_dir / "run.json"
+    if not meta_path.exists():
+        raise FileNotFoundError(f"missing run.json in {run_dir}")
+    meta = json.loads(meta_path.read_text())
+    seeds = [int(s) for s in meta.get("seeds", SEEDS)]
+    if require_complete:
+        if meta.get("status") != "complete":
+            raise ValueError(
+                f"refusing to {action} incomplete run {run_dir.name} "
+                f"(status={meta.get('status')!r})"
+            )
+        if list(meta.get("completed_seeds", seeds)) != seeds:
+            raise ValueError(
+                f"refusing to {action} run {run_dir.name}: completed_seeds "
+                f"{meta.get('completed_seeds')} != {seeds}"
+            )
+    return meta, seeds
+
+
+def _write_metrics_csv(rows: list[dict], path: Path) -> pd.DataFrame:
+    df = (
+        pd.DataFrame(rows)
+        .reindex(columns=METRIC_COLUMNS)
+        .sort_values(SORT_KEYS, ignore_index=True)
+    )
+    df["seed"] = df["seed"].astype("Int64")
+    df.to_csv(path, index=False, lineterminator="\n")
+    return df
+
+
 def run_benchmark(
     fit_predict: Callable[
         [pd.DataFrame, int],
@@ -526,13 +559,7 @@ def run_benchmark(
         )
 
         val_rows.extend(seed_val_rows)
-        val_df = (
-            pd.DataFrame(val_rows)
-            .reindex(columns=METRIC_COLUMNS)
-            .sort_values(SORT_KEYS, ignore_index=True)
-        )
-        val_df["seed"] = val_df["seed"].astype("Int64")
-        val_df.to_csv(run_dir / "val_metrics.csv", index=False, lineterminator="\n")
+        val_df = _write_metrics_csv(val_rows, run_dir / "val_metrics.csv")
 
         run_meta["completed_seeds"].append(int(seed))
         _write_run_json(run_dir, run_meta)
@@ -571,22 +598,9 @@ def score_run_predictions(
     data_path: Path = COMBINED_CSV_PATH,
 ) -> pd.DataFrame:
     """Score saved `val` (`n_boot=0`) and optional `test` (`n_boot=n_boot`) predictions in `run_dir`."""
-    meta_path = run_dir / "run.json"
-    if not meta_path.exists():
-        raise FileNotFoundError(f"missing run.json in {run_dir}")
-    meta = json.loads(meta_path.read_text())
-    if include_test and meta.get("status") != "complete":
-        raise ValueError(
-            f"refusing to score test on incomplete run {run_dir.name} "
-            f"(status={meta.get('status')!r})"
-        )
-    seeds = [int(s) for s in meta.get("seeds", SEEDS)]
-    if include_test and list(meta.get("completed_seeds", seeds)) != seeds:
-        raise ValueError(
-            f"refusing to score test on run {run_dir.name}: completed_seeds "
-            f"{meta.get('completed_seeds')} != {seeds}"
-        )
-
+    meta, seeds = _load_run_meta(
+        run_dir, require_complete=include_test, action="score test on"
+    )
     split_id = str(meta["split_id"])
     if df is None:
         df = load_benchmark_split(data_path, split_id)
@@ -632,22 +646,9 @@ def score_run_predictions(
                 )
             ]
 
-    val_df = (
-        pd.DataFrame(val_rows)
-        .reindex(columns=METRIC_COLUMNS)
-        .sort_values(SORT_KEYS, ignore_index=True)
-    )
-    val_df["seed"] = val_df["seed"].astype("Int64")
-    val_df.to_csv(run_dir / "val_metrics.csv", index=False, lineterminator="\n")
-
+    val_df = _write_metrics_csv(val_rows, run_dir / "val_metrics.csv")
     if include_test:
-        test_df = (
-            pd.DataFrame(test_rows)
-            .reindex(columns=METRIC_COLUMNS)
-            .sort_values(SORT_KEYS, ignore_index=True)
-        )
-        test_df["seed"] = test_df["seed"].astype("Int64")
-        test_df.to_csv(run_dir / "test_metrics.csv", index=False, lineterminator="\n")
+        test_df = _write_metrics_csv(test_rows, run_dir / "test_metrics.csv")
         combined_metrics = pd.concat([val_df, test_df], ignore_index=True)
     else:
         combined_metrics = val_df
@@ -763,21 +764,7 @@ def promote_run(
         promoted_path = PROMOTED_PATH
     if runs_dir is None:
         runs_dir = RUNS_DIR
-    meta_path = run_dir / "run.json"
-    if not meta_path.exists():
-        raise FileNotFoundError(f"missing run.json in {run_dir}")
-    meta = json.loads(meta_path.read_text())
-    if meta.get("status") != "complete":
-        raise ValueError(
-            f"refusing to promote incomplete run {run_dir.name} "
-            f"(status={meta.get('status')!r})"
-        )
-    seeds = [int(s) for s in meta.get("seeds", SEEDS)]
-    if list(meta.get("completed_seeds", seeds)) != seeds:
-        raise ValueError(
-            f"refusing to promote run {run_dir.name}: completed_seeds "
-            f"{meta.get('completed_seeds')} != {seeds}"
-        )
+    meta, seeds = _load_run_meta(run_dir, require_complete=True, action="promote")
     for seed in seeds:
         for split in ("val", "test"):
             p = run_dir / "predictions" / f"{split}_seed_{seed}.csv"

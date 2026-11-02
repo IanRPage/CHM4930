@@ -81,6 +81,34 @@ def _find_run_json(checkpoint_dir: Path) -> Path | None:
     return None
 
 
+def _collect_run_files(run_dir: Path, prefix: str = "") -> list[tuple[str, Path]]:
+    rel = lambda name: f"{prefix}/{name}" if prefix else name
+    out = [
+        (rel(name), p)
+        for name in ("run.json", "val_metrics.csv", "test_metrics.csv")
+        if (p := run_dir / name).exists()
+    ]
+    if (preds := run_dir / "predictions").is_dir():
+        out += [(rel(f"predictions/{p.name}"), p) for p in sorted(preds.glob("*.csv"))]
+    return out
+
+
+def _copy_run_files(
+    src_dir: Path, dst_dir: Path, *, overwrite_names: Sequence[str] = ()
+) -> None:
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("run.json", "patch.diff", "val_metrics.csv", "test_metrics.csv"):
+        src, dst = src_dir / name, dst_dir / name
+        if src.exists() and (name in overwrite_names or not dst.exists()):
+            shutil.copy2(src, dst)
+    if (src_preds := src_dir / "predictions").is_dir():
+        dst_preds = dst_dir / "predictions"
+        dst_preds.mkdir(parents=True, exist_ok=True)
+        for src in sorted(src_preds.glob("*.csv")):
+            if not (dst := dst_preds / src.name).exists():
+                shutil.copy2(src, dst)
+
+
 def load_version(
     checkpoint_dir: Path,
     model_name: str = "mufu",
@@ -144,20 +172,12 @@ def load_version(
         patch_sha256 = str(run_meta.get("patch_sha256", patch_sha256))
         run_id = str(run_meta.get("run_id", run_json_path.parent.name))
         run_root = run_json_path.parent
-        extra_files.append(("run.json", run_json_path))
+        extra_files.extend(_collect_run_files(run_root))
         candidate_patch = run_root / "patch.diff"
         if candidate_patch.exists():
             patch_path = candidate_patch
             if patch_sha256:
                 extra_files.append(("patch.diff", candidate_patch))
-        for metric_csv in ("val_metrics.csv", "test_metrics.csv"):
-            m_path = run_root / metric_csv
-            if m_path.exists():
-                extra_files.append((metric_csv, m_path))
-        preds_dir = run_root / "predictions"
-        if preds_dir.is_dir():
-            for p in sorted(preds_dir.glob("*.csv")):
-                extra_files.append((f"predictions/{p.name}", p))
 
         if (run_root / "baselines").is_dir():
             rf_candidates = sorted((run_root / "baselines").glob("rf_*"))
@@ -191,16 +211,9 @@ def load_version(
                 or rf_meta.get("data_sha256") != data_sha256
             ):
                 continue
-            prefix = f"baselines/{rf_dir.name}"
-            extra_files.append((f"{prefix}/run.json", rf_json))
-            for metric_csv in ("val_metrics.csv", "test_metrics.csv"):
-                m_path = rf_dir / metric_csv
-                if m_path.exists():
-                    extra_files.append((f"{prefix}/{metric_csv}", m_path))
-            rf_preds = rf_dir / "predictions"
-            if rf_preds.is_dir():
-                for p in sorted(rf_preds.glob("*.csv")):
-                    extra_files.append((f"{prefix}/predictions/{p.name}", p))
+            extra_files.extend(
+                _collect_run_files(rf_dir, prefix=f"baselines/{rf_dir.name}")
+            )
 
     if verify_git:
         verify_code_identity(
@@ -461,15 +474,6 @@ def populate_run_from_download(
         meta = json.loads(dl_run_json.read_text())
         run_id = str(meta["run_id"])
         run_dir = runs_dir / run_id
-        run_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(dl_run_json, run_dir / "run.json")
-        if (downloaded_dir / "patch.diff").exists():
-            shutil.copy2(downloaded_dir / "patch.diff", run_dir / "patch.diff")
-        for metric_csv in ("val_metrics.csv", "test_metrics.csv"):
-            src_m = downloaded_dir / metric_csv
-            dst_m = run_dir / metric_csv
-            if src_m.exists() and not dst_m.exists():
-                shutil.copy2(src_m, dst_m)
     else:
         r_path = runs_path(results_path)
         if not r_path.exists():
@@ -515,41 +519,16 @@ def populate_run_from_download(
         }
         (run_dir / "run.json").write_text(json.dumps(meta, indent=2) + "\n")
 
+    _copy_run_files(downloaded_dir, run_dir, overwrite_names=("run.json", "patch.diff"))
     ckpt_dir = run_dir / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     for src in version.files:
-        dst = ckpt_dir / src.name
-        if not dst.exists():
+        if not (dst := ckpt_dir / src.name).exists():
             shutil.copy2(src, dst)
 
-    dl_preds = downloaded_dir / "predictions"
-    if dl_preds.is_dir():
-        dst_preds = run_dir / "predictions"
-        dst_preds.mkdir(parents=True, exist_ok=True)
-        for src in sorted(dl_preds.glob("*.csv")):
-            dst = dst_preds / src.name
-            if not dst.exists():
-                shutil.copy2(src, dst)
-
-    dl_baselines = downloaded_dir / "baselines"
-    if dl_baselines.is_dir():
+    if (dl_baselines := downloaded_dir / "baselines").is_dir():
         for rf_src in sorted(dl_baselines.glob("rf_*")):
-            if not rf_src.is_dir():
-                continue
-            rf_dst = runs_dir / rf_src.name
-            rf_dst.mkdir(parents=True, exist_ok=True)
-            for fname in ("run.json", "val_metrics.csv", "test_metrics.csv"):
-                s = rf_src / fname
-                d = rf_dst / fname
-                if s.exists() and not d.exists():
-                    shutil.copy2(s, d)
-            rf_preds_src = rf_src / "predictions"
-            if rf_preds_src.is_dir():
-                rf_preds_dst = rf_dst / "predictions"
-                rf_preds_dst.mkdir(parents=True, exist_ok=True)
-                for src in sorted(rf_preds_src.glob("*.csv")):
-                    dst = rf_preds_dst / src.name
-                    if not dst.exists():
-                        shutil.copy2(src, dst)
+            if rf_src.is_dir():
+                _copy_run_files(rf_src, runs_dir / rf_src.name)
 
     return run_dir

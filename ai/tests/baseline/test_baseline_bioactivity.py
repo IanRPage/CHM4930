@@ -6,7 +6,6 @@ import pytest
 
 from baseline import baseline_bioactivity as bb
 from baseline import benchmark
-from baseline.results import CodeIdentity
 
 # keyed by atom count, which fake fingerprint puts in column 0
 # BACE1 labels molecules 1-9, EGFR labels 10-18
@@ -17,12 +16,6 @@ PIC50 = {
 ALL_PIC50 = PIC50["BACE1"] | PIC50["EGFR"]
 TEST_SEEDS = (0, 1)
 BIO_METRICS = ("rmse", "r2", "spearman", "kendall", "roc_auc", "pr_auc", "prevalence")
-FAKE_IDENTITY = CodeIdentity(
-    base_commit="a" * 40,
-    ai_tree="b" * 40,
-    patch="",
-    patch_sha256="",
-)
 
 
 @pytest.fixture
@@ -50,22 +43,12 @@ def fake_forests(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def env_paths(monkeypatch, tmp_path):
-    runs_dir = tmp_path / "runs"
-    promoted_path = tmp_path / "promoted.json"
-    out_path = tmp_path / "results.csv"
-    data_path = tmp_path / "combined.csv"
-    data_path.write_text("smiles\nCCO\n")
-    monkeypatch.setattr(benchmark, "code_identity", lambda: FAKE_IDENTITY)
-    monkeypatch.setattr(benchmark, "RUNS_DIR", runs_dir)
-    monkeypatch.setattr(benchmark, "PROMOTED_PATH", promoted_path)
-    monkeypatch.setattr(benchmark, "RESULTS_PATH", out_path)
-    monkeypatch.setattr(benchmark, "COMBINED_CSV_PATH", data_path)
+def env_paths(monkeypatch):
     monkeypatch.setattr(bb, "SEEDS", TEST_SEEDS)
     monkeypatch.setattr(benchmark, "SEEDS", TEST_SEEDS)
     monkeypatch.setattr(bb, "SPLIT_IDS", ("default",))
     monkeypatch.setattr(benchmark, "rebuild_tracked_results", lambda **_: None)
-    return runs_dir
+    return benchmark.RUNS_DIR
 
 
 @pytest.fixture

@@ -6,34 +6,17 @@ import pytest
 
 from baseline import baseline_toxicity as bt
 from baseline import benchmark
-from baseline.results import CodeIdentity
 
 TEST_SEEDS = (0, 1)
-FAKE_IDENTITY = CodeIdentity(
-    base_commit="a" * 40,
-    ai_tree="b" * 40,
-    patch="",
-    patch_sha256="",
-)
 
 
 @pytest.fixture(autouse=True)
-def env_paths(monkeypatch, tmp_path):
-    runs_dir = tmp_path / "runs"
-    promoted_path = tmp_path / "promoted.json"
-    out_path = tmp_path / "results.csv"
-    data_path = tmp_path / "combined.csv"
-    data_path.write_text("smiles\nCCO\n")
-    monkeypatch.setattr(benchmark, "code_identity", lambda: FAKE_IDENTITY)
-    monkeypatch.setattr(benchmark, "RUNS_DIR", runs_dir)
-    monkeypatch.setattr(benchmark, "PROMOTED_PATH", promoted_path)
-    monkeypatch.setattr(benchmark, "RESULTS_PATH", out_path)
-    monkeypatch.setattr(benchmark, "COMBINED_CSV_PATH", data_path)
+def env_paths(monkeypatch):
     monkeypatch.setattr(bt, "SEEDS", TEST_SEEDS)
     monkeypatch.setattr(benchmark, "SEEDS", TEST_SEEDS)
     monkeypatch.setattr(bt, "SPLIT_IDS", ("default",))
     monkeypatch.setattr(benchmark, "rebuild_tracked_results", lambda **_: None)
-    return runs_dir
+    return benchmark.RUNS_DIR
 
 
 @pytest.fixture
