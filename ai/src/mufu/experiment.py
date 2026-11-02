@@ -229,9 +229,11 @@ def make_fit_predict(
                 calibration=calibration,
             )
         )
-        test_intervals = predict_with_intervals(
-            model, datasets["test"], conformal, batch_size=cfg.batch_size
-        )
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(int(seed))
+            test_intervals = predict_with_intervals(
+                model, datasets["test"], conformal, batch_size=cfg.batch_size
+            )
         for key, val in test_intervals.items():
             if key not in test_preds:
                 test_preds[key] = val

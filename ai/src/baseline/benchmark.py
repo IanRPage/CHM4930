@@ -417,7 +417,7 @@ def run_benchmark(
     df: pd.DataFrame | None = None,
     data_path: Path = COMBINED_CSV_PATH,
     run_dir: Path | None = None,
-    runs_dir: Path = RUNS_DIR,
+    runs_dir: Path | None = None,
     run_name: str = "",
     identity: CodeIdentity | None = None,
     mark_complete: bool = True,
@@ -435,6 +435,8 @@ def run_benchmark(
         df = load_benchmark_split(data_path, split_id)
     if identity is None:
         identity = code_identity()
+    if runs_dir is None:
+        runs_dir = RUNS_DIR
 
     if run_dir is None:
         run_id = make_run_id(model, split_id, run_name=run_name)
@@ -502,13 +504,14 @@ def run_benchmark(
             _write_run_json(run_dir, run_meta)
             if identity.patch:
                 patch_path = run_dir / "patch.diff"
+                patch_bytes = identity.patch.encode("utf-8")
                 if (
                     patch_path.exists()
                     and not overwrite_predictions
-                    and patch_path.read_text() != identity.patch
+                    and patch_path.read_bytes() != patch_bytes
                 ):
                     raise FileExistsError(f"refusing to overwrite {patch_path}")
-                patch_path.write_text(identity.patch)
+                patch_path.write_bytes(patch_bytes)
             meta_initialized = True
 
         preds_dir = run_dir / "predictions"
@@ -671,12 +674,38 @@ def score_run_predictions(
     return out
 
 
+def missing_promoted_runs(
+    promoted_path: Path | None = None,
+    runs_dir: Path | None = None,
+) -> list[str]:
+    """
+    Return the list of promoted `run_id`s in `promoted.json` whose `run.json` is not
+    present in `runs_dir` (or `["promoted.json"]` if `promoted_path` is missing/empty).
+    """
+    if promoted_path is None:
+        promoted_path = PROMOTED_PATH
+    if runs_dir is None:
+        runs_dir = RUNS_DIR
+    if not promoted_path.exists():
+        return [promoted_path.name]
+    promoted = json.loads(promoted_path.read_text())
+    run_ids = [
+        str(run_id)
+        for key, mapping in promoted.items()
+        if key != "tag" and isinstance(mapping, dict)
+        for run_id in mapping.values()
+    ]
+    if not run_ids:
+        return [promoted_path.name]
+    return [r for r in run_ids if not (runs_dir / r / "run.json").exists()]
+
+
 def promote_run(
     run_dir: Path,
     *,
     tag: str | None = None,
-    promoted_path: Path = PROMOTED_PATH,
-    runs_dir: Path = RUNS_DIR,
+    promoted_path: Path | None = None,
+    runs_dir: Path | None = None,
     results_path: Path = RESULTS_PATH,
     data_path: Path = COMBINED_CSV_PATH,
     rebuild: bool = True,
@@ -686,6 +715,10 @@ def promote_run(
     Register `run_dir` as the promoted run for its `(model, split_id)` in `promoted.json`
     and optionally rebuild the tracked CSV tables in `ai/data/baseline/`.
     """
+    if promoted_path is None:
+        promoted_path = PROMOTED_PATH
+    if runs_dir is None:
+        runs_dir = RUNS_DIR
     meta_path = run_dir / "run.json"
     if not meta_path.exists():
         raise FileNotFoundError(f"missing run.json in {run_dir}")
@@ -739,8 +772,8 @@ def promote_run(
 
 def rebuild_tracked_results(
     *,
-    promoted_path: Path = PROMOTED_PATH,
-    runs_dir: Path = RUNS_DIR,
+    promoted_path: Path | None = None,
+    runs_dir: Path | None = None,
     results_path: Path = RESULTS_PATH,
     paired_path: Path | None = None,
     similarity_path: Path | None = None,
@@ -755,6 +788,10 @@ def rebuild_tracked_results(
     """
     from baseline import compare, similarity
 
+    if promoted_path is None:
+        promoted_path = PROMOTED_PATH
+    if runs_dir is None:
+        runs_dir = RUNS_DIR
     if not promoted_path.exists():
         raise FileNotFoundError(f"missing promoted.json at {promoted_path}")
     promoted = json.loads(promoted_path.read_text())
@@ -831,7 +868,6 @@ def rebuild_tracked_results(
                 )
         if paired_rows:
             paired_df = pd.DataFrame(paired_rows, columns=compare.PAIRED_COLUMNS)
-            pair_out_path.write_csv if hasattr(pair_out_path, "write_csv") else None
             paired_df.to_csv(pair_out_path, index=False, lineterminator="\n")
             val_paired_df = paired_df[paired_df["split"] == "val"]
             val_paired_df.to_csv(

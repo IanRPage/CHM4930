@@ -9,8 +9,6 @@ Runs on every scaffold split in `SPLIT_IDS`, tuning `max_features` on each split
 validation set.
 """
 
-import json
-
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 
@@ -19,6 +17,7 @@ from baseline.benchmark import (
     SEEDS,
     SPLIT_IDS,
     load_benchmark_split,
+    missing_promoted_runs,
     promote_run,
     rebuild_tracked_results,
     run_benchmark,
@@ -88,19 +87,6 @@ def _lookup_auc(summary, endpoint, split):
     if match.empty:
         return float("nan")
     return float(match["value"].iloc[0])
-
-
-def _all_promoted_runs_present(promoted_path, runs_dir) -> bool:
-    if not promoted_path.exists():
-        return False
-    promoted = json.loads(promoted_path.read_text())
-    run_ids = [
-        run_id
-        for key, mapping in promoted.items()
-        if key != "tag" and isinstance(mapping, dict)
-        for run_id in mapping.values()
-    ]
-    return bool(run_ids) and all((runs_dir / r / "run.json").exists() for r in run_ids)
 
 
 def run_split(split_id):
@@ -210,10 +196,17 @@ def run_split(split_id):
 def main():
     for split_id in SPLIT_IDS:
         run_split(split_id)
-    if _all_promoted_runs_present(benchmark.PROMOTED_PATH, benchmark.RUNS_DIR):
+    missing = missing_promoted_runs(benchmark.PROMOTED_PATH, benchmark.RUNS_DIR)
+    if not missing:
         rebuild_tracked_results(
             promoted_path=benchmark.PROMOTED_PATH,
             runs_dir=benchmark.RUNS_DIR,
+        )
+    else:
+        print(
+            f"Skipped rebuilding data/baseline/*.csv: missing promoted runs {missing} "
+            "in runs/ (run `python drivers/download_mufu.py`, then "
+            "`python drivers/rebuild_results.py`)."
         )
 
 

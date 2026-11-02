@@ -7,6 +7,7 @@ Scores the held-out `test` predictions (`test_metrics.csv`) and rebuilds
 `results_paired.csv`, and `results_by_similarity.csv` without retraining.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -14,13 +15,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pandas as pd
 
-from baseline.benchmark import RUNS_DIR, promote_run
+from baseline.benchmark import PROMOTED_PATH, RUNS_DIR, promote_run
 from baseline.compare import PAIRED_PATH
 from baseline.results import summarize_seeds
 
 # set `run_id` to winning run in `ai/runs/<run_id>/` before running
 run_id = ""
-tag = "v1.0.0"
+tag: str | None = None  # None -> keep promoted["tag"]; set e.g. "v1.1.0" to bump
 
 
 if __name__ == "__main__":
@@ -34,6 +35,7 @@ if __name__ == "__main__":
 
     run_dir = RUNS_DIR / run_id
     all_rows = promote_run(run_dir, tag=tag)
+    resolved_tag = json.loads(PROMOTED_PATH.read_text()).get("tag", tag)
     run_rows = all_rows[all_rows["run_id"] == run_id]
     summary = summarize_seeds(run_rows[run_rows["split"] == "test"])
     cols = [
@@ -46,7 +48,7 @@ if __name__ == "__main__":
         "ci_high",
         "n_seeds",
     ]
-    print(f"Promoted {run_id} (tag={tag}).\n\nSingle-model test summary:")
+    print(f"Promoted {run_id} (tag={resolved_tag}).\n\nSingle-model test summary:")
     print(summary[cols].round(4).to_string(index=False))
 
     ens_cov_path = run_dir / "ensemble_coverage.csv"
