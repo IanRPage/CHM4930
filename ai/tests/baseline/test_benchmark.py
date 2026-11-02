@@ -277,12 +277,38 @@ def test_run_benchmark_scores_val_only_and_promote_rebuilds_test(
     )
     benchmark.promote_run(
         run_dir,
+        tag="v1.1.0",
         promoted_path=promoted_path,
         runs_dir=runs_dir,
         results_path=path,
         data_path=data_path,
         n_boot=50,
     )
+    assert json.loads(promoted_path.read_text())["tag"] == "v1.1.0"
+    # Promoting without tag preserves existing tag
+    benchmark.promote_run(
+        run_dir,
+        promoted_path=promoted_path,
+        runs_dir=runs_dir,
+        results_path=path,
+        data_path=data_path,
+        n_boot=50,
+    )
+    assert json.loads(promoted_path.read_text())["tag"] == "v1.1.0"
+    # Failed rebuild rolls back promoted.json
+    prev_promoted = promoted_path.read_text()
+    with pytest.raises(FileNotFoundError):
+        benchmark.promote_run(
+            run_dir,
+            tag="v9.9.9",
+            promoted_path=promoted_path,
+            runs_dir=tmp_path / "missing_runs",
+            results_path=path,
+            data_path=data_path,
+            n_boot=50,
+        )
+    assert promoted_path.read_text() == prev_promoted
+
     assert (run_dir / "test_metrics.csv").exists()
     written = results.load_results(path)
     # 2 splits * 7 metrics * 3 seeds = 42 rows

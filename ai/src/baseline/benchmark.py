@@ -742,8 +742,9 @@ def promote_run(
                     f"refusing to promote {run_dir.name}: missing {p}"
                 )
 
-    if promoted_path.exists():
-        promoted = json.loads(promoted_path.read_text())
+    prev_promoted_bytes = promoted_path.read_bytes() if promoted_path.exists() else None
+    if prev_promoted_bytes is not None:
+        promoted = json.loads(prev_promoted_bytes.decode("utf-8"))
     else:
         promoted = {
             "tag": tag or "v1.0.0",
@@ -761,13 +762,20 @@ def promote_run(
 
     if not rebuild:
         return None
-    return rebuild_tracked_results(
-        promoted_path=promoted_path,
-        runs_dir=runs_dir,
-        results_path=results_path,
-        data_path=data_path,
-        n_boot=n_boot,
-    )
+    try:
+        return rebuild_tracked_results(
+            promoted_path=promoted_path,
+            runs_dir=runs_dir,
+            results_path=results_path,
+            data_path=data_path,
+            n_boot=n_boot,
+        )
+    except BaseException:
+        if prev_promoted_bytes is None:
+            promoted_path.unlink(missing_ok=True)
+        else:
+            promoted_path.write_bytes(prev_promoted_bytes)
+        raise
 
 
 def rebuild_tracked_results(
@@ -833,10 +841,11 @@ def rebuild_tracked_results(
     shas = sorted(all_rows["data_sha256"].dropna().unique())
     if len(shas) > 1:
         raise ValueError(f"promoted runs disagree on data_sha256: {shas}")
-    write_results(all_rows, results_path)
 
     # Rebuild results_paired.csv (val and test on default split) if promoted mufu + rf exist
     pair_out_path = paired_path or results_path.with_name("results_paired.csv")
+    paired_df: pd.DataFrame | None = None
+    mufu_dir: Path | None = None
     mufu_default_id = promoted.get("mufu", {}).get(DEFAULT_SPLIT_ID)
     if mufu_default_id:
         mufu_dir = runs_dir / mufu_default_id
@@ -868,20 +877,25 @@ def rebuild_tracked_results(
                 )
         if paired_rows:
             paired_df = pd.DataFrame(paired_rows, columns=compare.PAIRED_COLUMNS)
-            paired_df.to_csv(pair_out_path, index=False, lineterminator="\n")
-            val_paired_df = paired_df[paired_df["split"] == "val"]
-            val_paired_df.to_csv(
-                mufu_dir / "val_paired.csv", index=False, lineterminator="\n"
-            )
 
     # Rebuild results_by_similarity.csv on default split
     sim_out_path = similarity_path or results_path.with_name(
         "results_by_similarity.csv"
     )
+    sim_df: pd.DataFrame | None = None
     if default_run_dirs:
         default_df = get_split(DEFAULT_SPLIT_ID)
         if (default_df["split"] == "train").any():
             sim_df = similarity.similarity_table(default_df, default_run_dirs)
-            sim_df.to_csv(sim_out_path, index=False, lineterminator="\n")
+
+    write_results(all_rows, results_path)
+    if paired_df is not None and mufu_dir is not None:
+        paired_df.to_csv(pair_out_path, index=False, lineterminator="\n")
+        val_paired_df = paired_df[paired_df["split"] == "val"]
+        val_paired_df.to_csv(
+            mufu_dir / "val_paired.csv", index=False, lineterminator="\n"
+        )
+    if sim_df is not None:
+        sim_df.to_csv(sim_out_path, index=False, lineterminator="\n")
 
     return all_rows
