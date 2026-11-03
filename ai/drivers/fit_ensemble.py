@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import numpy as np
 import pandas as pd
 import torch
 
@@ -111,10 +112,13 @@ def fit_and_report(
     else:
         params = fit_ensemble_conformal(
             members,
-            datasets["val"],
+            datasets.get("val_calib", datasets["val"]),
             n_samples=n_samples,
             coverages=coverages,
             batch_size=batch_size,
+        )
+        assert np.isfinite(params.conformal.q).all(), (
+            f"non-finite conformal quantiles: {params.conformal.q}"
         )
         save_ensemble(params, checkpoint_dir, model_name)
         print(f"ensemble q={params.conformal.q.round(3).tolist()}", flush=True)

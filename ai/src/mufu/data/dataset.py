@@ -16,6 +16,7 @@ training mode).
 
 import copy
 
+import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
@@ -30,7 +31,7 @@ from mufu.contract import (
     MuFuBatch,
 )
 from pipeline.preprocess import featurize_many
-from pipeline.split import SPLITS
+from pipeline.split import SPLITS, _scaffold_groups, _source_flags, murcko_scaffold
 
 LABELS = {
     "y_pic50": PIC50_COLUMNS,
@@ -107,5 +108,41 @@ def to_device(
     return moved
 
 
+def _split_val_by_scaffold(val_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Partition `val` 50/50 by Bemis-Murcko scaffold into `(val_select, val_calib)`."""
+    if len(val_df) < 2:
+        return val_df, val_df
+    scaffolds = (
+        val_df["scaffold"].fillna("").tolist()
+        if "scaffold" in val_df.columns
+        else [murcko_scaffold(s) for s in val_df["smiles"]]
+    )
+    groups = _scaffold_groups(val_df["smiles"].tolist(), scaffolds)
+    if len(groups) < 2:
+        return val_df, val_df
+    flags = _source_flags(val_df)
+    member = (
+        val_df[flags].fillna(False).to_numpy(bool)
+        if flags
+        else np.ones((len(val_df), 1), dtype=bool)
+    )
+    budget = 0.5 * member.sum(axis=0)
+    counts = np.zeros(member.shape[1])
+    in_select = np.zeros(len(val_df), dtype=bool)
+    for group in groups:
+        group_counts = member[group].sum(axis=0)
+        if np.all(counts + group_counts <= budget):
+            counts += group_counts
+            in_select[group] = True
+    if not in_select.any() or in_select.all():
+        in_select[:] = False
+        in_select[groups[0]] = True
+    return val_df.iloc[in_select], val_df.iloc[~in_select]
+
+
 def split_datasets(df: pd.DataFrame) -> dict[str, MuFuDataset]:
-    return {name: MuFuDataset(df[df["split"] == name]) for name in SPLITS}
+    datasets = {name: MuFuDataset(df[df["split"] == name]) for name in SPLITS}
+    val_select_df, val_calib_df = _split_val_by_scaffold(df[df["split"] == "val"])
+    datasets["val_select"] = MuFuDataset(val_select_df)
+    datasets["val_calib"] = MuFuDataset(val_calib_df)
+    return datasets
