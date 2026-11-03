@@ -183,3 +183,18 @@ def test_rejects_invalid_task_type():
             [0.2, 0.8],
             task_type="invalid",
         )
+
+
+def test_expected_calibration_error_and_interval_metrics_values():
+    assert ev.expected_calibration_error(
+        [0.2, 0.2, 0.8, 0.8], [0, 1, 0, 1]
+    ) == pytest.approx(0.3)
+    assert np.isnan(ev.expected_calibration_error([], []))
+
+    iv = ev.interval_metrics(
+        [5.0, 6.0, 8.0, 10.0], [4.0, 5.0, 7.0, 7.0], [6.0, 7.0, 9.0, 9.0]
+    )
+    assert iv["coverage"] == pytest.approx(0.75)
+    assert iv["width"] == pytest.approx(2.0)
+    empty_iv = ev.interval_metrics([], [], [])
+    assert np.isnan(empty_iv["coverage"]) and np.isnan(empty_iv["width"])

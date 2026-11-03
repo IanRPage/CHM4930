@@ -62,8 +62,11 @@ def test_evaluate_bioactivity_with_and_without_explicit_active_scores(split_df):
     predictions = {
         "val": {
             "pIC50_BACE1": [5.0, 7.0, np.nan],
+            "pIC50_BACE1_lo90": [4.5, 6.5, np.nan],
+            "pIC50_BACE1_hi90": [5.5, 7.5, np.nan],
             "pIC50_EGFR": [np.nan, 5.0, 7.0],
             "active_EGFR": [np.nan, 0.9, 0.1],
+            "active_EGFR_uncal": [np.nan, 0.4, 0.6],
         },
         "test": {
             "pIC50_BACE1": [4.0, 8.0, np.nan],
@@ -80,6 +83,11 @@ def test_evaluate_bioactivity_with_and_without_explicit_active_scores(split_df):
     assert rows.loc[("pIC50_BACE1", "val", "roc_auc"), "value"] == pytest.approx(1.0)
     assert rows.loc[("pIC50_BACE1", "val", "spearman"), "value"] == pytest.approx(1.0)
     assert rows.loc[("pIC50_BACE1", "val", "pr_auc"), "value"] == pytest.approx(1.0)
+    assert rows.loc[("pIC50_BACE1", "val", "coverage_90"), "value"] == pytest.approx(
+        1.0
+    )
+    assert rows.loc[("pIC50_BACE1", "val", "width_90"), "value"] == pytest.approx(1.0)
+    assert ("pIC50_BACE1", "val", "ece") not in rows.index
     assert rows.loc[("pIC50_BACE1", "val", "prevalence"), "value"] == 0.5
     assert rows.loc[("pIC50_BACE1", "val", "rmse"), "n_labeled"] == 2
     assert rows.loc[("pIC50_BACE1", "val", "rmse"), "n_positive"] == 1
@@ -88,6 +96,8 @@ def test_evaluate_bioactivity_with_and_without_explicit_active_scores(split_df):
     assert rows.loc[("pIC50_EGFR", "val", "rmse"), "value"] == pytest.approx(0.0)
     assert rows.loc[("pIC50_EGFR", "val", "roc_auc"), "value"] == pytest.approx(1.0)
     assert rows.loc[("active_EGFR", "val", "roc_auc"), "value"] == pytest.approx(0.0)
+    assert rows.loc[("active_EGFR", "val", "ece"), "value"] == pytest.approx(0.9)
+    assert rows.loc[("active_EGFR", "val", "ece_uncal"), "value"] == pytest.approx(0.4)
     assert ("active_EGFR", "val", "rmse") not in rows.index
 
     assert ("active_EGFR", "test", "roc_auc") in rows.index
@@ -100,6 +110,7 @@ def test_evaluate_toxicity_excludes_omitted_endpoints_from_macros(split_df):
     predictions = {
         "val": {
             "NR-AR": [0.1, 0.9, np.nan],
+            "NR-AR_uncal": [0.4, 0.6, np.nan],
         },
         "test": {
             "NR-AR": [0.1, 0.9, np.nan],
@@ -107,8 +118,16 @@ def test_evaluate_toxicity_excludes_omitted_endpoints_from_macros(split_df):
         },
     }
 
-    rows = pd.DataFrame(benchmark.evaluate_split_predictions(split_df, predictions))
-    rows = rows[rows["metric"] == "roc_auc"].set_index(["endpoint", "split"])
+    all_rows = pd.DataFrame(benchmark.evaluate_split_predictions(split_df, predictions))
+    ece_rows = all_rows.set_index(["endpoint", "split", "metric"])
+    assert ece_rows.loc[("NR-AR", "val", "ece"), "value"] == pytest.approx(0.1)
+    assert ece_rows.loc[("NR-AR", "val", "ece_uncal"), "value"] == pytest.approx(0.4)
+    assert ece_rows.loc[("macro_tox21", "val", "ece"), "value"] == pytest.approx(0.1)
+    assert ece_rows.loc[("macro_tox21", "val", "ece_uncal"), "value"] == pytest.approx(
+        0.4
+    )
+
+    rows = all_rows[all_rows["metric"] == "roc_auc"].set_index(["endpoint", "split"])
 
     assert ("NR-AR", "val") in rows.index
     assert ("CT_TOX", "val") not in rows.index
@@ -176,6 +195,17 @@ def test_evaluate_rejects_wrong_length_split_or_unknown_column(split_df):
     with pytest.raises(ValueError, match="expected 1D array of length 3"):
         benchmark.evaluate_split_predictions(
             split_df, {"val": {"pIC50_BACE1": [5.0, 7.0]}}
+        )
+
+    with pytest.raises(ValueError, match="mismatched interval bounds"):
+        benchmark.evaluate_split_predictions(
+            split_df,
+            {
+                "val": {
+                    "pIC50_BACE1": [5.0, 7.0, np.nan],
+                    "pIC50_BACE1_lo90": [4.0, 6.0, np.nan],
+                }
+            },
         )
 
 
@@ -489,7 +519,13 @@ def test_load_is_read_only_and_missing_snapshot_raises(
 def test_frozen_benchmark_matches_recorded_rf_checksum_and_counts(frozen_benchmark):
     recorded = results.load_results()
     rf = recorded[recorded["model"].isin(["rf_bioactivity", "rf_toxicity"])]
-    assert len(rf) == 124 * len(benchmark.SEEDS) * len(benchmark.SPLIT_IDS)
+    promoted_tag = json.loads(COMBINED_CSV_PATH.with_name("promoted.json").read_text())[
+        "tag"
+    ]
+    expected_per_seed_split = 124 if promoted_tag == "v1.0.0" else 174
+    assert len(rf) == expected_per_seed_split * len(benchmark.SEEDS) * len(
+        benchmark.SPLIT_IDS
+    )
     assert set(rf["seed"]) == set(benchmark.SEEDS)
     assert set(rf["split_id"]) == set(benchmark.SPLIT_IDS)
     default = rf[rf["split_id"] == "default"]

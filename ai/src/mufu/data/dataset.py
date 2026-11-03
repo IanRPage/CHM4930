@@ -16,6 +16,7 @@ training mode).
 
 import copy
 
+import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
@@ -30,7 +31,7 @@ from mufu.contract import (
     MuFuBatch,
 )
 from pipeline.preprocess import featurize_many
-from pipeline.split import SPLITS
+from pipeline.split import SPLITS, scaffold_half_mask
 
 LABELS = {
     "y_pic50": PIC50_COLUMNS,
@@ -79,6 +80,17 @@ class MuFuDataset(Dataset):
             **{key: value[i] for key, value in {**self.labels, **self.masks}.items()},
         }
 
+    def subset(self, mask: np.ndarray) -> "MuFuDataset":
+        idx = np.flatnonzero(mask)
+        sub = copy.copy(self)
+        sub.smiles = [self.smiles[i] for i in idx]
+        sub.fingerprints = self.fingerprints[idx]
+        sub.graphs = [self.graphs[i] for i in idx]
+        sub.labels = {k: v[idx] for k, v in self.labels.items()}
+        sub.masks = {k: v[idx] for k, v in self.masks.items()}
+        sub.sources = self.sources.iloc[idx].reset_index(drop=True)
+        return sub
+
 
 def collate(examples: list[dict]) -> MuFuBatch:
     batch = {
@@ -108,4 +120,9 @@ def to_device(
 
 
 def split_datasets(df: pd.DataFrame) -> dict[str, MuFuDataset]:
-    return {name: MuFuDataset(df[df["split"] == name]) for name in SPLITS}
+    datasets = {name: MuFuDataset(df[df["split"] == name]) for name in SPLITS}
+    val = datasets["val"]
+    in_select = scaffold_half_mask(val.smiles, val.sources)
+    datasets["val_select"] = val.subset(in_select)
+    datasets["val_calib"] = val.subset(~in_select)
+    return datasets

@@ -35,7 +35,12 @@ def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
     run_dir = tmp_path / "run_1"
     datasets = {split: labeled_dataset for split in ("train", "val", "test")}
     cfg = TrainConfig(
-        batch_size=4, epochs=2, patience=2, gnn_hidden_dims=(32, 16), device="cpu"
+        batch_size=4,
+        epochs=2,
+        patience=2,
+        gnn_hidden_dims=(32, 16),
+        calibration="log_weight",
+        device="cpu",
     )
     encoder = SmallSmilesEncoder().requires_grad_(False)
     fit_predict = experiment.make_fit_predict(
@@ -54,7 +59,8 @@ def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
     assert set(preds) == {"val", "test"}
     for split_preds in preds.values():
         assert split_preds["smiles"] == labeled_dataset.smiles
-    assert "pIC50_BACE1_lo90" in preds["test"]
+        assert "pIC50_BACE1_lo90" in split_preds
+        assert "active_BACE1_uncal" in split_preds
     ckpt_path = run_dir / "checkpoints" / "mufu_test_seed_3.pt"
     saved = torch.load(ckpt_path, weights_only=True)
     assert saved["seed"] == 3

@@ -56,14 +56,45 @@ def _source_flags(df: pd.DataFrame) -> list[str]:
     return [c for c in df.columns if c.startswith("in_")]
 
 
-def _scaffold_groups(
-    smiles: Sequence[str], scaffolds: Sequence[str]
+def scaffold_groups(
+    smiles: Sequence[str], scaffolds: Sequence[str] | None = None
 ) -> list[list[int]]:
+    if scaffolds is None:
+        scaffolds = [murcko_scaffold(s) for s in smiles]
     groups: dict[str, list[int]] = {}
     for pos, (smi, scaffold) in enumerate(zip(smiles, scaffolds)):
         key = scaffold or mol_to_smiles(to_mol(smi))
         groups.setdefault(key, []).append(pos)
     return [g for _, g in sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))]
+
+
+def scaffold_half_mask(
+    smiles: Sequence[str], sources: pd.DataFrame | None = None
+) -> np.ndarray:
+    """
+    boolean mask selecting ~50% of `smiles` by Bemis-Murcko scaffold balanced across
+    `sources`
+    """
+    groups = scaffold_groups(smiles)
+    if len(groups) < 2:
+        raise ValueError("need at least 2 scaffold groups to split")
+    member = (
+        sources.fillna(False).to_numpy(bool)
+        if sources is not None and sources.shape[1]
+        else np.ones((len(smiles), 1), dtype=bool)
+    )
+    budget = 0.5 * member.sum(axis=0)
+    counts = np.zeros(member.shape[1])
+    in_first = np.zeros(len(smiles), dtype=bool)
+    for group in groups:
+        group_counts = member[group].sum(axis=0)
+        if np.all(counts + group_counts <= budget):
+            counts += group_counts
+            in_first[group] = True
+    if not in_first.any() or in_first.all():
+        in_first[:] = False
+        in_first[groups[0]] = True
+    return in_first
 
 
 def scaffold_split(
@@ -81,7 +112,7 @@ def scaffold_split(
     )
     sizes = {name: f * member.sum(axis=0) for name, f in zip(SPLITS, frac)}
 
-    groups = _scaffold_groups(df["smiles"], scaffolds)
+    groups = scaffold_groups(df["smiles"], scaffolds)
     if seed is not None:
         rng = random.Random(seed)
         half = min(frac[1], frac[2]) * len(df) / 2
