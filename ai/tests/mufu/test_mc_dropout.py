@@ -139,6 +139,17 @@ def test_fit_conformal_needs_labels():
     with pytest.raises(ValueError, match="no labeled rows"):
         fit(pred, sigma, y, mask)
 
+    single = fit_conformal(
+        pred[:, :1],
+        sigma[:, :1],
+        y[:, :1],
+        np.ones((5, 1), dtype=bool),
+        columns=("pIC50_BACE1",),
+    )
+    assert single.q.shape == (1, 2)
+    with pytest.raises(ValueError, match="ConformalParams has 1"):
+        single.intervals(pred, sigma)
+
 
 def test_conformal_coverage_is_near_nominal_on_gaussian_residuals():
     rng = np.random.default_rng(0)
