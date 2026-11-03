@@ -130,6 +130,12 @@ def paired_bootstrap(
                 f"{label} seed {seed}: SMILES do not match the {split} split"
             )
         scores = {c: preds[c].to_numpy() for c in columns}
+        for c in preds.columns:
+            if any(
+                c.startswith((f"{base}_lo", f"{base}_hi")) or c == f"{base}_uncal"
+                for base in columns
+            ):
+                scores[c] = preds[c].to_numpy()
         return benchmark.split_tables(split_df, scores, split)
 
     _FORK_PAIRS = [(tables(run_a, name_a, s), tables(run_b, name_b, s)) for s in seeds]

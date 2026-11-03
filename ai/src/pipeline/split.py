@@ -77,7 +77,7 @@ def scaffold_half_mask(
     """
     groups = scaffold_groups(smiles)
     if len(groups) < 2:
-        return np.ones(len(smiles), dtype=bool)
+        raise ValueError("need at least 2 scaffold groups to split")
     member = (
         sources.fillna(False).to_numpy(bool)
         if sources is not None and sources.shape[1]

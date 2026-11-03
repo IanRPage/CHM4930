@@ -123,9 +123,6 @@ def split_datasets(df: pd.DataFrame) -> dict[str, MuFuDataset]:
     datasets = {name: MuFuDataset(df[df["split"] == name]) for name in SPLITS}
     val = datasets["val"]
     in_select = scaffold_half_mask(val.smiles, val.sources)
-    if in_select.all():
-        datasets["val_select"] = datasets["val_calib"] = val
-    else:
-        datasets["val_select"] = val.subset(in_select)
-        datasets["val_calib"] = val.subset(~in_select)
+    datasets["val_select"] = val.subset(in_select)
+    datasets["val_calib"] = val.subset(~in_select)
     return datasets

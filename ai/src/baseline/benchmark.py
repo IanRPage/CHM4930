@@ -318,18 +318,20 @@ def score_tables(bio: list[dict], tox: dict | None, sel: np.ndarray) -> list[dic
             },
         }
         for group, cols in groups.items():
-            kept = [j for j in cols if not np.isnan(roc[j])]
-            dropped = ";".join(TOX_TASKS[j] for j in cols if j not in kept) or np.nan
-            extra = {
-                "n_labeled": np.nan,
-                "n_positive": np.nan,
-                "n_tasks": len(kept),
-                "dropped_tasks": dropped,
-            }
             macro_pairs = [("roc_auc", roc), ("pr_auc", pr), ("ece", ece)]
             if ece_uncal is not None and any(has_uncal[j] for j in cols):
                 macro_pairs.append(("ece_uncal", ece_uncal))
             for metric, per_task in macro_pairs:
+                kept = [j for j in cols if not np.isnan(per_task[j])]
+                dropped = (
+                    ";".join(TOX_TASKS[j] for j in cols if j not in kept) or np.nan
+                )
+                extra = {
+                    "n_labeled": np.nan,
+                    "n_positive": np.nan,
+                    "n_tasks": len(kept),
+                    "dropped_tasks": dropped,
+                }
                 value = float(np.mean(per_task[kept])) if kept else float("nan")
                 add(group, f"macro_{group}", metric, value, **extra)
 
