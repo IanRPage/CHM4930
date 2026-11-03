@@ -21,6 +21,7 @@ from baseline.benchmark import (
 )
 from evaluation import evaluation_metrics
 from featurize.fingerprint import FINGERPRINT_BITS, mol_to_ecfp4
+from mufu.mc_dropout import DEFAULT_COVERAGES, fit_conformal
 from pipeline.combined_loader import TARGETS
 from pipeline.preprocess import to_mol
 
@@ -84,6 +85,13 @@ def select_max_features(data, seed=None):
     return best_max_features
 
 
+def _predict_with_tree_std(
+    model: RandomForestRegressor, X: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    tree_preds = np.stack([tree.predict(X) for tree in model.estimators_], axis=0)
+    return tree_preds.mean(axis=0), tree_preds.std(axis=0, ddof=1)
+
+
 def run_split(split_id):
     print(f"\n=== split {split_id} ===")
     df = load_benchmark_split(split_id=split_id)
@@ -106,11 +114,41 @@ def run_split(split_id):
             )
             model.fit(X[data["train_idx"]], y[data["train_idx"]])
             col = f"pIC50_{target}"
+            val_idx = data["val_idx"]
+            pred_val, std_val = _predict_with_tree_std(model, X[val_idx])
+            conformal = fit_conformal(
+                pred_val[:, None],
+                std_val[:, None],
+                y[val_idx, None],
+                np.ones((len(val_idx), 1), dtype=bool),
+                n_samples=N_ESTIMATORS,
+                columns=(col,),
+            )
             for split, idx_key in (("val", "val_idx"), ("test", "test_idx")):
                 mask = data["split_masks"][split]
+                idx = data[idx_key]
+                pred_sub, std_sub = (
+                    (pred_val, std_val)
+                    if split == "val"
+                    else _predict_with_tree_std(model, X[idx])
+                )
+                bounds = conformal.intervals(pred_sub[:, None], std_sub[:, None])
+
                 scores = np.full(len(mask), np.nan, dtype=float)
-                scores[mask] = model.predict(X[data[idx_key]])
+                sigma = np.full(len(mask), np.nan, dtype=float)
+                scores[mask] = pred_sub
+                sigma[mask] = std_sub
                 predictions[split][col] = scores
+                predictions[split][f"{col}_sigma"] = sigma
+                for cov in DEFAULT_COVERAGES:
+                    pct = round(cov * 100)
+                    lo_sub, hi_sub = bounds[cov]
+                    lo = np.full(len(mask), np.nan, dtype=float)
+                    hi = np.full(len(mask), np.nan, dtype=float)
+                    lo[mask] = lo_sub[:, 0]
+                    hi[mask] = hi_sub[:, 0]
+                    predictions[split][f"{col}_lo{pct}"] = lo
+                    predictions[split][f"{col}_hi{pct}"] = hi
         return predictions
 
     params = {"max_features": selected, "n_estimators": N_ESTIMATORS}
