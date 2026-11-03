@@ -92,6 +92,12 @@ def _predict_with_tree_std(
     return tree_preds.mean(axis=0), tree_preds.std(axis=0, ddof=1)
 
 
+def _pad(mask: np.ndarray, values: np.ndarray) -> np.ndarray:
+    out = np.full(len(mask), np.nan, dtype=float)
+    out[mask] = values
+    return out
+
+
 def run_split(split_id):
     print(f"\n=== split {split_id} ===")
     df = load_benchmark_split(split_id=split_id)
@@ -134,21 +140,13 @@ def run_split(split_id):
                 )
                 bounds = conformal.intervals(pred_sub[:, None], std_sub[:, None])
 
-                scores = np.full(len(mask), np.nan, dtype=float)
-                sigma = np.full(len(mask), np.nan, dtype=float)
-                scores[mask] = pred_sub
-                sigma[mask] = std_sub
-                predictions[split][col] = scores
-                predictions[split][f"{col}_sigma"] = sigma
+                predictions[split][col] = _pad(mask, pred_sub)
+                predictions[split][f"{col}_sigma"] = _pad(mask, std_sub)
                 for cov in DEFAULT_COVERAGES:
                     pct = round(cov * 100)
                     lo_sub, hi_sub = bounds[cov]
-                    lo = np.full(len(mask), np.nan, dtype=float)
-                    hi = np.full(len(mask), np.nan, dtype=float)
-                    lo[mask] = lo_sub[:, 0]
-                    hi[mask] = hi_sub[:, 0]
-                    predictions[split][f"{col}_lo{pct}"] = lo
-                    predictions[split][f"{col}_hi{pct}"] = hi
+                    predictions[split][f"{col}_lo{pct}"] = _pad(mask, lo_sub[:, 0])
+                    predictions[split][f"{col}_hi{pct}"] = _pad(mask, hi_sub[:, 0])
         return predictions
 
     params = {"max_features": selected, "n_estimators": N_ESTIMATORS}

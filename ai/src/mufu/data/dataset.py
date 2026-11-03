@@ -31,7 +31,7 @@ from mufu.contract import (
     MuFuBatch,
 )
 from pipeline.preprocess import featurize_many
-from pipeline.split import SPLITS, _scaffold_groups, _source_flags, murcko_scaffold
+from pipeline.split import SPLITS, scaffold_half_mask
 
 LABELS = {
     "y_pic50": PIC50_COLUMNS,
@@ -80,6 +80,17 @@ class MuFuDataset(Dataset):
             **{key: value[i] for key, value in {**self.labels, **self.masks}.items()},
         }
 
+    def subset(self, mask: np.ndarray) -> "MuFuDataset":
+        idx = np.flatnonzero(mask)
+        sub = copy.copy(self)
+        sub.smiles = [self.smiles[i] for i in idx]
+        sub.fingerprints = self.fingerprints[idx]
+        sub.graphs = [self.graphs[i] for i in idx]
+        sub.labels = {k: v[idx] for k, v in self.labels.items()}
+        sub.masks = {k: v[idx] for k, v in self.masks.items()}
+        sub.sources = self.sources.iloc[idx].reset_index(drop=True)
+        return sub
+
 
 def collate(examples: list[dict]) -> MuFuBatch:
     batch = {
@@ -108,41 +119,13 @@ def to_device(
     return moved
 
 
-def _split_val_by_scaffold(val_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Partition `val` 50/50 by Bemis-Murcko scaffold into `(val_select, val_calib)`."""
-    if len(val_df) < 2:
-        return val_df, val_df
-    scaffolds = (
-        val_df["scaffold"].fillna("").tolist()
-        if "scaffold" in val_df.columns
-        else [murcko_scaffold(s) for s in val_df["smiles"]]
-    )
-    groups = _scaffold_groups(val_df["smiles"].tolist(), scaffolds)
-    if len(groups) < 2:
-        return val_df, val_df
-    flags = _source_flags(val_df)
-    member = (
-        val_df[flags].fillna(False).to_numpy(bool)
-        if flags
-        else np.ones((len(val_df), 1), dtype=bool)
-    )
-    budget = 0.5 * member.sum(axis=0)
-    counts = np.zeros(member.shape[1])
-    in_select = np.zeros(len(val_df), dtype=bool)
-    for group in groups:
-        group_counts = member[group].sum(axis=0)
-        if np.all(counts + group_counts <= budget):
-            counts += group_counts
-            in_select[group] = True
-    if not in_select.any() or in_select.all():
-        in_select[:] = False
-        in_select[groups[0]] = True
-    return val_df.iloc[in_select], val_df.iloc[~in_select]
-
-
 def split_datasets(df: pd.DataFrame) -> dict[str, MuFuDataset]:
     datasets = {name: MuFuDataset(df[df["split"] == name]) for name in SPLITS}
-    val_select_df, val_calib_df = _split_val_by_scaffold(df[df["split"] == "val"])
-    datasets["val_select"] = MuFuDataset(val_select_df)
-    datasets["val_calib"] = MuFuDataset(val_calib_df)
+    val = datasets["val"]
+    in_select = scaffold_half_mask(val.smiles, val.sources)
+    if in_select.all():
+        datasets["val_select"] = datasets["val_calib"] = val
+    else:
+        datasets["val_select"] = val.subset(in_select)
+        datasets["val_calib"] = val.subset(~in_select)
     return datasets

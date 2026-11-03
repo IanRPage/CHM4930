@@ -164,9 +164,7 @@ def predict_mufu_splits(
                 intervals = predict_with_intervals(
                     model, datasets[split_name], conformal, batch_size=batch_size
                 )
-            for key, val in intervals.items():
-                if key not in target_preds:
-                    target_preds[key] = val
+            target_preds.update(intervals)
     return {"val": val_preds, "test": test_preds}
 
 

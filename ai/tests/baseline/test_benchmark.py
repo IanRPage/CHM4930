@@ -197,6 +197,17 @@ def test_evaluate_rejects_wrong_length_split_or_unknown_column(split_df):
             split_df, {"val": {"pIC50_BACE1": [5.0, 7.0]}}
         )
 
+    with pytest.raises(ValueError, match="mismatched interval bounds"):
+        benchmark.evaluate_split_predictions(
+            split_df,
+            {
+                "val": {
+                    "pIC50_BACE1": [5.0, 7.0, np.nan],
+                    "pIC50_BACE1_lo90": [4.0, 6.0, np.nan],
+                }
+            },
+        )
+
 
 def test_bootstrap_ci_is_test_only_brackets_value_and_repeats_with_seed():
     rng = np.random.default_rng(0)

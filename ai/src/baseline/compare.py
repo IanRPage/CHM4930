@@ -75,7 +75,7 @@ _FORK_METRICS: tuple[str, ...] = ()
 def _paired_values(
     tables_pair, idx: np.ndarray, endpoint: str, metrics: Sequence[str]
 ) -> np.ndarray:
-    rows = benchmark._score(*tables_pair, idx)
+    rows = benchmark.score_tables(*tables_pair, idx)
     found = {r["metric"]: r["value"] for r in rows if r["endpoint"] == endpoint}
     return np.array([found[m] for m in metrics], dtype=float)
 
@@ -130,7 +130,7 @@ def paired_bootstrap(
                 f"{label} seed {seed}: SMILES do not match the {split} split"
             )
         scores = {c: preds[c].to_numpy() for c in columns}
-        return benchmark._split_tables(split_df, scores, split)
+        return benchmark.split_tables(split_df, scores, split)
 
     _FORK_PAIRS = [(tables(run_a, name_a, s), tables(run_b, name_b, s)) for s in seeds]
     _FORK_ENDPOINT = endpoint
@@ -139,7 +139,7 @@ def paired_bootstrap(
     n = len(split_df)
     rng = np.random.default_rng(boot_seed)
     sels = [rng.integers(0, n, n) for _ in range(n_boot)]
-    boots = benchmark._fork_boot_chunks(_paired_boot_chunk, sels)
+    boots = benchmark.fork_boot_chunks(_paired_boot_chunk, sels)
     point = _paired_boot_chunk([np.arange(n)])[0]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)

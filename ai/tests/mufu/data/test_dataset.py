@@ -85,7 +85,7 @@ def test_split_datasets_sizes():
         "val_calib": 1,
     }
 
-    df_multi = make_df().iloc[:4].assign(split=["train", "val", "val", "test"])
+    df_multi = make_df().assign(split=["train", "val", "val", "test", "val"])
     sets_multi = split_datasets(df_multi)
     assert len(sets_multi["val_select"]) == 1
     assert len(sets_multi["val_calib"]) == 1
