@@ -129,7 +129,7 @@ SPLIT_SUMMARY_COLUMNS = [
     "n_seeds",
     "data_sha256",
 ]
-LOWER_IS_BETTER = frozenset({"rmse"})
+LOWER_IS_BETTER = frozenset({"rmse", "ece", "ece_uncal", "width_90", "width_95"})
 
 
 @dataclass(frozen=True)

@@ -131,7 +131,7 @@ def test_main_keeps_shared_split_masks_and_fingerprints_aligned(
     run_dir = env_paths / "rf_toxicity_default"
     split_df = split_full_table(combined)
     rows = benchmark.score_run_predictions(run_dir, split_df, include_test=True)
-    assert len(rows) == 24 * len(TEST_SEEDS)
+    assert len(rows) == 34 * len(TEST_SEEDS)
     assert (rows["encoder"] == "ecfp4-2048").all()
     prevalence = rows[rows["metric"] == "prevalence"].set_index(
         ["endpoint", "split", "seed"]

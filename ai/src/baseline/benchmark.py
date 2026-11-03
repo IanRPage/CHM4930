@@ -38,7 +38,11 @@ from baseline.results import (
     summarize_seeds,
     write_results,
 )
-from evaluation import evaluation_metrics
+from evaluation import (
+    evaluation_metrics,
+    expected_calibration_error,
+    interval_metrics,
+)
 from pipeline.combined_loader import (
     COMBINED_CSV_PATH,
     TARGETS,
@@ -66,11 +70,23 @@ TOX_DATASET_BY_TASK = {
     task: dataset for dataset, config in DATASETS.items() for task in config["tasks"]
 }
 _INTERVAL_COL_RE = re.compile(r"^(.+)_(sigma|lo\d+|hi\d+)$")
+_LO_COL_RE = re.compile(r"^(.+)_lo(\d+)$")
 
 
 def _is_auxiliary_interval_col(col: str) -> bool:
     m = _INTERVAL_COL_RE.match(col)
     return bool(m and m.group(1) in VALID_PREDICTION_COLS)
+
+
+def _is_auxiliary_uncal_col(col: str) -> bool:
+    return col.endswith("_uncal") and col.removesuffix("_uncal") in (
+        *BIO_ACTIVE_COLS,
+        *TOX_TASKS,
+    )
+
+
+def _is_auxiliary_col(col: str) -> bool:
+    return _is_auxiliary_interval_col(col) or _is_auxiliary_uncal_col(col)
 
 
 def seed_everything(seed: int) -> torch.Generator:
@@ -130,6 +146,24 @@ def _validated_scores(
     return arr
 
 
+def _validated_interval_bounds(
+    bounds,
+    expected_len: int,
+    labeled_mask: np.ndarray,
+    split: str,
+    column: str,
+) -> np.ndarray:
+    arr = np.asarray(bounds, dtype=float)
+    if arr.shape != (expected_len,):
+        raise ValueError(
+            f"{split}/{column}: expected 1D array of length {expected_len}, "
+            f"got shape {arr.shape}"
+        )
+    if np.isnan(arr[labeled_mask]).any():
+        raise ValueError(f"{split}/{column}: NaN interval bound on labeled row(s)")
+    return arr
+
+
 def _split_tables(split_df: pd.DataFrame, split_preds: Mapping, split: str):
     """
     Validated labels and scores per predicted endpoint, row-aligned with `split_df`.
@@ -148,12 +182,38 @@ def _split_tables(split_df: pd.DataFrame, split_preds: Mapping, split: str):
             "y_reg": split_df[pic50_col].to_numpy(dtype=float),
             "y_cls": split_df[active_col].to_numpy(dtype=float),
             "scores": {},
+            "intervals": {},
+            "uncal": {},
         }
         for col in (pic50_col, active_col):
             if col in split_preds:
                 entry["scores"][col] = _validated_scores(
                     split_preds[col], n_rows, labeled, split, col
                 )
+        if pic50_col in split_preds:
+            pcts = sorted(
+                int(m.group(2))
+                for k in split_preds
+                if (m := _LO_COL_RE.match(k))
+                and m.group(1) == pic50_col
+                and f"{pic50_col}_hi{m.group(2)}" in split_preds
+            )
+            for pct in pcts:
+                lo_col = f"{pic50_col}_lo{pct}"
+                hi_col = f"{pic50_col}_hi{pct}"
+                entry["intervals"][pct] = (
+                    _validated_interval_bounds(
+                        split_preds[lo_col], n_rows, labeled, split, lo_col
+                    ),
+                    _validated_interval_bounds(
+                        split_preds[hi_col], n_rows, labeled, split, hi_col
+                    ),
+                )
+        if active_col in split_preds and f"{active_col}_uncal" in split_preds:
+            uncal_col = f"{active_col}_uncal"
+            entry["uncal"][active_col] = _validated_scores(
+                split_preds[uncal_col], n_rows, labeled, split, uncal_col
+            )
         bio.append(entry)
 
     tox = None
@@ -161,6 +221,8 @@ def _split_tables(split_df: pd.DataFrame, split_preds: Mapping, split: str):
         observed = split_df[TOX_TASKS].notna().to_numpy()
         scores = np.zeros((n_rows, len(TOX_TASKS)), dtype=float)
         trained = np.zeros(len(TOX_TASKS), dtype=bool)
+        uncal_scores = np.zeros((n_rows, len(TOX_TASKS)), dtype=float)
+        has_uncal = np.zeros(len(TOX_TASKS), dtype=bool)
         for j, task in enumerate(TOX_TASKS):
             if task not in split_preds:
                 continue
@@ -169,11 +231,19 @@ def _split_tables(split_df: pd.DataFrame, split_preds: Mapping, split: str):
                 split_preds[task], n_rows, obs, split, task
             )[obs]
             trained[j] = True
+            uncal_col = f"{task}_uncal"
+            if uncal_col in split_preds:
+                uncal_scores[obs, j] = _validated_scores(
+                    split_preds[uncal_col], n_rows, obs, split, uncal_col
+                )[obs]
+                has_uncal[j] = True
         tox = {
             "y": split_df[TOX_TASKS].to_numpy(dtype=float),
             "mask": observed & trained,
             "scores": scores,
             "trained": trained,
+            "uncal_scores": uncal_scores,
+            "has_uncal": has_uncal,
         }
     return bio, tox
 
@@ -203,7 +273,19 @@ def _score(bio: list[dict], tox: dict | None, sel: np.ndarray) -> list[dict]:
             metrics = {}
             if col.startswith("pIC50_"):
                 metrics |= evaluation_metrics(y_reg, scores, task_type="regression")
+                for pct, (lo_arr, hi_arr) in entry["intervals"].items():
+                    iv = interval_metrics(
+                        y_reg, lo_arr[sel][labeled], hi_arr[sel][labeled]
+                    )
+                    metrics[f"coverage_{pct}"] = iv["coverage"]
+                    metrics[f"width_{pct}"] = iv["width"]
             metrics |= evaluation_metrics(y_cls, scores, task_type="classification")
+            if col.startswith("active_"):
+                metrics["ece"] = expected_calibration_error(scores, y_cls)
+                if col in entry["uncal"]:
+                    metrics["ece_uncal"] = expected_calibration_error(
+                        entry["uncal"][col][sel][labeled], y_cls
+                    )
             metrics["prevalence"] = prevalence
             for metric, value in metrics.items():
                 add(target.lower(), col, metric, value, **counts)
@@ -215,6 +297,33 @@ def _score(bio: list[dict], tox: dict | None, sel: np.ndarray) -> list[dict]:
         )
         roc = np.asarray(overall["per_task_roc_auc"])
         pr = np.asarray(overall["per_task_pr_auc"])
+        ece = np.array(
+            [
+                expected_calibration_error(
+                    tox["scores"][sel][mask[:, j], j], y[mask[:, j], j]
+                )
+                if trained[j] and mask[:, j].any()
+                else float("nan")
+                for j in range(len(TOX_TASKS))
+            ],
+            dtype=float,
+        )
+        has_uncal = tox["has_uncal"]
+        ece_uncal = (
+            np.array(
+                [
+                    expected_calibration_error(
+                        tox["uncal_scores"][sel][mask[:, j], j], y[mask[:, j], j]
+                    )
+                    if has_uncal[j] and mask[:, j].any()
+                    else float("nan")
+                    for j in range(len(TOX_TASKS))
+                ],
+                dtype=float,
+            )
+            if has_uncal.any()
+            else None
+        )
         groups = {
             "overall": list(range(len(TOX_TASKS))),
             **{
@@ -231,7 +340,10 @@ def _score(bio: list[dict], tox: dict | None, sel: np.ndarray) -> list[dict]:
                 "n_tasks": len(kept),
                 "dropped_tasks": dropped,
             }
-            for metric, per_task in (("roc_auc", roc), ("pr_auc", pr)):
+            macro_pairs = [("roc_auc", roc), ("pr_auc", pr), ("ece", ece)]
+            if ece_uncal is not None and any(has_uncal[j] for j in cols):
+                macro_pairs.append(("ece_uncal", ece_uncal))
+            for metric, per_task in macro_pairs:
                 value = float(np.mean(per_task[kept])) if kept else float("nan")
                 add(group, f"macro_{group}", metric, value, **extra)
 
@@ -245,6 +357,9 @@ def _score(bio: list[dict], tox: dict | None, sel: np.ndarray) -> list[dict]:
             dataset = TOX_DATASET_BY_TASK[task]
             add(dataset, task, "roc_auc", roc[j], **counts)
             add(dataset, task, "pr_auc", pr[j], **counts)
+            add(dataset, task, "ece", ece[j], **counts)
+            if ece_uncal is not None and has_uncal[j]:
+                add(dataset, task, "ece_uncal", ece_uncal[j], **counts)
             prevalence = n_positive / n_labeled if n_labeled else float("nan")
             add(dataset, task, "prevalence", prevalence, **counts)
 
@@ -312,7 +427,7 @@ def evaluate_split_predictions(
             for c in split_preds
             if c not in VALID_PREDICTION_COLS
             and c != "smiles"
-            and not _is_auxiliary_interval_col(c)
+            and not _is_auxiliary_col(c)
         }
         if unknown:
             raise ValueError(f"{split}: unknown prediction column(s) {sorted(unknown)}")
@@ -389,7 +504,7 @@ def load_split_predictions(path: Path) -> dict[str, np.ndarray | list[str]]:
         **{
             c: df_pred[c].to_numpy(dtype=float)
             for c in df_pred.columns
-            if c in VALID_PREDICTION_COLS
+            if c in VALID_PREDICTION_COLS or _is_auxiliary_col(c)
         },
     }
 
