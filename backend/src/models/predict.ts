@@ -18,11 +18,17 @@ export const SR_TASKS = [
   "SR-MMP",
   "SR-p53",
 ] as const;
+export const APPLICABILITY_DOMAINS = [
+  "in_domain",
+  "borderline",
+  "out_of_domain",
+] as const;
 export const SMILES_MAX_LENGTH = 1000;
 
 export type Target = (typeof TARGETS)[number];
 export type NrTask = (typeof NR_TASKS)[number];
 export type SrTask = (typeof SR_TASKS)[number];
+export type ApplicabilityDomain = (typeof APPLICABILITY_DOMAINS)[number];
 
 export interface PredictRequest {
   smiles: string;
@@ -52,6 +58,8 @@ export interface TargetBioactivity {
 
 export interface PredictResponse {
   smiles: string;
+  nearestTrainTanimoto: number;
+  applicabilityDomain: ApplicabilityDomain;
   bioactivity: Record<Target, TargetBioactivity>;
   toxicity: {
     nuclearReceptor: Record<NrTask, Output>;
