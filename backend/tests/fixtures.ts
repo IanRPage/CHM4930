@@ -9,6 +9,8 @@ export function rawResponse() {
     model_version: "mufu-test",
     n_samples: 50,
     coverage: 0.95,
+    nearest_train_tanimoto: 0.75,
+    applicability_domain: "in_domain",
     bioactivity: {
       BACE1: { pic50: 5, pic50_lo: 4, pic50_hi: 6, p_active: 0.2 },
       EGFR: { pic50: 7, pic50_lo: 6.5, pic50_hi: 8, p_active: 0.9 },
