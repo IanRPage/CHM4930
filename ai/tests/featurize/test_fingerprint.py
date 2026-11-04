@@ -3,7 +3,7 @@ import pytest
 from rdkit import Chem, DataStructs
 from rdkit.Chem import rdMolDescriptors
 
-from featurize.fingerprint import mol_to_ecfp4
+from featurize.fingerprint import max_tanimoto, mol_to_ecfp4, pack_fingerprints
 
 
 # helper for getting the fingerprint of a molecule
@@ -66,3 +66,14 @@ def test_matches_radius_2_morgan_reference():
         rdMolDescriptors.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048), reference
     )
     assert np.array_equal(mol_to_ecfp4(mol), reference)
+
+
+def test_packed_max_tanimoto_matches_exact_tanimoto():
+    train = np.stack([fp_of(s) for s in ("CCO", "CCCO", "c1ccccc1")])
+    packed = pack_fingerprints(train)
+    query = fp_of("CCCCO")
+
+    inter = (train & query).sum(axis=1)
+    expected = float((inter / (train.sum(axis=1) + query.sum() - inter)).max())
+    assert max_tanimoto(query, packed) == pytest.approx(expected)
+    assert max_tanimoto(fp_of("CCO"), packed) == 1.0

@@ -91,6 +91,7 @@ def ensemble_dir(labeled_dataset, encoder, tmp_path_factory):
         params = ensemble.fit_ensemble_conformal(
             ensemble.load_members(paths, encoder),
             labeled_dataset,
+            labeled_dataset.fingerprints,
             n_samples=4,
             coverages=(0.9, 0.95),
             batch_size=4,
