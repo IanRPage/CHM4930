@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from mufu.hub import download_version, populate_run_from_download
 
 repo_id = "CHM4930/mufu"
-tag = "v1.0.0"
+tag = "v1.0.1"
 dest = Path.home() / ".local" / "share" / "mufu" / tag
 populate_run_dir = True
 
