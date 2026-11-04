@@ -159,7 +159,8 @@ curl -s localhost:8000/predict -H "X-API-Key: $MUFU_API_KEY" \
 ```
 
 - **API keys:** `PYTHONPATH=src python -m mufu_server.keys add <name>` prints a key once
-  and appends its hash to `MUFU_API_KEYS_FILE`.
+  and saves its hash (`~/.config/mufu/api_keys` or `--file <path>`); point
+  `MUFU_API_KEYS_FILE` at that file.
 - **Settings:** `MUFU_HOST`, `MUFU_PORT`, `MUFU_DEVICE`, rate limit, timeout, and
   `MUFU_HF_REPO` are configured in `src/mufu_server/config.py`. Startup fails loudly if
   any checkpoint or fingerprint sidecar is missing or mismatched.
