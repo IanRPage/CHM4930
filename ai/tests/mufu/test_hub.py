@@ -250,6 +250,9 @@ def test_upload_includes_run_json_predictions_and_tags_once(tmp_path):
     }
     assert deleted == {"m_seed_3.pt"}
     assert api.tags == ["v1.0.0"]
+    assert hub.next_tag(api, "org/m", "patch") == "v1.0.1"
+    assert hub.next_tag(api, "org/m", "minor") == "v1.1.0"
+    assert hub.next_tag(api, "org/m", "major") == "v2.0.0"
 
     (ckpt_dir / "version.json").write_bytes(added["version.json"].path_or_fileobj)
     assert hub.load_tagged_version(ckpt_dir, "v1.0.0", "m", SEEDS) == version

@@ -47,6 +47,7 @@ SMILES_ENCODER = "ibm-research/MoLFormer-XL-both-10pct"
 CODE_URL = "https://github.com/IanRPage/CHM4930"
 VERSION_FILE = "version.json"
 TAG_PATTERN = re.compile(r"v\d+\.\d+\.\d+")
+BUMP_PARTS = ("major", "minor", "patch")
 
 # (dataset, endpoint, metric, label), all on the test split
 CARD_METRICS = (
@@ -384,6 +385,22 @@ Predict with `mufu.ensemble.predict_with_ensemble_intervals`, or serve it with
 single seed, use `mufu.experiment.load_mufu_checkpoint`.
 """
     return ModelCard(f"---\n{data.to_yaml()}\n---\n{body}")
+
+
+def next_tag(api: HfApi, repo_id: str, part: str) -> str:
+    if part not in BUMP_PARTS:
+        raise ValueError(f"part must be one of {BUMP_PARTS}, got {part!r}")
+    versions = [
+        tuple(int(x) for x in ref.name[1:].split("."))
+        for ref in api.list_repo_refs(repo_id).tags
+        if TAG_PATTERN.fullmatch(ref.name)
+    ]
+    major, minor, patch = max(versions, default=(0, 0, 0))
+    if part == "major":
+        return f"v{major + 1}.0.0"
+    if part == "minor":
+        return f"v{major}.{minor + 1}.0"
+    return f"v{major}.{minor}.{patch + 1}"
 
 
 def upload_version(
