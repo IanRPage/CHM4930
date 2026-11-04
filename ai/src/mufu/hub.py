@@ -34,7 +34,12 @@ from baseline.results import (
     summarize_seeds,
     verify_code_identity,
 )
-from mufu.ensemble import load_ensemble_params, member_paths, sidecar_path
+from mufu.ensemble import (
+    load_ensemble_params,
+    member_paths,
+    sidecar_path,
+    train_fps_path,
+)
 from mufu.mc_dropout import load_conformal
 from mufu.mc_dropout import sidecar_path as conformal_path
 
@@ -224,7 +229,8 @@ def load_version(
         )
 
     ensemble = sidecar_path(checkpoint_dir, model_name)
-    files = (*paths, *(conformal_path(p) for p in paths), ensemble)
+    train_fps = train_fps_path(checkpoint_dir, model_name)
+    files = (*paths, *(conformal_path(p) for p in paths), ensemble, train_fps)
     return Version(
         model_name=model_name,
         base_commit=str(base_commit),

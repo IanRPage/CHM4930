@@ -178,7 +178,7 @@ probabilities; `GET /health` reports `loading` or `ready`. The contract is in
 [`backend/docs/predict-api.md`](../backend/docs/predict-api.md).
 
 ```sh
-export MUFU_CHECKPOINT_DIR=runs/mufu_v1.0.0_default/checkpoints   # 5 seeds + mufu_ensemble.json
+export MUFU_CHECKPOINT_DIR=runs/mufu_v1.0.0_default/checkpoints   # 5 seeds + mufu_ensemble.json + mufu_train_fps.npy
 export MUFU_API_KEY="$(openssl rand -hex 32)"
 PYTHONPATH=src python -m mufu_server
 

@@ -16,6 +16,7 @@ COMMIT = "a" * 40
 TREE = "b" * 40
 DATA = "d" * 64
 CONFORMAL = ConformalParams((0.9,), np.ones((2, 1)), np.zeros(2), 2, (0.1,))
+TRAIN_FPS = np.zeros((2, 256), dtype=np.uint8)
 
 
 def write_run(directory, overrides=({}, {}, {}), *, legacy=False):
@@ -42,7 +43,7 @@ def write_run(directory, overrides=({}, {}, {}), *, legacy=False):
         save_conformal(CONFORMAL, path)
         paths.append(path)
     members = tuple((p.name, file_sha256(p)) for p in paths)
-    save_ensemble(EnsembleParams(CONFORMAL, members), directory, "m")
+    save_ensemble(EnsembleParams(CONFORMAL, members, TRAIN_FPS), directory, "m")
 
 
 def test_load_version_supports_new_and_legacy_checkpoints(tmp_path):
@@ -53,7 +54,7 @@ def test_load_version_supports_new_and_legacy_checkpoints(tmp_path):
     assert sorted(p.name for p in version.files) == sorted(
         [f"m_seed_{s}.pt" for s in SEEDS]
         + [f"m_seed_{s}_mc_dropout.json" for s in SEEDS]
-        + ["m_ensemble.json"]
+        + ["m_ensemble.json", "m_train_fps.npy"]
     )
 
     legacy_dir = tmp_path / "legacy"
@@ -64,6 +65,10 @@ def test_load_version_supports_new_and_legacy_checkpoints(tmp_path):
     )
     legacy_ver = hub.load_tagged_version(legacy_dir, "v1.0.0", "m", SEEDS)
     assert legacy_ver.base_commit == COMMIT[:7]
+
+    (legacy_dir / "m_train_fps.npy").unlink()
+    with pytest.raises(FileNotFoundError, match="m_train_fps.npy"):
+        hub.load_tagged_version(legacy_dir, "v1.0.0", "m", SEEDS)
 
 
 def stale_ensemble(directory):

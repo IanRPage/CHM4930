@@ -22,10 +22,12 @@ from baseline.benchmark import (
 )
 from baseline.results import DEFAULT_SPLIT_ID, load_results, summarize_seeds
 from encoders.smiles_encoder import SmilesEncoder
+from featurize.fingerprint import pack_fingerprints
 from mufu.data.dataset import split_datasets
 from mufu.ensemble import (
+    EnsembleParams,
     fit_ensemble_conformal,
-    load_ensemble_params,
+    load_ensemble_conformal,
     load_members,
     member_paths,
     predict_with_ensemble_intervals,
@@ -103,8 +105,12 @@ def fit_and_report(
             f"refit would invalidate write-once {ens_preds_path}; "
             "set overwrite_predictions = True or use a new run"
         )
+    train_fps = datasets["train"].fingerprints
     if ens_file.exists() and not refit:
-        params = load_ensemble_params(paths, checkpoint_dir, model_name)
+        conformal, saved, _ = load_ensemble_conformal(paths, checkpoint_dir, model_name)
+        params = EnsembleParams(
+            conformal, saved, train_fps=pack_fingerprints(train_fps)
+        )
         print(
             f"loaded existing {ens_file.name}: q={params.conformal.q.round(3).tolist()}",
             flush=True,
@@ -113,6 +119,7 @@ def fit_and_report(
         params = fit_ensemble_conformal(
             members,
             datasets.get("val_calib", datasets["val"]),
+            train_fps,
             n_samples=n_samples,
             coverages=coverages,
             batch_size=batch_size,
@@ -120,8 +127,8 @@ def fit_and_report(
         assert np.isfinite(params.conformal.q).all(), (
             f"non-finite conformal quantiles: {params.conformal.q}"
         )
-        save_ensemble(params, checkpoint_dir, model_name)
         print(f"ensemble q={params.conformal.q.round(3).tolist()}", flush=True)
+    save_ensemble(params, checkpoint_dir, model_name)
 
     test_preds = predict_with_ensemble_intervals(
         members, datasets["test"], params, batch_size=batch_size
