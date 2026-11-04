@@ -41,5 +41,17 @@ describe("PredictionResults", () => {
     expect(
       screen.queryByText("Not returned by the model"),
     ).not.toBeInTheDocument();
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+
+  it("warns when the molecule is outside the training domain", () => {
+    const result = predictResponse();
+    result.applicabilityDomain = "out_of_domain";
+    result.nearestTrainTanimoto = 0.31;
+    render(<PredictionResults result={result} />);
+
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "Tanimoto similarity = 0.31: predictions are extrapolations and may be unreliable.",
+    );
   });
 });

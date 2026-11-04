@@ -1,4 +1,5 @@
 import type {
+  ApplicabilityDomain,
   Estimate,
   Output,
   PredictResponse,
@@ -83,6 +84,8 @@ export function parsePredictResponse(body: unknown): PredictResponse {
   const metadata = record(body.metadata);
   return {
     smiles: typeof body.smiles === "string" ? body.smiles : null,
+    nearestTrainTanimoto: body.nearestTrainTanimoto as number,
+    applicabilityDomain: body.applicabilityDomain as ApplicabilityDomain,
     bioactivity: fromKeys(TARGETS, (t) => parseBioactivity(bioactivity[t])),
     toxicity: {
       nuclearReceptor: fromKeys(NR_TASKS, (t) => parseValue(nr[t])),
