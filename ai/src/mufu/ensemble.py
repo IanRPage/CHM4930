@@ -16,6 +16,7 @@ interval is `mu +/- q * max(sigma, floor)` with `q` and the floor fitted on val.
 saved as `<model_name>_ensemble.json` next to checkpoints with each member's sha256.
 """
 
+import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -221,7 +222,7 @@ def save_ensemble(
         "conformal": json.loads(params.conformal.to_json()),
         "train_fps": {
             "file": fps_file.name,
-            "sha256": file_sha256(fps_file),
+            "sha256": hashlib.sha256(fps_file.read_bytes()).hexdigest(),
             "radius": FINGERPRINT_RADIUS,
             "n_bits": FINGERPRINT_BITS,
         },
@@ -251,7 +252,7 @@ def load_ensemble_params(
         raise FileNotFoundError(f"missing train fingerprints: {fps_file.name}")
     expected = {
         "file": fps_file.name,
-        "sha256": file_sha256(fps_file),
+        "sha256": hashlib.sha256(fps_file.read_bytes()).hexdigest(),
         "radius": FINGERPRINT_RADIUS,
         "n_bits": FINGERPRINT_BITS,
     }
