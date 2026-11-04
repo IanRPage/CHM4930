@@ -18,7 +18,9 @@ since parsing needs RDKit.
 
 ```jsonc
 {
-  "smiles": "CC(=O)Oc1ccccc1C(=O)O", // as returned by the inference server
+  "smiles": "CC(=O)Oc1ccccc1C(=O)O",
+  "nearestTrainTanimoto": 0.72,
+  "applicabilityDomain": "in_domain",
   "bioactivity": {
     "BACE1": {
       "pic50": { "value": 4.9, "lo": 3.8, "hi": 6.0 },
@@ -44,16 +46,18 @@ since parsing needs RDKit.
 }
 ```
 
-| Field                      | Meaning                                                                                                                 |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `bioactivity.<target>`     | `BACE1`, `EGFR`                                                                                                         |
-| `pic50`                    | Point estimate from the eval-mode model. `lo`/`hi` is the conformal MC-Dropout interval at `ciCoverage` (SCRUM-62)      |
-| `ic50Nm`                   | $10^{9 - \text{pIC50}}$ nM. Bounds come from the pIC50 bounds, swapped: higher pIC50 means lower IC50                   |
-| `pActive`                  | P(pIC50 ≥ 6.0)                                                                                                          |
-| `toxicity.nuclearReceptor` | Tox21 `NR-AR`, `NR-AR-LBD`, `NR-AhR`, `NR-Aromatase`, `NR-ER`, `NR-ER-LBD`, `NR-PPAR-gamma`                             |
-| `toxicity.stressResponse`  | Tox21 `SR-ARE`, `SR-ATAD5`, `SR-HSE`, `SR-MMP`, `SR-p53`                                                                |
-| `fdaApproved`              | ClinTox `FDA_APPROVED` probability. `CT_TOX` isn't exposed: on the training data it's almost exactly `1 - FDA_APPROVED` |
-| `metadata`                 | Model version, MC-Dropout passes behind the interval, interval coverage                                                 |
+| Field                      | Meaning                                                                                                                                                                                                                                                     |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nearestTrainTanimoto`     | Nearest-neighbour 2048-bit ECFP4 Tanimoto similarity in [0, 1] to the training set (SCRUM-113)                                                                                                                                                              |
+| `applicabilityDomain`      | `in_domain` (≥ 0.6), `borderline` ([0.4, 0.6)), or `out_of_domain` (< 0.4), cut where benchmark error degrades overall in `ai/data/baseline/results_by_similarity.csv` (SCRUM-110; not strictly monotonic—the `[0.0, 0.3)` bucket has few labels and noise) |
+| `bioactivity.<target>`     | `BACE1`, `EGFR`                                                                                                                                                                                                                                             |
+| `pic50`                    | Point estimate from the eval-mode model. `lo`/`hi` is the conformal MC-Dropout interval at `ciCoverage` (SCRUM-62)                                                                                                                                          |
+| `ic50Nm`                   | $10^{9 - \text{pIC50}}$ nM. Bounds come from the pIC50 bounds, swapped: higher pIC50 means lower IC50                                                                                                                                                       |
+| `pActive`                  | P(pIC50 ≥ 6.0)                                                                                                                                                                                                                                              |
+| `toxicity.nuclearReceptor` | Tox21 `NR-AR`, `NR-AR-LBD`, `NR-AhR`, `NR-Aromatase`, `NR-ER`, `NR-ER-LBD`, `NR-PPAR-gamma`                                                                                                                                                                 |
+| `toxicity.stressResponse`  | Tox21 `SR-ARE`, `SR-ATAD5`, `SR-HSE`, `SR-MMP`, `SR-p53`                                                                                                                                                                                                    |
+| `fdaApproved`              | ClinTox `FDA_APPROVED` probability. `CT_TOX` isn't exposed: on the training data it's almost exactly `1 - FDA_APPROVED`                                                                                                                                     |
+| `metadata`                 | Model version, MC-Dropout passes behind the interval, interval coverage                                                                                                                                                                                     |
 
 Every output is either `{ "value": number, … }` or
 `{ "value": null, "reason": string }`. Check `value !== null` before reading
@@ -90,6 +94,8 @@ Requests that fail the checks above never reach the inference server and get a
   "model_version": "mufu-…",
   "n_samples": 50, // MC-Dropout passes, from the _mc_dropout.json sidecar
   "coverage": 0.95,
+  "nearest_train_tanimoto": 0.72,
+  "applicability_domain": "in_domain",
   "bioactivity": {
     "BACE1": {
       "pic50": 4.9,
@@ -113,8 +119,10 @@ Requests that fail the checks above never reach the inference server and get a
 - Any output can be `null`. `pic50_lo` and `pic50_hi` are `null` exactly when
   `pic50` is, and otherwise `pic50_lo <= pic50 <= pic50_hi`, with
   `pic50_lo` high enough that $10^{9 - \text{pic50\_lo}}$ is finite.
-- Probabilities are in [0, 1], `n_samples` is an integer ≥ 2, and `coverage`
-  is in (0, 1).
+- Probabilities and `nearest_train_tanimoto` are in [0, 1],
+  `applicability_domain` is `in_domain` (≥ 0.6), `borderline` ([0.4, 0.6)), or
+  `out_of_domain` (< 0.4) matching `nearest_train_tanimoto`, `n_samples` is an
+  integer ≥ 2, and `coverage` is in (0, 1).
 - An invalid SMILES gets a 422 with `{ "error": string }`.
 - Requests carry the shared key in an `X-API-Key` header. A missing or wrong
   key gets a 401.
