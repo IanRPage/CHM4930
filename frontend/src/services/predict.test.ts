@@ -165,6 +165,14 @@ describe("predict", () => {
   it.each([
     ["non-JSON", "not json"],
     ["non-object", [1, 2]],
+    [
+      "domain-less",
+      {
+        ...response(),
+        nearestTrainTanimoto: undefined,
+        applicabilityDomain: "far",
+      },
+    ],
   ])("rejects a %s success body", async (_name, body) => {
     reply(200, body);
     const err = await predictError(predict("CCO"));

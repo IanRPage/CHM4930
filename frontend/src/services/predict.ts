@@ -30,6 +30,16 @@ function isNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+const APPLICABILITY_DOMAINS: readonly unknown[] = [
+  "in_domain",
+  "borderline",
+  "out_of_domain",
+];
+
+function isApplicabilityDomain(value: unknown): value is ApplicabilityDomain {
+  return APPLICABILITY_DOMAINS.includes(value);
+}
+
 function record(raw: unknown): Json {
   return isRecord(raw) ? raw : {};
 }
@@ -77,6 +87,13 @@ function parseBioactivity(raw: unknown): TargetBioactivity {
 
 export function parsePredictResponse(body: unknown): PredictResponse {
   if (!isRecord(body)) throw new PredictError("invalid-response");
+  const { nearestTrainTanimoto, applicabilityDomain } = body;
+  if (
+    !isNumber(nearestTrainTanimoto) ||
+    !isApplicabilityDomain(applicabilityDomain)
+  ) {
+    throw new PredictError("invalid-response");
+  }
   const bioactivity = record(body.bioactivity);
   const toxicity = record(body.toxicity);
   const nr = record(toxicity.nuclearReceptor);
@@ -84,8 +101,8 @@ export function parsePredictResponse(body: unknown): PredictResponse {
   const metadata = record(body.metadata);
   return {
     smiles: typeof body.smiles === "string" ? body.smiles : null,
-    nearestTrainTanimoto: body.nearestTrainTanimoto as number,
-    applicabilityDomain: body.applicabilityDomain as ApplicabilityDomain,
+    nearestTrainTanimoto,
+    applicabilityDomain,
     bioactivity: fromKeys(TARGETS, (t) => parseBioactivity(bioactivity[t])),
     toxicity: {
       nuclearReceptor: fromKeys(NR_TASKS, (t) => parseValue(nr[t])),
