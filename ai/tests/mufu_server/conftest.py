@@ -21,6 +21,7 @@ def molecule_worker_command(tmp_path):
     """Faults run in actual child processes, not monkeypatches in the parent."""
 
     def command(mode):
+        """Select a fault scenario and its isolated per-test marker directory."""
         return (
             sys.executable,
             "-u",

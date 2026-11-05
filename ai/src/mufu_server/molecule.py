@@ -16,7 +16,7 @@ EMBED_SEED = 0
 
 
 class InvalidMoleculeSmiles(ValueError):
-    pass
+    """SMILES is empty, invalid, or uses unsupported atoms or isotope masses."""
 
 
 @dataclass(frozen=True)
@@ -88,7 +88,7 @@ def _molblock(mol: Chem.Mol) -> str | None:
 
 
 def _inchi_key(mol: Chem.Mol) -> str:
-    # Resolve inside _optional so builds without InChI support also return null.
+    """Resolve InChI support lazily so _optional can handle missing builds."""
     return Chem.MolToInchiKey(mol)
 
 
@@ -119,7 +119,13 @@ def molecule_molblock(smiles: str) -> str | None:
 
 
 def molecule_info(smiles: str, *, include_3d: bool = True) -> MoleculeInfo:
-    """Synchronous worker calculation; never call on the HTTP process's threads."""
+    """Calculate nullable RDKit fields from a validated, unstandardized molecule.
+
+    Descriptor failures affect only their fields and dependent Lipinski counts.
+    Disable ``include_3d`` for the descriptor worker so coordinates can be isolated
+    separately. This synchronous helper has no process deadline of its own and
+    must not run on HTTP-process threads.
+    """
     mol = _parse_smiles(smiles)
 
     molecular_weight = _optional(Descriptors.MolWt, mol)

@@ -8,7 +8,12 @@ from contextlib import contextmanager
 
 
 def arm_parent_exit(parent_pid: int) -> None:
-    """Run in the child before importing RDKit. Windows is guarded by the parent."""
+    """Make a Linux worker die when its spawning supervisor thread exits.
+
+    Check the expected parent PID after arming SIGKILL to cover a parent that
+    exited during setup. Windows protection is installed by the parent instead;
+    other platforms fail before chemistry starts. Call before importing RDKit.
+    """
     if sys.platform == "linux":
         libc = ctypes.CDLL(None, use_errno=True)
         # PR_SET_PDEATHSIG refers to the spawning thread, which the supervisor
@@ -23,7 +28,14 @@ def arm_parent_exit(parent_pid: int) -> None:
 
 @contextmanager
 def child_job(pid: int):
-    """On Windows, close the job to kill its child even if the server crashes."""
+    """Guard a Windows worker and wait for job members when the context exits.
+
+    Assign the child before its input handshake enables chemistry. Kill-on-close
+    covers server crashes; normal cleanup retains process handles, terminates
+    the job, waits for launcher descendants, and closes every retained handle.
+    Job setup failures propagate to the supervisor, which reaps its Popen child.
+    On Linux this context is a no-op; the worker arms its own parent-death signal.
+    """
     if os.name != "nt":
         yield
         return
@@ -31,6 +43,8 @@ def child_job(pid: int):
     from ctypes import wintypes
 
     class BasicLimits(ctypes.Structure):
+        """ctypes layout of JOBOBJECT_BASIC_LIMIT_INFORMATION."""
+
         _fields_ = [
             ("process_time", ctypes.c_int64),
             ("job_time", ctypes.c_int64),
@@ -44,6 +58,8 @@ def child_job(pid: int):
         ]
 
     class ExtendedLimits(ctypes.Structure):
+        """ctypes layout used to install the Windows kill-on-close flag."""
+
         _fields_ = [
             ("basic", BasicLimits),
             ("io_counters", ctypes.c_uint64 * 6),
@@ -114,6 +130,8 @@ def child_job(pid: int):
                 while True:
 
                     class ProcessList(ctypes.Structure):
+                        """Variable-length job membership buffer, grown on overflow."""
+
                         _fields_ = [
                             ("assigned", wintypes.DWORD),
                             ("listed", wintypes.DWORD),

@@ -26,6 +26,7 @@ from mufu_server.molecule import InvalidMoleculeSmiles, molecule_info
     ],
 )
 def test_identifiers_and_descriptors_match_rdkit(smiles, formula):
+    """Compare every unrounded field and count type with RDKit across known chemistries."""
     result = molecule_info(smiles)
     mol = Chem.MolFromSmiles(smiles)
     expected = {
@@ -70,6 +71,7 @@ def test_identifiers_and_descriptors_match_rdkit(smiles, formula):
 
 
 def test_known_ethanol_values_and_3d_round_trip():
+    """Verify reference ethanol values and finite, nonzero explicit-hydrogen 3D coordinates."""
     result = molecule_info("OCC")
     assert result.smiles == "CCO"
     assert result.inchi_key == "LFQSCWFLJHTTHZ-UHFFFAOYSA-N"
@@ -87,6 +89,7 @@ def test_known_ethanol_values_and_3d_round_trip():
 
 
 def test_stereochemistry_is_preserved():
+    """Distinguish enantiomer identifiers and preserve specified chirality in the MolBlock."""
     left = molecule_info("C[C@H](O)C(=O)O")
     right = molecule_info("C[C@@H](O)C(=O)O")
     assert left.smiles != right.smiles
@@ -96,6 +99,7 @@ def test_stereochemistry_is_preserved():
 
 
 def test_embedding_is_reproducible():
+    """Require deterministic coordinates for repeated embeddings within this RDKit build."""
     assert molecule_info("CCO").molblock == molecule_info("CCO").molblock
 
 
@@ -120,13 +124,17 @@ def test_embedding_is_reproducible():
     ],
 )
 def test_invalid_smiles_raise(smiles):
+    """Reject malformed inputs and unsupported atoms or isotope masses before calculation."""
     with pytest.raises(InvalidMoleculeSmiles):
         molecule_info(smiles)
 
 
 @pytest.mark.parametrize("failure", ["status", "exception"])
 def test_embedding_failure_keeps_descriptors(monkeypatch, failure):
+    """Preserve successful descriptors for both failed embedding statuses and exceptions."""
+
     def fail(*args):
+        """Simulate either RDKit embedding failure interface without doing native work."""
         if failure == "exception":
             raise RuntimeError("embedding failed")
         return -1
@@ -139,9 +147,11 @@ def test_embedding_failure_keeps_descriptors(monkeypatch, failure):
 
 
 def test_embedding_uses_bounded_parameters(monkeypatch):
+    """Verify one embedding attempt uses the configured seed, thread, iteration, and time limits."""
     calls = []
 
     def embed(mol, params):
+        """Inspect the actual embedding parameters and return an unsuccessful status."""
         calls.append(params)
         assert mol.GetNumAtoms() == 9
         assert params.randomSeed == 0
@@ -157,7 +167,10 @@ def test_embedding_uses_bounded_parameters(monkeypatch):
 
 @pytest.mark.parametrize("smiles", ["C" * 257, "C" * 90, "CCO.[Na+]"])
 def test_large_or_disconnected_structures_skip_embedding(monkeypatch, smiles):
+    """Keep descriptors while avoiding embeddings above atom limits or across fragments."""
+
     def unexpected(*args):
+        """Fail if a molecule that should be excluded reaches the embedding routine."""
         pytest.fail("embedding should be skipped")
 
     monkeypatch.setattr(molecule.rdDistGeom, "EmbedMolecule", unexpected)
@@ -167,13 +180,17 @@ def test_large_or_disconnected_structures_skip_embedding(monkeypatch, smiles):
 
 
 def test_missing_native_timeout_skips_embedding(monkeypatch):
+    """Avoid unbounded embedding on RDKit builds lacking the native timeout option."""
     monkeypatch.setattr(molecule.rdDistGeom, "ETKDGv3", SimpleNamespace)
     assert molecule_info("CCO").molblock is None
 
 
 @pytest.mark.parametrize("invalid", ["2d", "nonfinite"])
 def test_invalid_coordinates_are_not_returned(monkeypatch, invalid):
+    """Reject conformers marked as 2D or containing nonfinite positions."""
+
     def embed(mol, params):
+        """Install a deliberately unusable conformer to exercise post-embedding validation."""
         conformer = Chem.Conformer(mol.GetNumAtoms())
         conformer.Set3D(invalid != "2d")
         if invalid == "nonfinite":
@@ -185,6 +202,7 @@ def test_invalid_coordinates_are_not_returned(monkeypatch, invalid):
 
 
 def test_missing_inchi_support_returns_null(monkeypatch):
+    """Keep other fields available when the RDKit build omits InChI support."""
     monkeypatch.delattr(Chem, "MolToInchiKey")
     result = molecule_info("CCO")
     assert result.inchi_key is None
@@ -193,12 +211,14 @@ def test_missing_inchi_support_returns_null(monkeypatch):
 
 @pytest.mark.parametrize("value", ["", None])
 def test_empty_inchi_returns_null(monkeypatch, value):
+    """Normalize absent InChI results to null rather than returning an empty identifier."""
     monkeypatch.setattr(Chem, "MolToInchiKey", lambda mol: value)
     assert molecule_info("CCO").inchi_key is None
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
 def test_unavailable_descriptor_and_dependent_rule_are_null(monkeypatch, value):
+    """Null nonfinite LogP and dependent Lipinski counts while preserving valid JSON."""
     monkeypatch.setattr(Crippen, "MolLogP", lambda mol: value)
     result = molecule_info("CCO")
     assert result.logp is None
@@ -208,7 +228,10 @@ def test_unavailable_descriptor_and_dependent_rule_are_null(monkeypatch, value):
 
 
 def test_descriptor_exception_does_not_fail_other_fields(monkeypatch):
+    """Confine a QED calculation exception to its optional response field."""
+
     def fail(mol):
+        """Represent a descriptor unavailable in the installed chemistry backend."""
         raise RuntimeError("descriptor unavailable")
 
     monkeypatch.setattr(QED, "qed", fail)
@@ -219,7 +242,10 @@ def test_descriptor_exception_does_not_fail_other_fields(monkeypatch):
 
 
 def test_descriptors_do_not_attempt_embedding_when_disabled(monkeypatch):
+    """Ensure the descriptor-only worker path never attempts native 3D generation."""
+
     def unexpected(*args):
+        """Catch accidental coordinate generation in a descriptor-only calculation."""
         pytest.fail("descriptor phase must not attempt embedding")
 
     monkeypatch.setattr(molecule.rdDistGeom, "EmbedMolecule", unexpected)
@@ -230,6 +256,7 @@ def test_descriptors_do_not_attempt_embedding_when_disabled(monkeypatch):
 
 @pytest.mark.parametrize("increment", [0, 1])
 def test_lipinski_thresholds_are_strict(monkeypatch, increment):
+    """Count violations only above each threshold, including simultaneous violations."""
     monkeypatch.setattr(Descriptors, "MolWt", lambda mol: 500.0 + increment)
     monkeypatch.setattr(Crippen, "MolLogP", lambda mol: 5.0 + increment)
     monkeypatch.setattr(Lipinski, "NumHDonors", lambda mol: 5 + increment)

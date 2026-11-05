@@ -2,6 +2,7 @@
 
 import ctypes
 import json
+import logging
 import os
 import sys
 from dataclasses import asdict
@@ -11,6 +12,11 @@ from mufu_server.process_lifetime import arm_parent_exit
 
 
 def main():
+    """Run a real worker phase with an optional native stall or protocol fault.
+
+    Write the child PID only after the input handshake, allowing tests to observe
+    an active isolated worker before asserting timeout or cancellation cleanup.
+    """
     mode, directory, phase, parent_pid = sys.argv[1:]
     arm_parent_exit(int(parent_pid))
     line = sys.stdin.buffer.readline()
@@ -21,6 +27,16 @@ def main():
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps({"pid": os.getpid(), "phase": phase}))
     temporary.replace(path)
+
+    if mode == f"stderr-{phase}":
+        assert "MUFU_API_KEY" not in os.environ
+        assert "MUFU_API_KEYS_FILE" not in os.environ
+        try:
+            raise RuntimeError("controlled molecule worker diagnostic")
+        except RuntimeError:
+            logging.getLogger(__name__).exception("molecule worker failed")
+        print(json.dumps({"error": "internal_error"}))
+        return
 
     if mode == f"hang-{phase}":
         # PyDLL deliberately holds this interpreter's GIL during a native call.

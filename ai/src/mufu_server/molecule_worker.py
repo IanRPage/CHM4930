@@ -11,6 +11,12 @@ log = logging.getLogger(__name__)
 
 
 def main() -> None:
+    """Serve one descriptor or structure phase from JSON on stdin to stdout.
+
+    Arm parent-exit protection before importing RDKit and wait for the parent's
+    input handshake. Return protocol errors without exception details; unexpected
+    calculation failures retain their traceback on stderr for server operators.
+    """
     phase, parent_pid = sys.argv[1:]
     arm_parent_exit(int(parent_pid))
     # The parent installs Windows job protection before sending this line.

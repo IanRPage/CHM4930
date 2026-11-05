@@ -60,6 +60,11 @@ terminates and reaps the active child. Completion and exceptions are observed
 even when cancellation repeats. A client disconnect only cancels work if the
 ASGI server cancels the request task; otherwise the computation deadline applies.
 
+Worker warnings and tracebacks inherit the server's stderr sink for diagnosis;
+stdout remains reserved for the JSON protocol. API keys and the key-file path
+are removed from the worker environment. HTTP errors retain their generic
+envelopes and never include worker diagnostics.
+
 ## Platform lifecycle and resource limits
 
 Windows workers join a non-inheritable Job Object with kill-on-close protection

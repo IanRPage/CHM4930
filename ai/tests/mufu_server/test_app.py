@@ -241,7 +241,10 @@ def test_load_failure_is_reported():
 
 
 def test_molecule_returns_rdkit_values_without_prediction():
+    """Verify the molecule contract is independent of neural prediction and model metadata."""
+
     def unexpected(smiles):
+        """Fail if molecule computation invokes the prediction implementation."""
         pytest.fail("molecule information must not run prediction")
 
     with serve(StubPredictor(unexpected)) as client:
@@ -261,9 +264,11 @@ def test_molecule_returns_rdkit_values_without_prediction():
 
 
 def test_molecule_is_available_while_model_loads():
+    """Allow molecule requests before the background neural model becomes ready."""
     release = threading.Event()
 
     def slow_load(_):
+        """Hold model startup until the molecule response has been checked."""
         release.wait(5)
         return StubPredictor()
 
@@ -278,6 +283,7 @@ def test_molecule_is_available_while_model_loads():
 
 @pytest.mark.parametrize("headers", [{}, {"X-API-Key": "wrong"}])
 def test_molecule_requires_auth_before_parsing(headers):
+    """Reject missing or incorrect credentials before examining a malformed request body."""
     with serve() as client:
         response = client.post("/molecule", content=b"not json", headers=headers)
     assert response.status_code == 401
@@ -306,6 +312,7 @@ def test_molecule_requires_auth_before_parsing(headers):
     ],
 )
 def test_molecule_bad_input_is_422(body, message):
+    """Distinguish body and chemistry validation errors and keep the computation slot reusable."""
     with serve(max_smiles_length=20) as client:
         response = client.post("/molecule", json=body, headers=AUTH)
         # An invalid molecule must not leave the computation slot locked.
@@ -317,6 +324,7 @@ def test_molecule_bad_input_is_422(body, message):
 
 @pytest.mark.parametrize("content", [b"not json", b'{"smiles":', b"null", b""])
 def test_molecule_malformed_request_is_422(content):
+    """Map malformed JSON and invalid body shapes to the existing invalid_request envelope."""
     with serve() as client:
         response = client.post(
             "/molecule",
@@ -328,6 +336,7 @@ def test_molecule_malformed_request_is_422(content):
 
 
 def test_molecule_body_limit_with_and_without_content_length():
+    """Enforce the byte limit for both sized and chunked molecule requests."""
     big = b'{"smiles": "' + b"C" * 100 + b'"}'
     headers = {**AUTH, "Content-Type": "application/json"}
     with serve(max_body_bytes=64) as client:
@@ -344,6 +353,7 @@ def test_molecule_body_limit_with_and_without_content_length():
 
 
 def test_molecule_shares_per_key_rate_limit_with_predict(monkeypatch):
+    """Share a caller budget across routes while keeping other callers independent."""
     monkeypatch.setattr(
         "mufu_server.app.load_keys", lambda _: {"alex": hash_key("other-key")}
     )
@@ -365,6 +375,7 @@ def test_molecule_shares_per_key_rate_limit_with_predict(monkeypatch):
 
 
 def test_molecule_embedding_failure_is_nullable_success(molecule_worker_command):
+    """Return successful descriptors with a null MolBlock when the 3D worker fails."""
     with serve() as client:
         client.app.state.molecules._command = molecule_worker_command("error-structure")
         response = client.post("/molecule", json={"smiles": "CCO"}, headers=AUTH)
@@ -374,6 +385,7 @@ def test_molecule_embedding_failure_is_nullable_success(molecule_worker_command)
 
 
 def test_molecule_internal_failure_releases_slot(molecule_worker_command, caplog):
+    """Recover after a worker crash without logging the authenticated API key."""
     caplog.set_level(logging.DEBUG)
     with serve() as client:
         command = client.app.state.molecules._command

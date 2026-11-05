@@ -36,6 +36,8 @@ class PredictRequest(BaseModel):
 
 
 class MoleculeRequest(BaseModel):
+    """SMILES request body, using the same extra-field policy as prediction."""
+
     smiles: str
 
 
@@ -44,6 +46,11 @@ def error(status: int, message: str, **headers: str) -> JSONResponse:
 
 
 def create_app(settings: Settings, load=load_predictor, on_load_error=None):
+    """Build authenticated routes with independent prediction and molecule slots.
+
+    Load the model in the background while molecule requests remain available.
+    The application lifespan owns shutdown of the molecule process supervisor.
+    """
     keys = {}
     if settings.api_keys_file:
         keys = load_keys(settings.api_keys_file)
@@ -80,6 +87,7 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        """Start model loading and drain molecule workers when the app shuts down."""
         threading.Thread(
             target=load_in_background, args=(app,), name="load-model", daemon=True
         ).start()
@@ -178,6 +186,7 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
 
     @app.post("/molecule", response_model=MoleculeInfo)
     async def molecule(body: MoleculeRequest, request: Request):
+        """Return RDKit information or the service's existing JSON error envelope."""
         smiles = body.smiles
         if (
             not smiles

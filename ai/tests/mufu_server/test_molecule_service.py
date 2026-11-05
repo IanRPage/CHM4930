@@ -20,6 +20,7 @@ from mufu_server.molecule_service import MoleculeBusy, MoleculeService, WorkerFa
 
 
 def running(pid):
+    """Check whether a PID is alive, treating reparented Linux zombies as terminated."""
     if os.name == "nt":
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
@@ -43,6 +44,7 @@ def running(pid):
 
 
 async def marker(path, task):
+    """Await the real child startup marker, surfacing early worker failures instead of hanging."""
     async with asyncio.timeout(10):
         while not path.exists():
             if task.done():
@@ -56,7 +58,10 @@ async def marker(path, task):
 
 @pytest.mark.parametrize("smiles", ["*", "*C", "[999C]"])
 def test_real_worker_rejects_unsupported_chemistry(smiles):
+    """Verify process-boundary validation rejects unsupported chemistry and recovers for carbon-13."""
+
     async def run():
+        """Exercise invalid and valid requests through one service and always close its executor."""
         service = MoleculeService()
         try:
             with pytest.raises(InvalidMoleculeSmiles):
@@ -71,7 +76,10 @@ def test_real_worker_rejects_unsupported_chemistry(smiles):
 
 
 def test_phases_use_distinct_reaped_processes(molecule_worker_command, tmp_path):
+    """Require descriptors and coordinates to execute in separate, fully reaped interpreters."""
+
     async def run():
+        """Read recorded worker PIDs after a successful two-phase computation."""
         service = MoleculeService(command=molecule_worker_command("trace"))
         try:
             result = await service.compute("CCO", 10)
@@ -91,13 +99,19 @@ def test_phases_use_distinct_reaped_processes(molecule_worker_command, tmp_path)
 def test_native_stall_does_not_block_predict_health_or_rate_gate(
     molecule_worker_command, tmp_path
 ):
+    """Keep HTTP health, prediction, and molecule admission responsive during a native GIL stall."""
+
     class Predictor:
+        """Provide a cheap prediction route independent of molecule workers."""
+
         model_version = "stub"
 
         def infer(self, smiles):
+            """Return observable prediction output while the molecule child is stalled."""
             return {"smiles": smiles}
 
     async def run():
+        """Probe live ASGI routes while a confirmed child remains inside a native call."""
         app = create_app(
             Settings(Path("unused"), api_key="test", request_timeout_s=30),
             load=lambda _: Predictor(),
@@ -142,7 +156,10 @@ def test_native_stall_does_not_block_predict_health_or_rate_gate(
 def test_descriptor_deadline_kills_reaps_and_releases_capacity(
     molecule_worker_command, tmp_path
 ):
+    """Require descriptor deadline expiry to terminate its worker before accepting recovery work."""
+
     async def run():
+        """Observe a native descriptor stall, its timeout exception, and reuse of the service slot."""
         service = MoleculeService(command=molecule_worker_command("hang-descriptors"))
         try:
             task = asyncio.create_task(service.compute("CCO", 2))
@@ -162,7 +179,10 @@ def test_descriptor_deadline_kills_reaps_and_releases_capacity(
 def test_structure_deadline_preserves_descriptors_and_reaps(
     molecule_worker_command, tmp_path
 ):
+    """Return calculated identifiers and descriptors after terminating an over-budget 3D worker."""
+
     async def run():
+        """Wait for the 3D startup handshake and verify the completed descriptor response survives."""
         service = MoleculeService(command=molecule_worker_command("hang-structure"))
         try:
             task = asyncio.create_task(service.compute("CCO", 10))
@@ -183,10 +203,14 @@ def test_structure_deadline_preserves_descriptors_and_reaps(
 def test_http_deadlines_reap_workers_and_allow_recovery(
     molecule_worker_command, tmp_path, phase
 ):
+    """Check HTTP timeout mappings and recovery even when the neural model cannot load."""
+
     def unavailable(_):
+        """Represent missing checkpoints without preventing molecule service startup."""
         raise FileNotFoundError("missing checkpoints")
 
     async def run():
+        """Exercise descriptor and 3D deadlines through authenticated ASGI requests."""
         app = create_app(
             Settings(
                 Path("unused"),
@@ -242,7 +266,10 @@ def test_http_deadlines_reap_workers_and_allow_recovery(
 def test_worker_failures_are_observed_and_reaped(
     molecule_worker_command, tmp_path, phase, failure
 ):
+    """Handle worker crashes, error envelopes, and malformed output without unobserved exceptions."""
+
     async def run():
+        """Collect event-loop errors and verify phase-specific failure handling and process cleanup."""
         unhandled = []
         asyncio.get_running_loop().set_exception_handler(
             lambda loop, context: unhandled.append(context)
@@ -268,7 +295,10 @@ def test_worker_failures_are_observed_and_reaped(
 
 @pytest.mark.parametrize("phase", ["descriptors", "structure"])
 def test_repeated_cancellation_drains_worker(molecule_worker_command, tmp_path, phase):
+    """Keep draining a native worker despite repeated request cancellation, then release capacity."""
+
     async def run():
+        """Cancel twice while a real worker is active and check cleanup before a recovery request."""
         unhandled = []
         asyncio.get_running_loop().set_exception_handler(
             lambda loop, context: unhandled.append(context)
@@ -295,7 +325,10 @@ def test_repeated_cancellation_drains_worker(molecule_worker_command, tmp_path, 
 
 
 def test_service_shutdown_kills_active_worker(molecule_worker_command, tmp_path):
+    """Terminate active native work on shutdown and reject all subsequent submissions."""
+
     async def run():
+        """Close during a confirmed native stall and observe cancellation only after reaping."""
         service = MoleculeService(command=molecule_worker_command("hang-descriptors"))
         task = asyncio.create_task(service.compute("CCO", 30))
         try:
@@ -312,23 +345,27 @@ def test_service_shutdown_kills_active_worker(molecule_worker_command, tmp_path)
 
 
 def test_failed_job_setup_kills_child(monkeypatch):
+    """Fail closed and reap the subprocess if parent-exit protection cannot be installed."""
     from mufu_server import molecule_service
 
     processes = []
     popen = subprocess.Popen
 
     def record(*args, **kwargs):
+        """Retain the real Popen object so the test can verify its exit status and PID."""
         process = popen(*args, **kwargs)
         processes.append(process)
         return process
 
     def fail(pid):
+        """Represent an OS denial while setting up worker lifetime protection."""
         raise OSError("job setup denied")
 
     monkeypatch.setattr(molecule_service.subprocess, "Popen", record)
     monkeypatch.setattr(molecule_service, "child_job", fail)
 
     async def run():
+        """Observe setup failure through the async API and always drain the executor."""
         service = MoleculeService()
         try:
             with pytest.raises(WorkerFailure):
@@ -344,6 +381,7 @@ def test_failed_job_setup_kills_child(monkeypatch):
 
 def test_real_large_inchi_input_is_isolated():
     # The review's 934-character circular ladder: InChI holds the GIL in-process.
+    """Run the review regression molecule that made native InChI hold the server GIL."""
     mol = Chem.RWMol()
     for _ in range(320):
         mol.AddAtom(Chem.Atom("C"))
@@ -355,6 +393,7 @@ def test_real_large_inchi_input_is_isolated():
     assert len(smiles) <= 1000
 
     async def run():
+        """Keep scheduling loop ticks while the isolated worker processes the circular ladder."""
         service = MoleculeService()
         ticks = 0
         task = asyncio.create_task(service.compute(smiles, 10))
@@ -372,7 +411,67 @@ def test_real_large_inchi_input_is_isolated():
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("phase", ["descriptors", "structure"])
+def test_worker_diagnostics_reach_stderr_without_exposing_api_keys(
+    molecule_worker_command, tmp_path, monkeypatch, capfd, phase
+):
+    """Preserve worker tracebacks server-side without leaking keys or changing HTTP errors."""
+
+    class Predictor:
+        """Supply readiness metadata without loading any neural checkpoints."""
+
+        model_version = "stub"
+
+    key = "worker-diagnostics-test-secret"
+    key_file = str(tmp_path / "private-key-file")
+    monkeypatch.setenv("MUFU_API_KEY", key)
+    monkeypatch.setenv("MUFU_API_KEYS_FILE", key_file)
+
+    async def run():
+        """Exercise real worker stderr inheritance and confirm the slot remains reusable."""
+        app = create_app(
+            Settings(Path("unused"), api_key=key), load=lambda _: Predictor()
+        )
+        service = app.state.molecules
+        command = service._command
+        service._command = molecule_worker_command(f"stderr-{phase}")
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test"
+            ) as client,
+        ):
+            headers = {"X-API-Key": key}
+            response = await client.post(
+                "/molecule", json={"smiles": "CCO"}, headers=headers
+            )
+            if phase == "descriptors":
+                assert response.status_code == 500
+                assert response.json() == {"error": "internal_error"}
+            else:
+                assert response.status_code == 200
+                assert response.json()["formula"] == "C2H6O"
+                assert response.json()["molblock"] is None
+            pid = json.loads((tmp_path / f"{phase}.json").read_text())["pid"]
+            assert not running(pid)
+            service._command = command
+            recovered = await client.post(
+                "/molecule", json={"smiles": "CCO"}, headers=headers
+            )
+            assert recovered.status_code == 200
+            return response.text + recovered.text
+
+    body = asyncio.run(run())
+    stdout, stderr = capfd.readouterr()
+    assert "controlled molecule worker diagnostic" in stderr
+    assert "Traceback" in stderr
+    assert "controlled molecule worker diagnostic" not in body + stdout
+    assert key not in body + stdout + stderr
+    assert key_file not in body + stdout + stderr
+
+
 def test_abrupt_parent_exit_kills_native_worker(molecule_worker_command, tmp_path):
+    """Verify OS parent-exit protection by killing a disposable server during native work."""
     command = molecule_worker_command("hang-descriptors")
     code = f"""import asyncio
 from mufu_server.molecule_service import MoleculeService
