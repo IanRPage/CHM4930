@@ -30,7 +30,10 @@ function csvCell(value: Cell): string {
 }
 
 export function predictionToCsv(result: PredictResponse): string {
-  const columns: Column[] = [["SMILES", result.smiles]];
+  const columns: Column[] = [
+    ["SMILES", result.smiles],
+    ["Nearest training Tanimoto (0-1)", result.nearestTrainTanimoto],
+  ];
 
   // Export both targets, regardless of which toggle is active in the UI.
   for (const target of ["EGFR", "BACE1"] as const) {

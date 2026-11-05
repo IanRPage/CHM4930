@@ -22,6 +22,7 @@ export const SR_TASKS = [
 export type Target = (typeof TARGETS)[number];
 export type NrTask = (typeof NR_TASKS)[number];
 export type SrTask = (typeof SR_TASKS)[number];
+export type ApplicabilityDomain = "in_domain" | "borderline" | "out_of_domain";
 
 export interface PredictRequest {
   smiles: string;
@@ -51,6 +52,8 @@ export interface TargetBioactivity {
 
 export interface PredictResponse {
   smiles: string | null;
+  nearestTrainTanimoto: number;
+  applicabilityDomain: ApplicabilityDomain;
   bioactivity: Record<Target, TargetBioactivity>;
   toxicity: {
     nuclearReceptor: Record<NrTask, Output>;

@@ -67,3 +67,15 @@
   outline: 2px solid var(--blue-600);
   outline-offset: 2px;
 }
+
+.predict-domain-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--amber-100);
+  font-size: 14px;
+  color: var(--slate-700);
+}

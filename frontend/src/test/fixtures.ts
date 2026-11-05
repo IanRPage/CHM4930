@@ -5,6 +5,8 @@ export function predictResponse(): PredictResponse {
   const tox = { value: 0.1 };
   return {
     smiles: "CC(=O)Oc1ccccc1C(=O)O",
+    nearestTrainTanimoto: 0.72,
+    applicabilityDomain: "in_domain",
     bioactivity: {
       BACE1: {
         pic50: { value: 4.9, lo: 3.8, hi: 6 },

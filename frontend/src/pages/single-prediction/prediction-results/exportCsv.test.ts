@@ -52,9 +52,9 @@ function csvRow(result: PredictResponse): Record<string, string> {
   const records = parseCsv(csv);
   expect(records).toHaveLength(2);
   const [headers, values] = records;
-  expect(headers).toHaveLength(31);
-  expect(new Set(headers).size).toBe(31);
-  expect(values).toHaveLength(31);
+  expect(headers).toHaveLength(32);
+  expect(new Set(headers).size).toBe(32);
+  expect(values).toHaveLength(32);
   return Object.fromEntries(headers.map((header, i) => [header, values[i]]));
 }
 
@@ -84,6 +84,7 @@ describe("predictionToCsv", () => {
 
     expect(csvRow(result)).toEqual({
       SMILES: "CC(=O)Oc1ccccc1C(=O)O",
+      "Nearest training Tanimoto (0-1)": "0.72",
       "EGFR pIC50": "6.3",
       "EGFR pIC50 CI lower": "6",
       "EGFR pIC50 CI upper": "6.6",
@@ -170,6 +171,7 @@ describe("predictionToCsv", () => {
       Array(10).fill("0.1"),
     );
     for (const [header, cell] of Object.entries(row)) {
+      if (header === "Nearest training Tanimoto (0-1)") continue;
       if (!availableAssays.some(([assay]) => assay === header))
         expect(cell).toBe("");
     }

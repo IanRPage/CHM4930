@@ -1,3 +1,4 @@
+import infoIcon from "../../../assets/icon-info.svg";
 import infoMutedIcon from "../../../assets/icon-info-muted.svg";
 import Card from "../../../components/common/Card.tsx";
 import type { PredictResponse } from "../../../types/predict.ts";
@@ -7,11 +8,25 @@ import { downloadPredictionCsv } from "./exportCsv.ts";
 import "./PredictionResults.css";
 import ToxicityPanel from "./ToxicityPanel.tsx";
 
+const DOMAIN_WARNINGS = {
+  borderline: "treat predictions with caution.",
+  out_of_domain: "predictions are extrapolations and may be unreliable.",
+} as const;
+
 export default function PredictionResults({
   result,
 }: {
   result: PredictResponse;
 }) {
+  const { applicabilityDomain: domain, nearestTrainTanimoto: tanimoto } =
+    result;
+  const warning =
+    domain !== "in_domain"
+      ? `Tanimoto similarity = ${tanimoto.toFixed(2)}: ${
+          DOMAIN_WARNINGS[domain]
+        }`
+      : null;
+
   return (
     <div className="predict-results">
       {result.smiles && (
@@ -30,6 +45,12 @@ export default function PredictionResults({
             Download CSV
           </button>
         </div>
+        {warning && (
+          <p className="predict-domain-warning" role="note">
+            <img src={infoIcon} alt="" />
+            {warning}
+          </p>
+        )}
         <BioactivityPanel result={result} />
         <ToxicityPanel result={result} />
         <ApprovalPanel output={result.fdaApproved} />
