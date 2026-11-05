@@ -77,10 +77,14 @@ export function parsePredictRequest(body: unknown): PredictRequest {
   if (!isRecord(body)) {
     throw httpError(400, "Request body must be a JSON object");
   }
-  if (typeof body.smiles !== "string") {
+  return { smiles: parseSmiles(body.smiles) };
+}
+
+export function parseSmiles(value: unknown): string {
+  if (typeof value !== "string") {
     throw httpError(400, "smiles must be a string");
   }
-  const smiles = body.smiles.trim();
+  const smiles = value.trim();
   if (!smiles) {
     throw httpError(400, "smiles must not be empty");
   }
@@ -93,5 +97,5 @@ export function parsePredictRequest(body: unknown): PredictRequest {
   if (/\s/.test(smiles)) {
     throw httpError(400, "smiles must not contain whitespace");
   }
-  return { smiles };
+  return smiles;
 }
