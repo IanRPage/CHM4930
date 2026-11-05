@@ -147,7 +147,7 @@ encoder on BACE-1 (`default` split) under `outputs/encoders/<encoder>/sweep/`.
 include per-target pIC50 with a 95% interval and `p_active`, all 14 toxicity
 probabilities, and applicability-domain similarity (`nearest_train_tanimoto`,
 `applicability_domain`); full contract in
-[`backend/docs/predict-api.md`](../backend/docs/predict-api.md).
+[`backend/docs/api.md`](../backend/docs/api.md#inference-server-contract).
 
 ```sh
 export MUFU_CHECKPOINT_DIR=runs/mufu_v1.0.0_default/checkpoints   # 5 seeds + mufu_ensemble.json + mufu_train_fps.npy
