@@ -1,5 +1,5 @@
 """
-HTTP server around `Predictor.infer`.
+HTTP server for MuFu predictions and RDKit molecule information.
 
 Every path except `/health` needs a key in the `X-API-Key` header: `MUFU_API_KEY`
 (named "default" in the log) or one from `MUFU_API_KEYS_FILE` (see `keys.py`). Each
@@ -23,6 +23,8 @@ from mufu_server.config import Settings
 from mufu_server.infer import InvalidSmiles, load_predictor
 from mufu_server.keys import hash_key, load_keys
 from mufu_server.limits import BodyLimit, SlidingWindowLimiter, retry_after
+from mufu_server.molecule import InvalidMoleculeSmiles, MoleculeInfo
+from mufu_server.molecule_service import MoleculeBusy, MoleculeService
 
 log = logging.getLogger(__name__)
 
@@ -30,6 +32,10 @@ OPEN_PATHS = ("/health",)
 
 
 class PredictRequest(BaseModel):
+    smiles: str
+
+
+class MoleculeRequest(BaseModel):
     smiles: str
 
 
@@ -57,6 +63,7 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
     }
     # one inference at a time; Predictor serializes them anyway
     busy = threading.Lock()
+    molecules = MoleculeService()
 
     def load_in_background(app: FastAPI) -> None:
         try:
@@ -76,12 +83,16 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
         threading.Thread(
             target=load_in_background, args=(app,), name="load-model", daemon=True
         ).start()
-        yield
+        try:
+            yield
+        finally:
+            await molecules.close()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.predictor = None
     app.state.load_error = None
     app.state.loaded = threading.Event()
+    app.state.molecules = molecules
 
     app.add_middleware(BodyLimit, max_bytes=settings.max_body_bytes)
 
@@ -160,6 +171,37 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
             return error(500, "internal_error")
         log.info(
             "predict ok for %s in %.0f ms",
+            request.state.caller,
+            (time.perf_counter() - start) * 1000,
+        )
+        return result
+
+    @app.post("/molecule", response_model=MoleculeInfo)
+    async def molecule(body: MoleculeRequest, request: Request):
+        smiles = body.smiles
+        if (
+            not smiles
+            or len(smiles) > settings.max_smiles_length
+            or any(c.isspace() for c in smiles)
+        ):
+            return error(422, "invalid_smiles")
+        start = time.perf_counter()
+        try:
+            result = await molecules.compute(smiles, settings.request_timeout_s)
+        except MoleculeBusy:
+            return error(503, "busy")
+        except TimeoutError:
+            log.warning(
+                "molecule request timed out after %.0fs", settings.request_timeout_s
+            )
+            return error(503, "timeout")
+        except InvalidMoleculeSmiles:
+            return error(422, "invalid_smiles")
+        except Exception:
+            log.exception("molecule computation failed")
+            return error(500, "internal_error")
+        log.info(
+            "molecule ok for %s in %.0f ms",
             request.state.caller,
             (time.perf_counter() - start) * 1000,
         )

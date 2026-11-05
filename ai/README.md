@@ -149,6 +149,24 @@ probabilities, and applicability-domain similarity (`nearest_train_tanimoto`,
 `applicability_domain`); full contract in
 [`backend/docs/predict-api.md`](../backend/docs/predict-api.md).
 
+`POST /molecule` accepts `{ "smiles": string }` with the same `X-API-Key`
+protection and returns RDKit identifiers, descriptors, and optional 3D MolBlock
+coordinates without running neural-network prediction. The proposed backend
+integration contract, nullable fields, and computation limits are documented in
+[`docs/molecule-api.md`](docs/molecule-api.md). `/predict` is unchanged.
+
+Molecule calculations run in separate descriptor and 3D subprocesses, with one
+request admitted per server process and no queue. Descriptors use the configured
+request timeout (default 30 seconds); 3D gets at most 2 seconds or the remaining
+budget, including process startup. Descriptor timeout returns 503; 3D failure or
+timeout preserves descriptors with `molblock: null`. Timed-out or cancelled
+workers are terminated and reaped before capacity is released. Windows Job Objects
+and Linux parent-death signals protect against orphaned native work on server
+exit. Shutdown drains active work; OS cleanup can extend response latency beyond
+the computation budget. Fresh interpreter imports add startup cost (about 0.8 s
+total for local Windows ethanol requests). These limits do not impose a hard
+memory quota. See the contract for platform requirements and Linux validation.
+
 ```sh
 export MUFU_CHECKPOINT_DIR=runs/mufu_v1.0.0_default/checkpoints   # 5 seeds + mufu_ensemble.json + mufu_train_fps.npy
 export MUFU_API_KEY="$(openssl rand -hex 32)"

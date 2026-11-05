@@ -15,6 +15,7 @@ from mufu_server.app import create_app
 from mufu_server.config import Settings
 from mufu_server.infer import InvalidSmiles
 from mufu_server.keys import add_key, hash_key
+from mufu_server.molecule import MoleculeInfo
 
 KEY = "test-key"
 SRC = Path(__file__).resolve().parents[2] / "src"
@@ -237,3 +238,151 @@ def test_load_failure_is_reported():
     with serve(load=failing_load, on_load_error=errors.append) as client:
         assert client.get("/health").json()["status"] == "loading"
     assert len(errors) == 1 and isinstance(errors[0], FileNotFoundError)
+
+
+def test_molecule_returns_rdkit_values_without_prediction():
+    def unexpected(smiles):
+        pytest.fail("molecule information must not run prediction")
+
+    with serve(StubPredictor(unexpected)) as client:
+        response = client.post(
+            "/molecule", json={"smiles": "OCC", "extra": 1}, headers=AUTH
+        )
+    assert response.status_code == 200
+    result = response.json()
+    assert set(result) == set(MoleculeInfo.__dataclass_fields__)
+    assert result["smiles"] == "CCO"
+    assert result["formula"] == "C2H6O"
+    assert result["inchi_key"] == "LFQSCWFLJHTTHZ-UHFFFAOYSA-N"
+    assert result["molecular_weight"] == pytest.approx(46.069)
+    assert result["name"] is None
+    assert result["molblock"] is not None
+    assert "model_version" not in result
+
+
+def test_molecule_is_available_while_model_loads():
+    release = threading.Event()
+
+    def slow_load(_):
+        release.wait(5)
+        return StubPredictor()
+
+    with serve(load=slow_load, wait=False) as client:
+        try:
+            response = client.post("/molecule", json={"smiles": "CCO"}, headers=AUTH)
+            assert client.get("/health").json()["status"] == "loading"
+            assert response.status_code == 200
+        finally:
+            release.set()
+
+
+@pytest.mark.parametrize("headers", [{}, {"X-API-Key": "wrong"}])
+def test_molecule_requires_auth_before_parsing(headers):
+    with serve() as client:
+        response = client.post("/molecule", content=b"not json", headers=headers)
+    assert response.status_code == 401
+    assert response.json() == {"error": "unauthorized"}
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        ({"smiles": ""}, "invalid_smiles"),
+        ({"smiles": " "}, "invalid_smiles"),
+        ({"smiles": "CC O"}, "invalid_smiles"),
+        ({"smiles": "CCO\n"}, "invalid_smiles"),
+        ({"smiles": "C1CC"}, "invalid_smiles"),
+        ({"smiles": "*"}, "invalid_smiles"),
+        ({"smiles": "*C"}, "invalid_smiles"),
+        ({"smiles": "[999C]"}, "invalid_smiles"),
+        ({"smiles": "C(C)(C)(C)(C)C"}, "invalid_smiles"),
+        ({"smiles": "C" * 21}, "invalid_smiles"),
+        ({}, "invalid_request"),
+        ({"smiles": None}, "invalid_request"),
+        ({"smiles": 5}, "invalid_request"),
+        ({"smiles": True}, "invalid_request"),
+        ({"smiles": ["CCO"]}, "invalid_request"),
+        ([], "invalid_request"),
+    ],
+)
+def test_molecule_bad_input_is_422(body, message):
+    with serve(max_smiles_length=20) as client:
+        response = client.post("/molecule", json=body, headers=AUTH)
+        # An invalid molecule must not leave the computation slot locked.
+        valid = client.post("/molecule", json={"smiles": "CCO"}, headers=AUTH)
+    assert response.status_code == 422
+    assert response.json() == {"error": message}
+    assert valid.status_code == 200
+
+
+@pytest.mark.parametrize("content", [b"not json", b'{"smiles":', b"null", b""])
+def test_molecule_malformed_request_is_422(content):
+    with serve() as client:
+        response = client.post(
+            "/molecule",
+            content=content,
+            headers={**AUTH, "Content-Type": "application/json"},
+        )
+    assert response.status_code == 422
+    assert response.json() == {"error": "invalid_request"}
+
+
+def test_molecule_body_limit_with_and_without_content_length():
+    big = b'{"smiles": "' + b"C" * 100 + b'"}'
+    headers = {**AUTH, "Content-Type": "application/json"}
+    with serve(max_body_bytes=64) as client:
+        sized = client.post("/molecule", content=big, headers=headers)
+        streamed = client.post("/molecule", content=chunked(big), headers=headers)
+        small = client.post(
+            "/molecule", content=chunked(b'{"smiles": "CCO"}'), headers=headers
+        )
+    for response in (sized, streamed):
+        assert response.status_code == 413
+        assert response.json() == {"error": "body_too_large"}
+    assert "content-length" not in streamed.request.headers
+    assert small.status_code == 200
+
+
+def test_molecule_shares_per_key_rate_limit_with_predict(monkeypatch):
+    monkeypatch.setattr(
+        "mufu_server.app.load_keys", lambda _: {"alex": hash_key("other-key")}
+    )
+    with serve(rate_limit_per_minute=2, api_keys_file=Path("unused")) as client:
+        molecule = client.post("/molecule", json={"smiles": "CCO"}, headers=AUTH)
+        predict = client.post("/predict", json={"smiles": "CCO"}, headers=AUTH)
+        limited = client.post("/molecule", json={"smiles": "CCO"}, headers=AUTH)
+        other = client.post(
+            "/molecule", json={"smiles": "CCO"}, headers={"X-API-Key": "other-key"}
+        )
+    assert [r.status_code for r in (molecule, predict, limited, other)] == [
+        200,
+        200,
+        429,
+        200,
+    ]
+    assert limited.json() == {"error": "rate_limited"}
+    assert 1 <= int(limited.headers["Retry-After"]) <= 60
+
+
+def test_molecule_embedding_failure_is_nullable_success(molecule_worker_command):
+    with serve() as client:
+        client.app.state.molecules._command = molecule_worker_command("error-structure")
+        response = client.post("/molecule", json={"smiles": "CCO"}, headers=AUTH)
+    assert response.status_code == 200
+    assert response.json()["molblock"] is None
+    assert response.json()["formula"] == "C2H6O"
+
+
+def test_molecule_internal_failure_releases_slot(molecule_worker_command, caplog):
+    caplog.set_level(logging.DEBUG)
+    with serve() as client:
+        command = client.app.state.molecules._command
+        client.app.state.molecules._command = molecule_worker_command(
+            "crash-descriptors"
+        )
+        failed = client.post("/molecule", json={"smiles": "CCO"}, headers=AUTH)
+        client.app.state.molecules._command = command
+        recovered = client.post("/molecule", json={"smiles": "CCO"}, headers=AUTH)
+    assert failed.status_code == 500 and failed.json() == {"error": "internal_error"}
+    assert recovered.status_code == 200
+    assert KEY not in caplog.text

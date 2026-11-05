@@ -1,4 +1,5 @@
 import shutil
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -13,6 +14,23 @@ from mufu.experiment import make_fit_predict
 from mufu.train import TrainConfig
 from mufu_server.config import Settings
 from mufu_server.infer import load_predictor
+
+
+@pytest.fixture
+def molecule_worker_command(tmp_path):
+    """Faults run in actual child processes, not monkeypatches in the parent."""
+
+    def command(mode):
+        return (
+            sys.executable,
+            "-u",
+            str(Path(__file__).with_name("worker_cases.py")),
+            mode,
+            str(tmp_path),
+        )
+
+    return command
+
 
 # a finite 95% conformal quantile needs at least 19 labels
 SMILES = [
