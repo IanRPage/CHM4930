@@ -31,7 +31,11 @@ describe("GET /api/mol-info", () => {
       const body = res.body as MolInfo;
       expect(body.molecularWeight).toBeCloseTo(180.16, 2);
       expect(body.svg).toContain("<svg");
-      expect(body.molblock).toContain("M  END");
+      const z = [
+        ...(body.molblock ?? "").matchAll(/^\s*\S+\s+\S+\s+(\S+)\s+[A-Z]/gm),
+      ].map((m) => Number(m[1]));
+      expect(z).toHaveLength(21);
+      expect(z.some((c) => c !== 0)).toBe(true);
     },
   );
 
