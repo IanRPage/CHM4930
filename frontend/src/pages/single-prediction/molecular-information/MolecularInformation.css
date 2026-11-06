@@ -1,0 +1,273 @@
+.predict-info {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.predict-info h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.predict-info-message {
+  margin: 24px 0 0;
+  font-size: 15px;
+  color: var(--slate-600);
+}
+
+/* The structure view is the tile itself; title, toggle and hint float over it */
+.predict-info-structure {
+  position: relative;
+  height: 360px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.predict-info-view {
+  position: absolute;
+  inset: 0;
+}
+
+.predict-info-view > div {
+  width: 100%;
+  height: 100%;
+}
+
+.predict-info-pan {
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.predict-info-pan:active {
+  cursor: grabbing;
+}
+
+.predict-info-pan img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+.predict-info-structure-head {
+  position: absolute;
+  inset: 20px 24px auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.predict-info-structure-head h2 {
+  margin: 0;
+}
+
+.predict-info-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--slate-100);
+  pointer-events: auto;
+}
+
+.predict-info-toggle button {
+  padding: 4px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--slate-500);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.predict-info-toggle button[aria-pressed="true"] {
+  background: var(--white);
+  box-shadow: var(--shadow-raised);
+  color: var(--blue-600);
+}
+
+.predict-info-hint {
+  position: absolute;
+  bottom: 12px;
+  left: 24px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--slate-400);
+  pointer-events: none;
+}
+
+.predict-info-legend {
+  position: absolute;
+  top: 60px;
+  left: 24px;
+  z-index: 1;
+  display: flex;
+  flex-flow: column wrap;
+  gap: 4px 16px;
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--slate-600);
+  pointer-events: none;
+}
+
+.predict-info-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.predict-info-swatch {
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgb(15 23 42 / 25%);
+  border-radius: 50%;
+}
+
+.predict-info-list,
+.predict-info-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  margin: 0;
+}
+
+.predict-info-list {
+  gap: 12px 24px;
+}
+
+.predict-info-tiles {
+  gap: 10px;
+}
+
+.predict-info-tiles > div {
+  padding: 10px 12px;
+  border: 1px solid var(--slate-200);
+  border-radius: 8px;
+  background: var(--slate-50);
+}
+
+.predict-info-list dt,
+.predict-info-tiles dt {
+  font-size: 12px;
+  color: var(--slate-500);
+}
+
+/* icon centered on its text line. tooltip sits above it with a tail */
+.predict-info-list dt,
+.predict-info-tiles dt,
+.predict-info-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.predict-info-tip {
+  position: relative;
+  display: flex;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.predict-info-tip img {
+  display: block;
+}
+
+.predict-info-tip:focus-visible {
+  outline: 2px solid var(--blue-600);
+  border-radius: 50%;
+}
+
+.predict-info-tip [role="tooltip"] {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 1;
+  width: max-content;
+  max-width: 220px;
+  padding: 8px 10px;
+  transform: translateX(-50%);
+  border-radius: 8px;
+  background: var(--slate-800);
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.predict-info-tip [role="tooltip"]::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 8px;
+  height: 6px;
+  transform: translateX(-50%);
+  background: var(--slate-800);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+.predict-info-tip[data-open] [role="tooltip"],
+.predict-info-tip:focus-visible [role="tooltip"] {
+  visibility: visible;
+}
+
+/* Touch emulates hover on tap and keeps it, which would fight the tap toggle */
+@media (hover: hover) {
+  .predict-info-tip:hover [role="tooltip"] {
+    visibility: visible;
+  }
+}
+
+.predict-info-list dd,
+.predict-info-tiles dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.predict-info-tiles dd {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.predict-info-subtitle {
+  margin: -8px 0 12px;
+  font-size: 13px;
+  color: var(--slate-500);
+}
+
+.predict-info-rules {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+.predict-info-rules li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 360px;
+}
+
+.predict-info-footer {
+  margin: 0;
+  font-size: 13px;
+  color: var(--slate-500);
+}

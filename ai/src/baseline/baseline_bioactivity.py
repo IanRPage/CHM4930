@@ -4,14 +4,24 @@ Random forest pIC50 baselines for BACE-1 and EGFR on ECFP4 fingerprints, one mod
 How to run (from `ai/`, with `PYTHONPATH=src`):
 
     python -m baseline.baseline_bioactivity
+
+Runs on every scaffold split in `SPLIT_IDS`, tuning `max_features` on each split's own
+validation set.
 """
 
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 
-from baseline.benchmark import SEEDS, load_benchmark_split, run_benchmark
+from baseline.benchmark import (
+    SEEDS,
+    SPLIT_IDS,
+    load_benchmark_split,
+    rebuild_if_promoted_present,
+    run_benchmark,
+)
 from evaluation import evaluation_metrics
 from featurize.fingerprint import FINGERPRINT_BITS, mol_to_ecfp4
+from mufu.mc_dropout import DEFAULT_COVERAGES, fit_conformal
 from pipeline.combined_loader import TARGETS
 from pipeline.preprocess import to_mol
 
@@ -75,8 +85,22 @@ def select_max_features(data, seed=None):
     return best_max_features
 
 
-def main():
-    df = load_benchmark_split()
+def _predict_with_tree_std(
+    model: RandomForestRegressor, X: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    tree_preds = np.stack([tree.predict(X) for tree in model.estimators_], axis=0)
+    return tree_preds.mean(axis=0), tree_preds.std(axis=0, ddof=1)
+
+
+def _pad(mask: np.ndarray, values: np.ndarray) -> np.ndarray:
+    out = np.full(len(mask), np.nan, dtype=float)
+    out[mask] = values
+    return out
+
+
+def run_split(split_id):
+    print(f"\n=== split {split_id} ===")
+    df = load_benchmark_split(split_id=split_id)
     prepared = {target: prepare_target(df, target) for target in TARGETS}
     selected = {
         target: select_max_features(prepared[target], seed=SEEDS[0])
@@ -96,11 +120,33 @@ def main():
             )
             model.fit(X[data["train_idx"]], y[data["train_idx"]])
             col = f"pIC50_{target}"
+            val_idx = data["val_idx"]
+            pred_val, std_val = _predict_with_tree_std(model, X[val_idx])
+            conformal = fit_conformal(
+                pred_val[:, None],
+                std_val[:, None],
+                y[val_idx, None],
+                np.ones((len(val_idx), 1), dtype=bool),
+                n_samples=N_ESTIMATORS,
+                columns=(col,),
+            )
             for split, idx_key in (("val", "val_idx"), ("test", "test_idx")):
                 mask = data["split_masks"][split]
-                scores = np.full(len(mask), np.nan, dtype=float)
-                scores[mask] = model.predict(X[data[idx_key]])
-                predictions[split][col] = scores
+                idx = data[idx_key]
+                pred_sub, std_sub = (
+                    (pred_val, std_val)
+                    if split == "val"
+                    else _predict_with_tree_std(model, X[idx])
+                )
+                bounds = conformal.intervals(pred_sub[:, None], std_sub[:, None])
+
+                predictions[split][col] = _pad(mask, pred_sub)
+                predictions[split][f"{col}_sigma"] = _pad(mask, std_sub)
+                for cov in DEFAULT_COVERAGES:
+                    pct = round(cov * 100)
+                    lo_sub, hi_sub = bounds[cov]
+                    predictions[split][f"{col}_lo{pct}"] = _pad(mask, lo_sub[:, 0])
+                    predictions[split][f"{col}_hi{pct}"] = _pad(mask, hi_sub[:, 0])
         return predictions
 
     params = {"max_features": selected, "n_estimators": N_ESTIMATORS}
@@ -110,7 +156,10 @@ def main():
         encoder=f"ecfp4-{FINGERPRINT_BITS}",
         params=params,
         seeds=SEEDS,
+        split_id=split_id,
         df=df,
+        overwrite_predictions=True,
+        promote=True,
     )
 
     for target in TARGETS:
@@ -127,8 +176,15 @@ def main():
                 f"{label}: "
                 f"RMSE={sub.loc[(split, 'rmse'), 'value']:.4f}, "
                 f"R2={sub.loc[(split, 'r2'), 'value']:.4f}, "
-                f"ROC-AUC={sub.loc[(split, 'roc_auc'), 'value']:.4f}"
+                f"ROC-AUC={sub.loc[(split, 'roc_auc'), 'value']:.4f}, "
+                f"Spearman={sub.loc[(split, 'spearman'), 'value']:.4f}"
             )
+
+
+def main():
+    for split_id in SPLIT_IDS:
+        run_split(split_id)
+    rebuild_if_promoted_present()
 
 
 if __name__ == "__main__":

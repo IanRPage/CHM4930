@@ -1,0 +1,15 @@
+.page-header h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 36px;
+  letter-spacing: -0.5px;
+  color: var(--slate-900);
+}
+
+.page-header p {
+  margin: 6px 0 0;
+  font-size: 15px;
+  line-height: 18px;
+  color: var(--slate-500);
+}

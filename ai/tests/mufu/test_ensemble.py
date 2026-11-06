@@ -29,15 +29,14 @@ def checkpoints(labeled_dataset, tmp_path):
         datasets,
         encoder,
         CFG,
+        run_dir=tmp_path,
         model_name="mufu_test",
-        checkpoint_dir=tmp_path,
-        history_dir=tmp_path / "outputs",
         data_path=data_path,
     )
     for seed in range(3):
         torch.manual_seed(seed)
         fit_predict(None, seed)
-    return tmp_path, encoder
+    return tmp_path / "checkpoints", encoder
 
 
 @pytest.fixture
@@ -46,7 +45,12 @@ def fitted(checkpoints, labeled_dataset):
     paths = ensemble.member_paths(ckpt_dir, "mufu_test", range(3))
     members = ensemble.load_members(paths, encoder)
     params = ensemble.fit_ensemble_conformal(
-        members, labeled_dataset, n_samples=4, coverages=COVERAGES, batch_size=4
+        members,
+        labeled_dataset,
+        labeled_dataset.fingerprints,
+        n_samples=4,
+        coverages=COVERAGES,
+        batch_size=4,
     )
     ensemble.save_ensemble(params, ckpt_dir, "mufu_test")
     return ckpt_dir, paths, members, params
@@ -102,15 +106,28 @@ def test_saved_ensemble_round_trips_and_predicts_intervals(fitted, labeled_datas
     ckpt_dir, paths, members, params = fitted
 
     loaded = ensemble.load_ensemble_params(paths, ckpt_dir, "mufu_test")
+    torch.manual_seed(42)
+    rng_before = torch.get_rng_state()
     preds = ensemble.predict_with_ensemble_intervals(
         members, labeled_dataset, loaded, batch_size=4
     )
+    assert torch.equal(torch.get_rng_state(), rng_before)
+    ensemble.fit_ensemble_conformal(
+        members,
+        labeled_dataset,
+        labeled_dataset.fingerprints,
+        n_samples=4,
+        coverages=COVERAGES,
+        batch_size=4,
+    )
+    assert torch.equal(torch.get_rng_state(), rng_before)
 
     assert loaded.conformal.q.shape == (N_BIO, len(COVERAGES))
     assert loaded.conformal.n_samples == 4
     assert [name for name, _ in loaded.members] == [p.name for p in paths]
     assert len({sha for _, sha in loaded.members}) == 3
     np.testing.assert_allclose(loaded.conformal.q, params.conformal.q)
+    np.testing.assert_array_equal(loaded.train_fps, params.train_fps)
     assert preds["smiles"] == labeled_dataset.smiles
     assert TOX_COLUMNS[0] in preds
     coverage = empirical_coverage(preds, labeled_dataset, COVERAGES)
@@ -122,6 +139,16 @@ def test_stale_sidecar_raises(fitted):
 
     with pytest.raises(ValueError, match="different members"):
         ensemble.load_ensemble_params(paths[:-1], ckpt_dir, "mufu_test")
+
+    fps_file = ensemble.train_fps_path(ckpt_dir, "mufu_test")
+    fps_bytes = fps_file.read_bytes()
+    fps_file.write_bytes(fps_bytes + b"x")
+    with pytest.raises(ValueError, match="train_fps"):
+        ensemble.load_ensemble_params(paths, ckpt_dir, "mufu_test")
+    fps_file.unlink()
+    with pytest.raises(FileNotFoundError, match="mufu_test_train_fps.npy"):
+        ensemble.load_ensemble_params(paths, ckpt_dir, "mufu_test")
+    fps_file.write_bytes(fps_bytes)
 
     paths[0].write_bytes(paths[0].read_bytes() + b"x")
     with pytest.raises(ValueError, match="different members"):
@@ -142,7 +169,9 @@ def test_dropout_rate_mismatch_raises(fitted, labeled_dataset):
     )
 
     with pytest.raises(ValueError, match="different dropout rates"):
-        ensemble.fit_ensemble_conformal([*members, other], labeled_dataset)
+        ensemble.fit_ensemble_conformal(
+            [*members, other], labeled_dataset, labeled_dataset.fingerprints
+        )
     with pytest.raises(ValueError, match="differ from those q"):
         ensemble.predict_with_ensemble_intervals([other] * 2, labeled_dataset, params)
 

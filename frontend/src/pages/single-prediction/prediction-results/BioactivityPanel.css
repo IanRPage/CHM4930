@@ -1,0 +1,128 @@
+.predict-segmented {
+  display: flex;
+  gap: 2px;
+  margin-left: 6px;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--track);
+}
+
+.predict-segmented button {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--slate-500);
+  cursor: pointer;
+}
+
+.predict-segmented button[aria-pressed="true"] {
+  background: var(--white);
+  box-shadow: var(--shadow-raised);
+  font-weight: 600;
+  color: var(--strong);
+}
+
+.predict-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.predict-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 14px;
+  border-left: 1px solid var(--line);
+}
+
+.predict-stat:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.predict-stat-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--slate-600);
+}
+
+.predict-stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--value);
+}
+
+.predict-stat-detail {
+  font-size: 12px;
+  color: var(--slate-500);
+}
+
+.predict-scale {
+  margin-top: 18px;
+}
+
+.predict-scale-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--track);
+}
+
+.predict-scale-fill {
+  height: 100%;
+  border-radius: 5px;
+  background: var(--fill);
+}
+
+.predict-scale-interval {
+  position: absolute;
+  top: -4px;
+  left: var(--lo);
+  width: calc(var(--hi) - var(--lo));
+  height: 18px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--strong) 22%, transparent);
+}
+
+.predict-scale-point {
+  position: absolute;
+  top: -6px;
+  width: 2px;
+  height: 22px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--slate-900);
+}
+
+.predict-scale-labels {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--slate-500);
+}
+
+.predict-scale-ci {
+  position: absolute;
+  transform: translateX(-50%);
+  font-weight: 500;
+  color: var(--strong);
+}
+
+@media (max-width: 800px) {
+  .predict-stats {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .predict-stat {
+    padding: 0;
+    border-left: 0;
+  }
+}

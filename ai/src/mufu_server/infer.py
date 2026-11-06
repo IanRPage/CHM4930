@@ -1,6 +1,6 @@
 """
 MuFu 5-seed ensemble inference for one molecule, in the response format of
-`backend/docs/predict-api.md`.
+the inference server contract in `backend/docs/api.md`.
 
 pIC50 is the ensemble mean with its combined MC-Dropout interval at `COVERAGE`;
 `p_active` and toxicity average each seed's calibrated probabilities. MC passes are
@@ -19,6 +19,7 @@ import torch
 from baseline.benchmark import SEEDS
 from baseline.results import file_sha256
 from encoders.smiles_encoder import SmilesEncoder
+from featurize.fingerprint import max_tanimoto
 from mufu.contract import ACTIVE_COLUMNS, BIO_TARGETS, PIC50_COLUMNS, TOX_COLUMNS
 from mufu.data.dataset import MuFuDataset
 from mufu.ensemble import (
@@ -34,6 +35,17 @@ from mufu.hub import TAG_PATTERN, download_version, load_tagged_version
 from mufu_server.config import COVERAGE, Settings
 
 MC_SEED = 0
+IN_DOMAIN_THRESHOLD = 0.6
+BORDERLINE_THRESHOLD = 0.4
+APPLICABILITY_DOMAINS = ("in_domain", "borderline", "out_of_domain")
+
+
+def applicability_domain(similarity: float) -> str:
+    if similarity >= IN_DOMAIN_THRESHOLD:
+        return "in_domain"
+    if similarity >= BORDERLINE_THRESHOLD:
+        return "borderline"
+    return "out_of_domain"
 
 
 class InvalidSmiles(ValueError):
@@ -86,11 +98,15 @@ class Predictor:
                 "p_active": _finite(preds[active_col][0]),
             }
 
+        tanimoto = max_tanimoto(dataset.fingerprints[0], self.params.train_fps)
+
         response = {
             "smiles": dataset.smiles[0],
             "model_version": self.model_version,
             "n_samples": self.params.conformal.n_samples,
             "coverage": COVERAGE,
+            "nearest_train_tanimoto": tanimoto,
+            "applicability_domain": applicability_domain(tanimoto),
             "bioactivity": bioactivity,
             "toxicity": {col: _finite(preds[col][0]) for col in TOX_COLUMNS},
         }
@@ -119,6 +135,16 @@ def check_response(response: dict) -> None:
     n_samples = response["n_samples"]
     _check(isinstance(n_samples, int) and n_samples >= 2, "n_samples")
     _check(0.0 < response["coverage"] < 1.0, "coverage")
+    tanimoto = response["nearest_train_tanimoto"]
+    _check(
+        isinstance(tanimoto, float) and 0.0 <= tanimoto <= 1.0,
+        "nearest_train_tanimoto",
+    )
+    domain = response["applicability_domain"]
+    _check(
+        domain in APPLICABILITY_DOMAINS and domain == applicability_domain(tanimoto),
+        "applicability_domain",
+    )
     _check(set(response["bioactivity"]) == set(BIO_TARGETS), "bioactivity targets")
     for target, bio in response["bioactivity"].items():
         value, lo, hi = bio["pic50"], bio["pic50_lo"], bio["pic50_hi"]

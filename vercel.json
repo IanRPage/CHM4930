@@ -5,7 +5,10 @@
   "buildCommand": "npm run build --prefix frontend && npm run build --prefix backend",
   "outputDirectory": "frontend/dist",
   "functions": {
-    "api/index.js": { "maxDuration": 40 }
+    "api/index.js": {
+      "maxDuration": 40,
+      "includeFiles": "backend/node_modules/{@rdkit/rdkit/dist/RDKit_minimal.wasm,openchemlib/dist/resources.json}"
+    }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api" },

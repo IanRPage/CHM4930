@@ -4,25 +4,11 @@
   padding: 9px 16px 16px;
 }
 
-.about h1 {
-  margin: 0;
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  color: #0f172a;
-}
-
-.about-subtitle {
-  margin: 1px 0 0;
-  font-size: 15px;
-  color: #64748b;
-}
-
 .about-grid {
   display: grid;
   grid-template-columns: 270px minmax(0, 1fr);
   gap: 24px;
-  margin-top: 26px;
+  margin-top: 29px;
 }
 
 .about-side {
@@ -31,22 +17,18 @@
   gap: 16px;
 }
 
-.about-card {
-  padding: 24px;
-}
-
 .about-card h2 {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--slate-900);
 }
 
 .about-goal {
   margin: 16px 0 0;
   font-size: 15px;
   line-height: 24px;
-  color: #475569;
+  color: var(--slate-600);
 }
 
 .about-team {
@@ -70,12 +52,12 @@
 
 .about-team strong {
   font-size: 14px;
-  color: #0f172a;
+  color: var(--slate-900);
 }
 
 .about-team li > div span {
   font-size: 13px;
-  color: #64748b;
+  color: var(--slate-500);
 }
 
 .about-avatar {
@@ -88,7 +70,7 @@
   border-radius: 50%;
   font-size: 13px;
   font-weight: 700;
-  color: #334155;
+  color: var(--slate-700);
 }
 
 .about-model {

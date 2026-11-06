@@ -1,19 +1,41 @@
+import Card from "../../components/common/Card.tsx";
+import PageHeader from "../../components/common/PageHeader.tsx";
 import "./AboutPage.css";
 
 const TEAM = [
-  { initials: "VF", name: "Varvara Folimonova", tint: "#dbeafe" },
-  { initials: "ED", name: "Eman Daraiseh", tint: "#ede9fe" },
-  { initials: "AR", name: "Artem Rospotniuk", tint: "#dcfce7" },
-  { initials: "QM", name: "Qiyu Ma", tint: "#fef3c7" },
-  { initials: "IR", name: "Ian Rodriguez-Page", tint: "#fee2e2" },
+  { initials: "VF", name: "Varvara Folimonova", tint: "var(--blue-100)" },
+  { initials: "ED", name: "Eman Daraiseh", tint: "var(--violet-100)" },
+  { initials: "AR", name: "Artem Rospotniuk", tint: "var(--green-100)" },
+  { initials: "QM", name: "Qiyu Ma", tint: "var(--amber-100)" },
+  { initials: "IR", name: "Ian Rodriguez-Page", tint: "var(--red-100)" },
 ];
 
 const PALETTE = {
-  blue: { fill: "#eff6ff", stroke: "#3b82f6", text: "#1d4ed8" },
-  cyan: { fill: "#ecfeff", stroke: "#06b6d4", text: "#0e7490" },
-  slate: { fill: "#f1f5f9", stroke: "#cbd5e1", text: "#0f172a" },
-  green: { fill: "#f0fdf4", stroke: "#22c55e", text: "#15803d" },
-  red: { fill: "#fef2f2", stroke: "#ef4444", text: "#b91c1c" },
+  blue: {
+    fill: "var(--blue-50)",
+    stroke: "var(--blue-500)",
+    text: "var(--blue-700)",
+  },
+  cyan: {
+    fill: "var(--cyan-50)",
+    stroke: "var(--cyan-500)",
+    text: "var(--cyan-700)",
+  },
+  slate: {
+    fill: "var(--slate-100)",
+    stroke: "var(--slate-300)",
+    text: "var(--slate-900)",
+  },
+  green: {
+    fill: "var(--green-50)",
+    stroke: "var(--green-500)",
+    text: "var(--green-700)",
+  },
+  red: {
+    fill: "var(--red-50)",
+    stroke: "var(--red-500)",
+    text: "var(--red-700)",
+  },
 };
 
 const NODES = [
@@ -87,23 +109,23 @@ const DIAGRAM_LABEL =
 export default function AboutPage() {
   return (
     <div className="about">
-      <h1>About MuFu</h1>
-      <p className="about-subtitle">
-        Multimodal Fusion for Molecular Property Prediction
-      </p>
+      <PageHeader
+        title="About MuFu"
+        subtitle="Multimodal Fusion for Molecular Property Prediction"
+      />
 
       <div className="about-grid">
         <div className="about-side">
-          <section className="card about-card">
+          <Card className="about-card">
             <h2>Our Goal</h2>
             <p className="about-goal">
               Develop a multimodal deep learning model to predict molecular
               bioactivity and toxicity, supporting early-stage drug discovery
               and chemical research.
             </p>
-          </section>
+          </Card>
 
-          <section className="card about-card">
+          <Card className="about-card">
             <h2>Team</h2>
             <ul className="about-team">
               {TEAM.map(({ initials, name, tint }) => (
@@ -122,10 +144,10 @@ export default function AboutPage() {
                 </li>
               ))}
             </ul>
-          </section>
+          </Card>
         </div>
 
-        <section className="card about-card about-model">
+        <Card className="about-card about-model">
           <h2>Model Overview</h2>
           <figure>
             <svg viewBox="0 0 760 330" role="img" aria-label={DIAGRAM_LABEL}>
@@ -139,7 +161,10 @@ export default function AboutPage() {
                   markerHeight="7"
                   orient="auto-start-reverse"
                 >
-                  <path d="M0 0 L10 5 L0 10 z" fill="#94a3b8" />
+                  <path
+                    d="M0 0 L10 5 L0 10 z"
+                    style={{ fill: "var(--slate-400)" }}
+                  />
                 </marker>
               </defs>
               {ARROWS.map(([x1, y1, x2, y2]) => (
@@ -149,7 +174,7 @@ export default function AboutPage() {
                   y1={y1}
                   x2={x2}
                   y2={y2}
-                  stroke="#94a3b8"
+                  style={{ stroke: "var(--slate-400)" }}
                   strokeWidth="1.5"
                   markerEnd="url(#about-arrow)"
                 />
@@ -162,14 +187,13 @@ export default function AboutPage() {
                     width={w}
                     height={h}
                     rx="8"
-                    fill={color.fill}
-                    stroke={color.stroke}
+                    style={{ fill: color.fill, stroke: color.stroke }}
                     strokeWidth="1.5"
                   />
                   <text
                     x={x + w / 2}
                     y={y + h / 2 - 7}
-                    fill={color.text}
+                    style={{ fill: color.text }}
                     className="about-node-title"
                   >
                     {title}
@@ -177,7 +201,7 @@ export default function AboutPage() {
                   <text
                     x={x + w / 2}
                     y={y + h / 2 + 11}
-                    fill={color.text}
+                    style={{ fill: color.text }}
                     className="about-node-sub"
                   >
                     {sub}
@@ -186,7 +210,7 @@ export default function AboutPage() {
               ))}
             </svg>
           </figure>
-        </section>
+        </Card>
       </div>
     </div>
   );

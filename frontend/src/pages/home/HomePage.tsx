@@ -1,14 +1,19 @@
 import { Link } from "react-router-dom";
-import heroMolecule from "../assets/hero-molecule.svg";
-import arrowRight from "../assets/icon-arrow-right.svg";
-import batchIcon from "../assets/icon-batch.svg";
-import boltIcon from "../assets/icon-bolt.svg";
-import exploreIcon from "../assets/icon-explore.svg";
-import leafIcon from "../assets/icon-leaf.svg";
-import singleIcon from "../assets/icon-single-prediction.svg";
-import targetIcon from "../assets/icon-target.svg";
-import logo from "../assets/mufu-logo-light.svg";
+import MoleculeViewer from "../../components/common/MoleculeViewer.tsx";
+import temozolomideSdf from "../../assets/temozolomide-3d.sdf?raw";
+import arrowRight from "../../assets/icon-arrow-right.svg";
+import batchIcon from "../../assets/icon-batch.svg";
+import boltIcon from "../../assets/icon-bolt.svg";
+import exploreIcon from "../../assets/icon-explore.svg";
+import leafIcon from "../../assets/icon-leaf.svg";
+import singleIcon from "../../assets/icon-single-prediction.svg";
+import targetIcon from "../../assets/icon-target.svg";
+import logo from "../../assets/mufu-logo-light.svg";
+import Card from "../../components/common/Card.tsx";
 import "./HomePage.css";
+
+// Starts well inside its canvas and can't be zoomed past the canvas edges
+const HERO_ZOOM = { start: 0.85, min: 0.55, max: 1.3 };
 
 type EntryCard = {
   title: string;
@@ -26,8 +31,8 @@ const ENTRY_CARDS: EntryCard[] = [
     description:
       "Input a molecule (SMILES or draw structure) to predict bioactivity and toxicity.",
     icon: singleIcon,
-    tint: "#e8f0ff",
-    accent: "#2563eb",
+    tint: "var(--tint-blue)",
+    accent: "var(--blue-600)",
     action: "Get Started",
     to: "/predict",
   },
@@ -36,8 +41,8 @@ const ENTRY_CARDS: EntryCard[] = [
     description:
       "Upload a file with multiple molecules for large-scale screening.",
     icon: batchIcon,
-    tint: "#f1ebff",
-    accent: "#7c3aed",
+    tint: "var(--tint-violet)",
+    accent: "var(--violet-600)",
     action: "Upload File",
   },
   {
@@ -45,8 +50,8 @@ const ENTRY_CARDS: EntryCard[] = [
     description:
       "View dataset statistics and molecular properties used in the model.",
     icon: exploreIcon,
-    tint: "#e3f7ee",
-    accent: "#10b981",
+    tint: "var(--tint-green)",
+    accent: "var(--emerald-500)",
     action: "Explore",
   },
 ];
@@ -56,19 +61,19 @@ const FEATURES = [
     title: "Faster Screening",
     caption: "Quick prediction for many molecules",
     icon: boltIcon,
-    tint: "#e8f0ff",
+    tint: "var(--tint-blue)",
   },
   {
     title: "Multi-property Prediction",
     caption: "Bioactivity and toxicity",
     icon: targetIcon,
-    tint: "#f1ebff",
+    tint: "var(--tint-violet)",
   },
   {
     title: "Support Drug Discovery",
     caption: "Help researchers find better candidates",
     icon: leafIcon,
-    tint: "#e3f7ee",
+    tint: "var(--tint-green)",
   },
 ];
 
@@ -76,7 +81,7 @@ export default function HomePage() {
   return (
     <div className="home">
       <section className="home-hero">
-        <div>
+        <div className="home-hero-text">
           <div className="home-title">
             <img src={logo} alt="" width={84} height={84} />
             <h1>MuFu</h1>
@@ -89,19 +94,15 @@ export default function HomePage() {
             multimodal deep learning model.
           </p>
         </div>
-        <img
-          className="home-graphic"
-          src={heroMolecule}
-          alt=""
-          width={300}
-          height={230}
-        />
+        <div className="home-graphic">
+          <MoleculeViewer sdf={temozolomideSdf} zoom={HERO_ZOOM} />
+        </div>
       </section>
 
       <section className="home-cards">
         {ENTRY_CARDS.map(
           ({ title, description, icon, tint, accent, action, to }) => (
-            <article key={title} className="card home-card">
+            <Card as="article" key={title} className="home-card">
               <span className="home-chip" style={{ background: tint }}>
                 <img src={icon} alt="" width={30} height={30} />
               </span>
@@ -127,7 +128,7 @@ export default function HomePage() {
                   </span>
                 )}
               </div>
-            </article>
+            </Card>
           ),
         )}
       </section>

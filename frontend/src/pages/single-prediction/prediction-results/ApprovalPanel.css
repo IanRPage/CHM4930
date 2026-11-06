@@ -1,0 +1,28 @@
+.predict-approval {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.predict-approval h3 {
+  font-size: 15px;
+}
+
+.predict-approval-meter {
+  --meter-height: 8px;
+  --meter-track: var(--track);
+  --meter-color: var(--fill);
+  width: 170px;
+}
+
+.predict-approval-value {
+  min-width: 56px;
+  text-align: right;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--value);
+}
+
+.predict-approval-reason {
+  font-size: 12px;
+  color: var(--slate-500);
+}

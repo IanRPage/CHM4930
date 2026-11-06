@@ -16,6 +16,7 @@ interval is `mu +/- q * max(sigma, floor)` with `q` and the floor fitted on val.
 saved as `<model_name>_ensemble.json` next to checkpoints with each member's sha256.
 """
 
+import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -25,6 +26,11 @@ import numpy as np
 import torch
 
 from baseline.results import file_sha256
+from featurize.fingerprint import (
+    FINGERPRINT_BITS,
+    FINGERPRINT_RADIUS,
+    pack_fingerprints,
+)
 from mufu.calibration import CalibrationParams
 from mufu.contract import PIC50_COLUMNS
 from mufu.data.dataset import MuFuDataset
@@ -41,6 +47,7 @@ from mufu.model import MuFu
 from mufu.train import predict
 
 SIDECAR_SUFFIX = "_ensemble.json"
+TRAIN_FPS_SUFFIX = "_train_fps.npy"
 
 
 @dataclass(frozen=True)
@@ -55,6 +62,7 @@ class Member:
 class EnsembleParams:
     conformal: ConformalParams
     members: tuple[tuple[str, str], ...]  # (checkpoint file name, sha256)
+    train_fps: np.ndarray  # packed uint8 (N_train, FINGERPRINT_BITS // 8)
 
 
 def member_paths(
@@ -151,18 +159,35 @@ def _dropout_rates(members: Sequence[Member]) -> tuple[float, ...]:
     return rates.pop()
 
 
+def _fork_devices(members: Sequence[Member]) -> list[torch.device]:
+    devices: list[torch.device] = []
+    for m in members:
+        param = next(m.model.parameters(), None)
+        if (
+            param is not None
+            and param.device.type == "cuda"
+            and param.device not in devices
+        ):
+            devices.append(param.device)
+    return devices
+
+
 def fit_ensemble_conformal(
     members: Sequence[Member],
     val_dataset: MuFuDataset,
+    train_fps: np.ndarray | torch.Tensor,
     *,
     n_samples: int = DEFAULT_T,
     coverages: tuple[float, ...] = DEFAULT_COVERAGES,
     batch_size: int = 64,
 ) -> EnsembleParams:
+    packed_fps = pack_fingerprints(train_fps)
     rates = _dropout_rates(members)
-    mean, sigma = ensemble_predict(
-        members, val_dataset, n_samples=n_samples, batch_size=batch_size
-    )
+    with torch.random.fork_rng(devices=_fork_devices(members)):
+        torch.manual_seed(0)
+        mean, sigma = ensemble_predict(
+            members, val_dataset, n_samples=n_samples, batch_size=batch_size
+        )
     conformal = fit_conformal(
         np.column_stack([mean[c] for c in PIC50_COLUMNS]),
         sigma,
@@ -173,7 +198,9 @@ def fit_ensemble_conformal(
         coverages=coverages,
     )
     return EnsembleParams(
-        conformal, tuple((m.path.name, file_sha256(m.path)) for m in members)
+        conformal,
+        tuple((m.path.name, file_sha256(m.path)) for m in members),
+        train_fps=packed_fps,
     )
 
 
@@ -181,28 +208,58 @@ def sidecar_path(checkpoint_dir: Path, model_name: str) -> Path:
     return checkpoint_dir / f"{model_name}{SIDECAR_SUFFIX}"
 
 
+def train_fps_path(checkpoint_dir: Path, model_name: str) -> Path:
+    return checkpoint_dir / f"{model_name}{TRAIN_FPS_SUFFIX}"
+
+
 def save_ensemble(
     params: EnsembleParams, checkpoint_dir: Path, model_name: str
 ) -> None:
+    fps_file = train_fps_path(checkpoint_dir, model_name)
+    np.save(fps_file, params.train_fps, allow_pickle=False)
     state = {
         "members": [{"checkpoint": n, "sha256": s} for n, s in params.members],
         "conformal": json.loads(params.conformal.to_json()),
+        "train_fps": {
+            "file": fps_file.name,
+            "sha256": hashlib.sha256(fps_file.read_bytes()).hexdigest(),
+            "radius": FINGERPRINT_RADIUS,
+            "n_bits": FINGERPRINT_BITS,
+        },
     }
     sidecar_path(checkpoint_dir, model_name).write_text(
         json.dumps(state, indent=2) + "\n"
     )
 
 
-def load_ensemble_params(
+def load_ensemble_conformal(
     paths: Sequence[Path], checkpoint_dir: Path, model_name: str
-) -> EnsembleParams:
+) -> tuple[ConformalParams, tuple[tuple[str, str], ...], dict]:
     state = json.loads(sidecar_path(checkpoint_dir, model_name).read_text())
     saved = tuple((m["checkpoint"], m["sha256"]) for m in state["members"])
     current = tuple((p.name, file_sha256(p)) for p in paths)
     if saved != current:
         raise ValueError("saved q was fitted on different members; refit the ensemble")
+    return ConformalParams.from_json(json.dumps(state["conformal"])), saved, state
+
+
+def load_ensemble_params(
+    paths: Sequence[Path], checkpoint_dir: Path, model_name: str
+) -> EnsembleParams:
+    conformal, saved, state = load_ensemble_conformal(paths, checkpoint_dir, model_name)
+    fps_file = train_fps_path(checkpoint_dir, model_name)
+    if not fps_file.exists():
+        raise FileNotFoundError(f"missing train fingerprints: {fps_file.name}")
+    expected = {
+        "file": fps_file.name,
+        "sha256": hashlib.sha256(fps_file.read_bytes()).hexdigest(),
+        "radius": FINGERPRINT_RADIUS,
+        "n_bits": FINGERPRINT_BITS,
+    }
+    if state.get("train_fps") != expected:
+        raise ValueError("saved train_fps does not match file; refit the ensemble")
     return EnsembleParams(
-        ConformalParams.from_json(json.dumps(state["conformal"])), saved
+        conformal, saved, train_fps=np.load(fps_file, allow_pickle=False)
     )
 
 
@@ -222,9 +279,11 @@ def predict_with_ensemble_intervals(
     if _dropout_rates(members) != conformal.dropout_rates:
         raise ValueError("dropout rates differ from those q was fitted with; refit q")
 
-    mean, sigma = ensemble_predict(
-        members, dataset, n_samples=conformal.n_samples, batch_size=batch_size
-    )
+    with torch.random.fork_rng(devices=_fork_devices(members)):
+        torch.manual_seed(0)
+        mean, sigma = ensemble_predict(
+            members, dataset, n_samples=conformal.n_samples, batch_size=batch_size
+        )
     pred = np.column_stack([mean[c] for c in PIC50_COLUMNS])
     bounds = conformal.intervals(pred, sigma)
     out: dict[str, list[str] | np.ndarray] = dict(mean)

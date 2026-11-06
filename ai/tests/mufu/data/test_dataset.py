@@ -75,9 +75,24 @@ def test_features_match_featurizers():
 
 
 def test_split_datasets_sizes():
-    df = make_df().iloc[:4].assign(split=["train", "train", "val", "test"])
+    df = make_df().assign(split=["train", "val", "val", "test", "val"])
     sets = split_datasets(df)
-    assert {k: len(v) for k, v in sets.items()} == {"train": 2, "val": 1, "test": 1}
+    assert {k: len(v) for k, v in sets.items()} == {
+        "train": 1,
+        "val": 2,
+        "test": 1,
+        "val_select": 1,
+        "val_calib": 1,
+    }
+    assert set(sets["val_select"].smiles).isdisjoint(sets["val_calib"].smiles)
+    assert set(sets["val_select"].smiles) | set(sets["val_calib"].smiles) == set(
+        sets["val"].smiles
+    )
+
+    with pytest.raises(ValueError, match="at least 2 scaffold groups"):
+        split_datasets(
+            make_df().iloc[:4].assign(split=["train", "train", "val", "test"])
+        )
 
 
 def test_sources_follow_dataset_order():

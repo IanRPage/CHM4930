@@ -1,0 +1,12 @@
+.card {
+  background: var(--white);
+  border: 1px solid var(--slate-200);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card);
+  box-sizing: border-box;
+}
+
+/* Zero specificity so any page class can override the default padding */
+:where(.card) {
+  padding: 24px;
+}

@@ -1,0 +1,12 @@
+.home-graphic {
+  width: 300px;
+  height: 230px;
+  flex-shrink: 0;
+  position: relative;
+}
+
+/* Larger than the slot, so a zoomed molecule never hits a visible edge */
+.home-graphic > div {
+  position: absolute;
+  inset: -28px -16px -28px -184px;
+}

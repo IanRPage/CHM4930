@@ -1,11 +1,11 @@
 import { Route, Routes } from "react-router-dom";
 import Layout from "./components/layout/Layout.tsx";
-import AboutPage from "./pages/AboutPage.tsx";
-import BatchPredictionPage from "./pages/BatchPredictionPage.tsx";
-import DatasetExplorerPage from "./pages/DatasetExplorerPage.tsx";
-import HomePage from "./pages/HomePage.tsx";
-import NotFoundPage from "./pages/NotFoundPage.tsx";
-import SinglePredictionPage from "./pages/SinglePredictionPage.tsx";
+import AboutPage from "./pages/about/AboutPage.tsx";
+import BatchPredictionPage from "./pages/batch-prediction/BatchPredictionPage.tsx";
+import DatasetExplorerPage from "./pages/dataset-explorer/DatasetExplorerPage.tsx";
+import HomePage from "./pages/home/HomePage.tsx";
+import NotFoundPage from "./pages/not-found/NotFoundPage.tsx";
+import SinglePredictionPage from "./pages/single-prediction/SinglePredictionPage.tsx";
 
 export default function App() {
   return (
