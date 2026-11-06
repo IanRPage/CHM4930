@@ -44,6 +44,12 @@
   flex-shrink: 0;
 }
 
+/* The viewer's canvas overhangs the graphic slot, so keep the text above it */
+.home-hero-text {
+  position: relative;
+  z-index: 1;
+}
+
 .home-cards {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

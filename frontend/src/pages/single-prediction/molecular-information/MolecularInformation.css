@@ -103,6 +103,36 @@
   pointer-events: none;
 }
 
+.predict-info-legend {
+  position: absolute;
+  top: 60px;
+  left: 24px;
+  z-index: 1;
+  display: flex;
+  flex-flow: column wrap;
+  gap: 4px 16px;
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--slate-600);
+  pointer-events: none;
+}
+
+.predict-info-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.predict-info-swatch {
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgb(15 23 42 / 25%);
+  border-radius: 50%;
+}
+
 .predict-info-list,
 .predict-info-tiles {
   display: grid;
@@ -129,6 +159,76 @@
 .predict-info-tiles dt {
   font-size: 12px;
   color: var(--slate-500);
+}
+
+/* icon centered on its text line. tooltip sits above it with a tail */
+.predict-info-list dt,
+.predict-info-tiles dt,
+.predict-info-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.predict-info-tip {
+  position: relative;
+  display: flex;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.predict-info-tip img {
+  display: block;
+}
+
+.predict-info-tip:focus-visible {
+  outline: 2px solid var(--blue-600);
+  border-radius: 50%;
+}
+
+.predict-info-tip [role="tooltip"] {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  z-index: 1;
+  width: max-content;
+  max-width: 220px;
+  padding: 8px 10px;
+  transform: translateX(-50%);
+  border-radius: 8px;
+  background: var(--slate-800);
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.predict-info-tip [role="tooltip"]::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 8px;
+  height: 6px;
+  transform: translateX(-50%);
+  background: var(--slate-800);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+.predict-info-tip[data-open] [role="tooltip"],
+.predict-info-tip:focus-visible [role="tooltip"] {
+  visibility: visible;
+}
+
+/* Touch emulates hover on tap and keeps it, which would fight the tap toggle */
+@media (hover: hover) {
+  .predict-info-tip:hover [role="tooltip"] {
+    visibility: visible;
+  }
 }
 
 .predict-info-list dd,

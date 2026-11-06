@@ -12,6 +12,9 @@ import logo from "../../assets/mufu-logo-light.svg";
 import Card from "../../components/common/Card.tsx";
 import "./HomePage.css";
 
+// Starts well inside its canvas and can't be zoomed past the canvas edges
+const HERO_ZOOM = { start: 0.85, min: 0.55, max: 1.3 };
+
 type EntryCard = {
   title: string;
   description: string;
@@ -78,7 +81,7 @@ export default function HomePage() {
   return (
     <div className="home">
       <section className="home-hero">
-        <div>
+        <div className="home-hero-text">
           <div className="home-title">
             <img src={logo} alt="" width={84} height={84} />
             <h1>MuFu</h1>
@@ -92,7 +95,7 @@ export default function HomePage() {
           </p>
         </div>
         <div className="home-graphic">
-          <MoleculeViewer sdf={temozolomideSdf} />
+          <MoleculeViewer sdf={temozolomideSdf} zoom={HERO_ZOOM} />
         </div>
       </section>
 

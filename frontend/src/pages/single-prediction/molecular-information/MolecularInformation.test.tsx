@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import { molInfoResponse } from "../../../test/fixtures.ts";
@@ -40,4 +40,47 @@ it("hides the 3D option without a molblock and InChIKey without a key", () => {
 
   expect(screen.queryByRole("button", { name: "3D" })).not.toBeInTheDocument();
   expect(screen.queryByText("InChIKey")).not.toBeInTheDocument();
+});
+
+it("explains descriptors, identifiers and drug-likeness through info tooltips", () => {
+  renderInfo();
+
+  for (const [name, text] of [
+    ["LogP", /lipophilicity/],
+    ["Formula", /atoms of each element/],
+    ["Drug-likeness", /rule of five/],
+  ] as const) {
+    expect(
+      screen.getByRole("button", { name: `About ${name}` }),
+    ).toHaveAccessibleDescription(text);
+  }
+});
+
+it("opens an info tooltip on tap and closes it on a tap elsewhere", async () => {
+  renderInfo();
+  const tip = screen.getByRole("button", { name: "About LogP" });
+
+  await userEvent.click(tip);
+  expect(tip).toHaveAttribute("data-open");
+
+  await userEvent.click(document.body);
+  expect(tip).not.toHaveAttribute("data-open");
+});
+
+it("labels the molecule's elements, with their colors, in the 3D view only", async () => {
+  renderInfo();
+  expect(screen.queryByRole("list", { name: "Element colors" })).toBeNull();
+
+  await userEvent.click(screen.getByRole("button", { name: "3D" }));
+
+  const legend = screen.getByRole("list", { name: "Element colors" });
+  const items = within(legend).getAllByRole("listitem");
+  expect(items.map((li) => li.textContent)).toEqual([
+    "Carbon",
+    "Hydrogen",
+    "Oxygen",
+  ]);
+  expect(items[2].firstElementChild).toHaveStyle({
+    backgroundColor: "#f00000",
+  });
 });
