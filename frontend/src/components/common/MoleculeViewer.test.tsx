@@ -34,6 +34,7 @@ function mockViewer() {
     ]),
     getPerceivedDistance: vi.fn().mockReturnValue(100),
     setZoomLimits: vi.fn(),
+    zoom: vi.fn(),
     render: vi.fn(),
     clear: vi.fn(),
   };
@@ -53,6 +54,15 @@ it("renders a molecule from SDF text, limiting zoom relative to its fitted size"
   expect(viewer.setZoomLimits).toHaveBeenCalledWith(25, 200);
   expect(viewer.setView).toHaveBeenCalledOnce();
   expect(viewer.setView.mock.calls[0][0]).toHaveLength(8);
+});
+
+it("takes its own zoom range and starting zoom", () => {
+  const viewer = mockViewer();
+
+  render(<MoleculeViewer sdf="x" zoom={{ start: 0.7, min: 0.5, max: 0.95 }} />);
+
+  expect(viewer.setZoomLimits).toHaveBeenCalledWith(100 / 0.95, 200);
+  expect(viewer.zoom).toHaveBeenCalledWith(0.7);
 });
 
 it("pans on right-button drag, following the mouse outside the tile but stopping at its edge", () => {

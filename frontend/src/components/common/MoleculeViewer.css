@@ -5,7 +5,8 @@
   position: relative;
 }
 
+/* Larger than the slot, so a zoomed molecule never hits a visible edge */
 .home-graphic > div {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: -28px -16px -28px -184px;
 }

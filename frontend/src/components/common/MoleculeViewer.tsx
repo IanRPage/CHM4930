@@ -7,13 +7,19 @@ import { ZOOM_LIMITS } from "./zoom.ts";
 interface MoleculeViewerProps {
   sdf: string;
   pan?: boolean;
+  // Zoom limits as multiples of the fitted view, and the zoom it starts at
+  zoom?: { start?: number; min: number; max: number };
 }
 
 function clamp(value: number, limit: number) {
   return Math.min(limit, Math.max(-limit, value));
 }
 
-export default function MoleculeViewer({ sdf, pan }: MoleculeViewerProps) {
+export default function MoleculeViewer({
+  sdf,
+  pan,
+  zoom = ZOOM_LIMITS,
+}: MoleculeViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,7 +66,8 @@ export default function MoleculeViewer({ sdf, pan }: MoleculeViewerProps) {
       ]);
       // fitted distance scales with molecule, limits do too
       const fit = viewer.getPerceivedDistance();
-      viewer.setZoomLimits(fit / ZOOM_LIMITS.max, fit / ZOOM_LIMITS.min);
+      viewer.setZoomLimits(fit / zoom.max, fit / zoom.min);
+      if (zoom.start) viewer.zoom(zoom.start);
       viewer.render();
     } catch (error) {
       console.error("Molecule viewer error:", error);
@@ -131,7 +138,7 @@ export default function MoleculeViewer({ sdf, pan }: MoleculeViewerProps) {
       stopPan?.();
       viewer.clear();
     };
-  }, [sdf, pan]);
+  }, [sdf, pan, zoom]);
 
   return <div ref={containerRef} />;
 }
