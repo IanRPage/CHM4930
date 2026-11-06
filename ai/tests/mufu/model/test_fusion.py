@@ -44,6 +44,21 @@ def test_masked_modality_is_ignored(dropped):
     assert torch.equal(fusion(projected, mask), fusion(changed, mask))
 
 
+def test_partial_mask_rescales_surviving_modalities():
+    fusion = LateFusion()
+    projected = make_projected(batch_size=2)
+    mask = torch.tensor([[True, False, True], [True, False, False]])
+    expected_concat = torch.cat(
+        [
+            projected["smiles"] * torch.tensor([[1.5], [3.0]]),
+            torch.zeros(2, D_MODEL),
+            projected["graph"] * torch.tensor([[1.5], [0.0]]),
+        ],
+        dim=1,
+    )
+    assert torch.allclose(fusion(projected, mask), fusion.block(expected_concat))
+
+
 def test_sampled_masks_ignore_dropped_content_and_block_its_gradients():
     with torch.random.fork_rng(devices=[]):
         torch.default_generator.manual_seed(42)

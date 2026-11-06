@@ -42,9 +42,13 @@ class LateFusion(nn.Module):
             check_tensor("mask", mask, (size, len(MODALITIES)), "bool")
             if not mask.any(dim=1).all():
                 raise ValueError("mask: each sample must retain at least one modality")
-            mask = mask.to(device=projected[MODALITIES[0]].device)
+            weights = mask.to(device=projected[MODALITIES[0]].device, dtype=torch.float)
+            weights = weights * (len(MODALITIES) / weights.sum(dim=1, keepdim=True))
             fused = torch.cat(
-                [projected[m] * mask[:, i : i + 1] for i, m in enumerate(MODALITIES)],
+                [
+                    projected[m] * weights[:, i : i + 1]
+                    for i, m in enumerate(MODALITIES)
+                ],
                 dim=1,
             )
         return self.block(fused)
