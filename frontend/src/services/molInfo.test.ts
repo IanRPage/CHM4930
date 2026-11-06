@@ -43,3 +43,26 @@ it("rejects a response with a missing field", async () => {
   expect(err).toBeInstanceOf(PredictError);
   expect(err).toMatchObject({ kind: "invalid-response" });
 });
+
+it("times out a request that never answers", async () => {
+  fetchMock.mockImplementation(
+    (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init!.signal!.addEventListener("abort", () =>
+          reject(init!.signal!.reason),
+        );
+      }),
+  );
+
+  await expect(getMolInfo("CCO", { timeoutMs: 10 })).rejects.toMatchObject({
+    kind: "timeout",
+  });
+});
+
+it("treats a failure while reading the body as a network error", async () => {
+  const res = new Response("{}");
+  vi.spyOn(res, "json").mockRejectedValue(new TypeError("body stream failed"));
+  fetchMock.mockResolvedValue(res);
+
+  await expect(getMolInfo("CCO")).rejects.toMatchObject({ kind: "network" });
+});

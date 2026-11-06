@@ -33,21 +33,30 @@ function parseMolInfo(body: unknown): MolInfo {
   return body as unknown as MolInfo;
 }
 
+// Covers a cold start (a few seconds) with room to spare
+export const MOL_INFO_TIMEOUT_MS = 15_000;
+
 export async function getMolInfo(
   smiles: string,
-  { signal }: { signal?: AbortSignal } = {},
+  {
+    signal,
+    timeoutMs = MOL_INFO_TIMEOUT_MS,
+  }: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<MolInfo> {
+  const timeout = AbortSignal.timeout(timeoutMs);
   let res: Response;
+  let body: unknown;
   try {
     res = await fetch(`/api/mol-info?${new URLSearchParams({ smiles })}`, {
-      signal,
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     });
+    body = await readJson(res);
   } catch (err) {
     if (signal?.aborted) throw err;
+    if (timeout.aborted) throw new PredictError("timeout");
     throw new PredictError("network");
   }
 
-  const body = await readJson(res);
   if (!res.ok) {
     const message =
       isRecord(body) && typeof body.error === "string" ? body.error : undefined;
