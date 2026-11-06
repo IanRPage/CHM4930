@@ -1,3 +1,4 @@
+import type { MolInfo } from "../types/molInfo.ts";
 import type { PredictResponse } from "../types/predict.ts";
 import { NR_TASKS, SR_TASKS } from "../types/predict.ts";
 
@@ -29,5 +30,28 @@ export function predictResponse(): PredictResponse {
       mcDropoutPasses: 50,
       ciCoverage: 0.95,
     },
+  };
+}
+
+export function molInfoResponse(): MolInfo {
+  return {
+    canonicalSmiles: "CC(=O)Oc1ccccc1C(=O)O",
+    inchiKey: "BSYNRYMUTXBXSQ-UHFFFAOYSA-N",
+    formula: "C9H8O4",
+    molecularWeight: 180.159,
+    exactMass: 180.042259,
+    logP: 1.3101,
+    tpsa: 63.6,
+    molarRefractivity: 44.71,
+    hBondDonors: 1,
+    hBondAcceptors: 3,
+    rotatableBonds: 2,
+    heavyAtoms: 13,
+    aromaticRings: 1,
+    fractionCsp3: 0.1111,
+    lipinskiViolations: 0,
+    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>',
+    molblock:
+      "aspirin\n  RDKit          3D\n\n  0  0  0  0  0  0  0  0  0  0999 V2000\nM  END",
   };
 }

@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { predictResponse } from "../../../test/fixtures.ts";
+import { molInfoResponse, predictResponse } from "../../../test/fixtures.ts";
 import { downloadPredictionCsv } from "./exportCsv.ts";
 import PredictionResults from "./PredictionResults.tsx";
 
@@ -24,8 +24,21 @@ describe("PredictionResults", () => {
     expect(
       screen.getByRole("heading", { name: "Likelihood of FDA approval" }),
     ).toBeInTheDocument();
-    // SCRUM-98 has not supplied descriptors through the API yet.
     expect(screen.queryByText("Molecular Properties")).not.toBeInTheDocument();
+  });
+
+  it("shows molecular properties once mol-info arrives", () => {
+    render(
+      <PredictionResults
+        result={predictResponse()}
+        molInfo={molInfoResponse()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Molecular Properties" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("180.16 g/mol")).toBeInTheDocument();
   });
 
   it("renders a complete prediction response", () => {
