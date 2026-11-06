@@ -189,9 +189,16 @@
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 
-.predict-info-tip:hover [role="tooltip"],
+.predict-info-tip[data-open] [role="tooltip"],
 .predict-info-tip:focus-visible [role="tooltip"] {
   visibility: visible;
+}
+
+/* Touch emulates hover on tap and keeps it, which would fight the tap toggle */
+@media (hover: hover) {
+  .predict-info-tip:hover [role="tooltip"] {
+    visibility: visible;
+  }
 }
 
 .predict-info-list dd,

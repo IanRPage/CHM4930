@@ -55,3 +55,14 @@ it("explains descriptors, identifiers and drug-likeness through info tooltips", 
     ).toHaveAccessibleDescription(text);
   }
 });
+
+it("opens an info tooltip on tap and closes it on a tap elsewhere", async () => {
+  renderInfo();
+  const tip = screen.getByRole("button", { name: "About LogP" });
+
+  await userEvent.click(tip);
+  expect(tip).toHaveAttribute("data-open");
+
+  await userEvent.click(document.body);
+  expect(tip).not.toHaveAttribute("data-open");
+});
