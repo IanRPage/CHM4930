@@ -61,8 +61,8 @@ DEFAULT_CONFIG = TrainConfig(
     stopping="metric",
     log_var_lr=None,
     task_weights=(1.0, 0.5, 0.5),
-    fp_hidden_dims=(512, 256),
-    fp_dropout=0.6,
+    fp_hidden_dims=(1024, 512),
+    fp_dropout=0.2,
     calibration="platt",
 )
 RUNTIME_FIELDS = ("device", "num_workers")
