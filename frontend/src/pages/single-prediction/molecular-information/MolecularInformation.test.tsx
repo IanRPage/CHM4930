@@ -41,3 +41,17 @@ it("hides the 3D option without a molblock and InChIKey without a key", () => {
   expect(screen.queryByRole("button", { name: "3D" })).not.toBeInTheDocument();
   expect(screen.queryByText("InChIKey")).not.toBeInTheDocument();
 });
+
+it("explains descriptors, identifiers and drug-likeness through info tooltips", () => {
+  renderInfo();
+
+  for (const [name, text] of [
+    ["LogP", /lipophilicity/],
+    ["Formula", /atoms of each element/],
+    ["Drug-likeness", /rule of five/],
+  ] as const) {
+    expect(
+      screen.getByRole("button", { name: `About ${name}` }),
+    ).toHaveAccessibleDescription(text);
+  }
+});
