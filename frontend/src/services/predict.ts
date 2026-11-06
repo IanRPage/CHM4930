@@ -22,11 +22,11 @@ export interface PredictOptions {
 
 type Json = Record<string, unknown>;
 
-function isRecord(value: unknown): value is Json {
+export function isRecord(value: unknown): value is Json {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isNumber(value: unknown): value is number {
+export function isNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
@@ -122,7 +122,7 @@ export function parsePredictResponse(body: unknown): PredictResponse {
   };
 }
 
-async function readJson(res: Response): Promise<unknown> {
+export async function readJson(res: Response): Promise<unknown> {
   try {
     return await res.json();
   } catch (err) {
