@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import { molInfoResponse } from "../../../test/fixtures.ts";
@@ -65,4 +65,22 @@ it("opens an info tooltip on tap and closes it on a tap elsewhere", async () => 
 
   await userEvent.click(document.body);
   expect(tip).not.toHaveAttribute("data-open");
+});
+
+it("labels the molecule's elements, with their colors, in the 3D view only", async () => {
+  renderInfo();
+  expect(screen.queryByRole("list", { name: "Element colors" })).toBeNull();
+
+  await userEvent.click(screen.getByRole("button", { name: "3D" }));
+
+  const legend = screen.getByRole("list", { name: "Element colors" });
+  const items = within(legend).getAllByRole("listitem");
+  expect(items.map((li) => li.textContent)).toEqual([
+    "Carbon",
+    "Hydrogen",
+    "Oxygen",
+  ]);
+  expect(items[2].firstElementChild).toHaveStyle({
+    backgroundColor: "#f00000",
+  });
 });

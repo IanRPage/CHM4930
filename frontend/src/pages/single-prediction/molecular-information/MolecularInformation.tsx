@@ -5,6 +5,7 @@ import MoleculeViewer from "../../../components/common/MoleculeViewer.tsx";
 import Pill from "../../../components/common/Pill.tsx";
 import type { PredictError } from "../../../services/errors.ts";
 import type { MolInfo } from "../../../types/molInfo.ts";
+import ElementLegend from "./ElementLegend.tsx";
 import "./MolecularInformation.css";
 import PanZoomImage from "./PanZoomImage.tsx";
 
@@ -80,8 +81,6 @@ const LIPINSKI: readonly (readonly [string, (m: MolInfo) => boolean])[] = [
 function Tip({ label, hint }: { label: string; hint: string }) {
   const id = useId();
   const button = useRef<HTMLButtonElement>(null);
-  // Touch has no hover, and Safari doesn't focus buttons on tap, so a tap
-  // toggles the tooltip and a tap anywhere else closes it
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -190,6 +189,7 @@ function Loaded({ info }: { info: MolInfo }) {
             ))}
           </div>
         </div>
+        {view === "3D" && <ElementLegend formula={info.formula} />}
         <p className="predict-info-hint">{HINTS[view]}</p>
       </Card>
       <Card>
