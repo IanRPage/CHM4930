@@ -26,11 +26,14 @@ export default function PanZoomImage({
     // React's onWheel is passive, so it can't stop the page from scrolling
     function onWheel(ev: WheelEvent) {
       ev.preventDefault();
+      // Firefox reports mouse-wheel notches in lines, not pixels
+      const dy =
+        ev.deltaMode === WheelEvent.DOM_DELTA_LINE ? ev.deltaY * 16 : ev.deltaY;
       setView((v) => ({
         ...v,
         scale: Math.min(
           ZOOM_LIMITS.max,
-          Math.max(ZOOM_LIMITS.min, v.scale * Math.exp(-ev.deltaY * 0.002)),
+          Math.max(ZOOM_LIMITS.min, v.scale * Math.exp(-dy * 0.002)),
         ),
       }));
     }

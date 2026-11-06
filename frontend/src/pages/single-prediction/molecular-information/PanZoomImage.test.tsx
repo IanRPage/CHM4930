@@ -21,6 +21,14 @@ it("zooms with the wheel within the zoom limits", () => {
   expect(img.style.transform).toContain("scale(0.5)");
 });
 
+it("zooms a line-mode wheel notch (Firefox) like its pixel equivalent", () => {
+  const img = renderImage();
+
+  fireEvent.wheel(img.parentElement!, { deltaY: -3, deltaMode: 1 });
+
+  expect(img.style.transform).toMatch(/scale\(1\.10/);
+});
+
 it("pans by dragging and stops at the frame edge without jumping", () => {
   const img = renderImage();
   const frame = img.parentElement!;
