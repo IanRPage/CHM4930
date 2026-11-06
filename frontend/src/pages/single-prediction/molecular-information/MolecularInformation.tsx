@@ -1,11 +1,11 @@
 import { useState } from "react";
 import Card from "../../../components/common/Card.tsx";
 import MoleculeViewer from "../../../components/common/MoleculeViewer.tsx";
-import Panel from "../../../components/common/Panel.tsx";
 import Pill from "../../../components/common/Pill.tsx";
 import type { PredictError } from "../../../services/errors.ts";
 import type { MolInfo } from "../../../types/molInfo.ts";
 import "./MolecularInformation.css";
+import PanZoomImage from "./PanZoomImage.tsx";
 
 type Row = readonly [label: string, value: string];
 type View = "2D" | "3D";
@@ -32,9 +32,15 @@ const LIPINSKI: readonly (readonly [string, (m: MolInfo) => boolean])[] = [
   ["H-bond acceptors ≤ 10", (m) => m.hBondAcceptors <= 10],
 ];
 
-function List({ rows }: { rows: readonly Row[] }) {
+function List({
+  rows,
+  className,
+}: {
+  rows: readonly Row[];
+  className: string;
+}) {
   return (
-    <dl className="predict-info-list">
+    <dl className={className}>
       {rows.map(([label, value]) => (
         <div key={label}>
           <dt>{label}</dt>
@@ -44,6 +50,11 @@ function List({ rows }: { rows: readonly Row[] }) {
     </dl>
   );
 }
+
+const HINTS: Record<View, string> = {
+  "2D": "Drag to pan · scroll to zoom",
+  "3D": "Drag to rotate · right-drag to pan · scroll to zoom",
+};
 
 function Loaded({ info }: { info: MolInfo }) {
   const [view, setView] = useState<View>("2D");
@@ -55,10 +66,22 @@ function Loaded({ info }: { info: MolInfo }) {
   if (info.inchiKey !== null) identifiers.push(["InChIKey", info.inchiKey]);
 
   return (
-    <Card className="predict-info">
-      <Panel
-        title="Structure"
-        controls={
+    <div className="predict-info">
+      <Card className="predict-info-structure">
+        <div className="predict-info-view">
+          {view === "3D" && info.molblock !== null ? (
+            <MoleculeViewer sdf={info.molblock} pan />
+          ) : (
+            <PanZoomImage
+              alt={`2D structure of ${info.canonicalSmiles}`}
+              src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+                info.svg,
+              )}`}
+            />
+          )}
+        </div>
+        <div className="predict-info-structure-head">
+          <h2>Structure</h2>
           <div className="predict-info-toggle">
             {views.map((v) => (
               <button
@@ -71,32 +94,26 @@ function Loaded({ info }: { info: MolInfo }) {
               </button>
             ))}
           </div>
-        }
-      >
-        <div className="predict-info-structure">
-          {view === "3D" && info.molblock !== null ? (
-            <MoleculeViewer sdf={info.molblock} />
-          ) : (
-            <img
-              alt={`2D structure of ${info.canonicalSmiles}`}
-              src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(
-                info.svg,
-              )}`}
-            />
-          )}
         </div>
-      </Panel>
-      <Panel title="Identifiers">
-        <List rows={identifiers} />
-      </Panel>
-      <Panel title="Descriptors">
-        <List rows={DESCRIPTORS.map(([label, fn]) => [label, fn(info)])} />
-      </Panel>
-      <Panel
-        title="Drug-likeness"
-        subtitle="Lipinski's rule of five"
-        aside={`${info.lipinskiViolations} of 4 rules violated`}
-      >
+        <p className="predict-info-hint">{HINTS[view]}</p>
+      </Card>
+      <Card>
+        <h2>Identifiers</h2>
+        <List className="predict-info-list" rows={identifiers} />
+      </Card>
+      <Card>
+        <h2>Descriptors</h2>
+        <List
+          className="predict-info-tiles"
+          rows={DESCRIPTORS.map(([label, fn]) => [label, fn(info)])}
+        />
+      </Card>
+      <Card>
+        <h2>Drug-likeness</h2>
+        <p className="predict-info-subtitle">
+          Lipinski&apos;s rule of five · {info.lipinskiViolations} of 4 rules
+          violated
+        </p>
         <ul className="predict-info-rules">
           {LIPINSKI.map(([label, passes]) => (
             <li key={label}>
@@ -107,11 +124,11 @@ function Loaded({ info }: { info: MolInfo }) {
             </li>
           ))}
         </ul>
-      </Panel>
+      </Card>
       <p className="predict-info-footer">
         Computed with RDKit and OpenChemLib.
       </p>
-    </Card>
+    </div>
   );
 }
 

@@ -18,7 +18,7 @@ it("shows identifiers, descriptors and the Lipinski checklist", async () => {
   expect(screen.getByText("C9H8O4")).toBeInTheDocument();
   expect(screen.getByText("BSYNRYMUTXBXSQ-UHFFFAOYSA-N")).toBeInTheDocument();
   expect(screen.getByText("180.16")).toBeInTheDocument();
-  expect(screen.getByText("1 of 4 rules violated")).toBeInTheDocument();
+  expect(screen.getByText(/1 of 4 rules violated/)).toBeInTheDocument();
   expect(screen.getByText("LogP ≤ 5").parentElement).toHaveTextContent("Fail");
   expect(screen.getByText("H-bond donors ≤ 5").parentElement).toHaveTextContent(
     "Pass",
