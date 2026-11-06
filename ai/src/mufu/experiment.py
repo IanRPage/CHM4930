@@ -64,6 +64,8 @@ DEFAULT_CONFIG = TrainConfig(
     fp_hidden_dims=(512, 256),
     fp_dropout=0.6,
     calibration="platt",
+    lr_schedule="cosine",
+    max_grad_norm=1.0,
 )
 RUNTIME_FIELDS = ("device", "num_workers")
 

@@ -41,6 +41,7 @@ CONFIG_OPTIONS = {
     "pos_weight": POS_WEIGHT_MODES,
     "stopping": ("val_loss", "norm_loss", "metric"),
     "calibration": CALIBRATION_MODES,
+    "lr_schedule": ("none", "cosine"),
 }
 FAMILY_TASKS = {"bio": ("pic50", "bio_cls"), "tox": ("tox",)}
 TOX21_INDICES = [TOX_COLUMNS.index(t) for t in DATASETS["tox21"]["tasks"]]
@@ -66,6 +67,8 @@ class TrainConfig:
     gnn_hidden_dims: tuple[int, ...] = (256, 256, 128)
     gnn_dropout: float = 0.1
     calibration: str = "none"
+    lr_schedule: str = "none"
+    max_grad_norm: float | None = None
     num_workers: int = 0
     device: torch.device | str | None = None
 
@@ -131,6 +134,7 @@ def train_step(
     optimizer: torch.optim.Optimizer,
     *,
     task_weights: tuple[float, float, float] | None = None,
+    max_grad_norm: float | None = None,
 ) -> torch.Tensor | None:
     optimizer.zero_grad(set_to_none=True)
     outputs = model(batch)
@@ -148,6 +152,8 @@ def train_step(
             ]
         ).sum()
     objective.backward()
+    if max_grad_norm is not None:
+        nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
     optimizer.step()
 
     with torch.no_grad():
@@ -276,6 +282,11 @@ def fit(
     val_task_loss = TaskLoss().to(device)
     weighting = UncertaintyWeighting().to(device)
     optimizer = make_optimizer(model, weighting, cfg)
+    scheduler = (
+        torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, cfg.epochs))
+        if cfg.lr_schedule == "cosine"
+        else None
+    )
 
     val_dataset = datasets.get("val_select", datasets["val"])
     families = FAMILY_TASKS if cfg.checkpoint_mode == "task_family" else {"all": TASKS}
@@ -303,9 +314,12 @@ def fit(
                 weighting,
                 optimizer,
                 task_weights=cfg.task_weights,
+                max_grad_norm=cfg.max_grad_norm,
             )
             if loss is not None:
                 step_losses.append(loss)
+        if scheduler is not None:
+            scheduler.step()
         train_losses.append(
             (sum(step_losses) / len(step_losses)).item()
             if step_losses
