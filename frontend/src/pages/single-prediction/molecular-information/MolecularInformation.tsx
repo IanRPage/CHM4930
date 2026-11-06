@@ -145,7 +145,7 @@ function Loaded({ info }: { info: MolInfo }) {
     [
       "Canonical SMILES",
       info.canonicalSmiles,
-      "Text encoding of structure. RDKit canonicalizes it. The same molecule always gives the same string.",
+      "Text encoding of the structure, canonicalized by RDKit. Other tools may write a different string for the same molecule.",
     ],
     [
       "Formula",
