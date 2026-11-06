@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { ZOOM_LIMITS } from "../../../components/common/zoom.ts";
 
-// Wheel zooms, drag pans
+function clamp(value: number, limit: number) {
+  return Math.min(limit, Math.max(-limit, value));
+}
+
+// Wheel zooms, drag pans. The image center can reach the frame's edge but not
+// leave it, so the molecule can always be dragged back.
 export default function PanZoomImage({
   src,
   alt,
@@ -10,7 +15,9 @@ export default function PanZoomImage({
   alt: string;
 }) {
   const frame = useRef<HTMLDivElement>(null);
-  const last = useRef<{ x: number; y: number } | null>(null);
+  const drag = useRef<{ px: number; py: number; x: number; y: number } | null>(
+    null,
+  );
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
 
   useEffect(() => {
@@ -37,17 +44,22 @@ export default function PanZoomImage({
       className="predict-info-pan"
       onPointerDown={(ev) => {
         ev.currentTarget.setPointerCapture(ev.pointerId);
-        last.current = { x: ev.clientX, y: ev.clientY };
+        drag.current = { px: ev.clientX, py: ev.clientY, x: view.x, y: view.y };
       }}
       onPointerMove={(ev) => {
-        if (!last.current) return;
-        const dx = ev.clientX - last.current.x;
-        const dy = ev.clientY - last.current.y;
-        last.current = { x: ev.clientX, y: ev.clientY };
-        setView((v) => ({ ...v, x: v.x + dx, y: v.y + dy }));
+        const start = drag.current;
+        if (!start) return;
+        // Measured from where the drag began, so pushing past the edge and
+        // coming back doesn't jump
+        const { clientWidth, clientHeight } = ev.currentTarget;
+        setView((v) => ({
+          ...v,
+          x: clamp(start.x + ev.clientX - start.px, clientWidth / 2),
+          y: clamp(start.y + ev.clientY - start.py, clientHeight / 2),
+        }));
       }}
-      onPointerUp={() => (last.current = null)}
-      onPointerCancel={() => (last.current = null)}
+      onPointerUp={() => (drag.current = null)}
+      onPointerCancel={() => (drag.current = null)}
     >
       <img
         src={src}

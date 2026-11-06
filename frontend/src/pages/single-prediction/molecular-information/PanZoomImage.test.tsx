@@ -21,14 +21,22 @@ it("zooms with the wheel within the zoom limits", () => {
   expect(img.style.transform).toContain("scale(0.5)");
 });
 
-it("pans by dragging", () => {
+it("pans by dragging and stops at the frame edge without jumping", () => {
   const img = renderImage();
   const frame = img.parentElement!;
+  Object.defineProperty(frame, "clientWidth", { value: 200 });
+  Object.defineProperty(frame, "clientHeight", { value: 100 });
 
   fireEvent.pointerDown(frame, { clientX: 10, clientY: 10 });
   fireEvent.pointerMove(frame, { clientX: 40, clientY: 25 });
+  expect(img.style.transform).toContain("translate(30px, 15px)");
+
+  fireEvent.pointerMove(frame, { clientX: 1010, clientY: 25 });
+  expect(img.style.transform).toContain("translate(100px, 15px)");
+  fireEvent.pointerMove(frame, { clientX: 70, clientY: 25 });
+  expect(img.style.transform).toContain("translate(60px, 15px)");
+
   fireEvent.pointerUp(frame);
   fireEvent.pointerMove(frame, { clientX: 90, clientY: 90 });
-
-  expect(img.style.transform).toContain("translate(30px, 15px)");
+  expect(img.style.transform).toContain("translate(60px, 15px)");
 });
