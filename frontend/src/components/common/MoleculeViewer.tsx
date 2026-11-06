@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import * as $3Dmol from "3dmol";
 import "./MoleculeViewer.css";
+import { defaultOrientation } from "./orientation.ts";
 import { ZOOM_LIMITS } from "./zoom.ts";
 
 interface MoleculeViewerProps {
@@ -46,7 +47,18 @@ export default function MoleculeViewer({ sdf, pan }: MoleculeViewerProps) {
 
       viewer.resize();
       viewer.zoomTo();
-      // The fitted distance scales with the molecule, so the limits do too
+      const atoms = viewer.getModel().selectedAtoms({});
+      const [x, y, z, distance] = viewer.getView();
+      viewer.setView([
+        x,
+        y,
+        z,
+        distance,
+        ...defaultOrientation(
+          atoms.map((a) => ({ x: a.x ?? 0, y: a.y ?? 0, z: a.z ?? 0 })),
+        ),
+      ]);
+      // fitted distance scales with molecule, limits do too
       const fit = viewer.getPerceivedDistance();
       viewer.setZoomLimits(fit / ZOOM_LIMITS.max, fit / ZOOM_LIMITS.min);
       viewer.render();

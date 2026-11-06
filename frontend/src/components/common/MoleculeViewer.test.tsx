@@ -17,6 +17,13 @@ function mockViewer() {
     setStyle: vi.fn(),
     resize: vi.fn(),
     zoomTo: vi.fn(),
+    getModel: vi.fn(() => ({
+      selectedAtoms: () => [
+        { x: 0, y: 0, z: 0 },
+        { x: 3, y: 1, z: 0 },
+        { x: 1, y: 2, z: 0.1 },
+      ],
+    })),
     getView: vi.fn(() => [...view]),
     setView: vi.fn((v: number[]) => (view = v)),
     // offsets are 1:1 and the molecule center's screen offset is the view's x
@@ -44,6 +51,8 @@ it("renders a molecule from SDF text, limiting zoom relative to its fitted size"
   expect(viewer.render).toHaveBeenCalledOnce();
   expect(viewer.addModel).toHaveBeenCalledWith("molecule SDF", "sdf");
   expect(viewer.setZoomLimits).toHaveBeenCalledWith(25, 200);
+  expect(viewer.setView).toHaveBeenCalledOnce();
+  expect(viewer.setView.mock.calls[0][0]).toHaveLength(8);
 });
 
 it("pans on right-button drag, following the mouse outside the tile but stopping at its edge", () => {
