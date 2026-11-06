@@ -45,18 +45,17 @@ export async function getMolInfo(
 ): Promise<MolInfo> {
   const timeout = AbortSignal.timeout(timeoutMs);
   let res: Response;
-  let body: unknown;
   try {
     res = await fetch(`/api/mol-info?${new URLSearchParams({ smiles })}`, {
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     });
-    body = await readJson(res);
   } catch (err) {
     if (signal?.aborted) throw err;
     if (timeout.aborted) throw new PredictError("timeout");
     throw new PredictError("network");
   }
 
+  const body = await readJson(res);
   if (!res.ok) {
     const message =
       isRecord(body) && typeof body.error === "string" ? body.error : undefined;

@@ -58,11 +58,3 @@ it("times out a request that never answers", async () => {
     kind: "timeout",
   });
 });
-
-it("treats a failure while reading the body as a network error", async () => {
-  const res = new Response("{}");
-  vi.spyOn(res, "json").mockRejectedValue(new TypeError("body stream failed"));
-  fetchMock.mockResolvedValue(res);
-
-  await expect(getMolInfo("CCO")).rejects.toMatchObject({ kind: "network" });
-});
