@@ -33,7 +33,6 @@ from mufu.data.sampler import AlternatingBatchSampler, MixedBatchSampler
 from mufu.loss.task_loss import POS_WEIGHT_MODES, TaskLoss, compute_task_losses
 from mufu.loss.uncertainty_weighting import UncertaintyWeighting
 from mufu.model import MuFu
-from pipeline.bioactivity_loader import PIC50_ACTIVE_THRESHOLD
 from pipeline.toxicity_loader import DATASETS
 
 CONFIG_OPTIONS = {
@@ -168,12 +167,10 @@ def _forward_dataset(model: MuFu, dataset: MuFuDataset, batch_size: int) -> MuFu
         pin_memory=(device.type == "cuda"),
     )
     batches = [model(to_device(batch, device, non_blocking=True)) for batch in loader]
-    outputs: MuFuOutputs = {
+    return {
         key: torch.cat([b[key].cpu() for b in batches], dim=0)
         for key, _ in COLUMN_GROUPS
     }
-    outputs["active_logits"] = outputs["pic50"] - PIC50_ACTIVE_THRESHOLD
-    return outputs
 
 
 def evaluate_val_loss(
