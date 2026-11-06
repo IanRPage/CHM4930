@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import Card from "../../components/common/Card.tsx";
 import PageHeader from "../../components/common/PageHeader.tsx";
-import Pill from "../../components/common/Pill.tsx";
 import { PredictError } from "../../services/errors.ts";
+import { getMolInfo } from "../../services/molInfo.ts";
 import { predict } from "../../services/predict.ts";
+import type { MolInfo } from "../../types/molInfo.ts";
 import type { PredictResponse } from "../../types/predict.ts";
 import InputMolecule from "./input-molecule/InputMolecule.tsx";
+import MolecularInformation from "./molecular-information/MolecularInformation.tsx";
 import PredictionResults from "./prediction-results/PredictionResults.tsx";
 import "./SinglePredictionPage.css";
 
@@ -26,24 +27,64 @@ const HEADERS: Record<Tab, { title: string; subtitle: string }> = {
   },
 };
 
+function toPredictError(err: unknown) {
+  return err instanceof PredictError
+    ? err
+    : new PredictError("server", "Something went wrong. Please try again.");
+}
+
+function isAbort(err: unknown) {
+  return (
+    (err instanceof DOMException || err instanceof Error) &&
+    err.name === "AbortError"
+  );
+}
+
 export default function SinglePredictionPage() {
   const [smiles, setSmiles] = useState("");
   const [tab, setTab] = useState<Tab>("input");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<PredictError | null>(null);
   const [result, setResult] = useState<PredictResponse | null>(null);
+  const [info, setInfo] = useState<MolInfo | null>(null);
+  const [infoLoading, setInfoLoading] = useState(false);
+  const [infoError, setInfoError] = useState<PredictError | null>(null);
   const controller = useRef<AbortController | null>(null);
+  const infoController = useRef<AbortController | null>(null);
   const resultsTab = useRef<HTMLButtonElement | null>(null);
 
-  useEffect(() => () => controller.current?.abort(), []);
+  useEffect(
+    () => () => {
+      controller.current?.abort();
+      infoController.current?.abort();
+    },
+    [],
+  );
 
   useEffect(() => {
-    // A new result triggers the automatic tab switch; manual navigation does not.
     if (result) resultsTab.current?.focus();
   }, [result]);
 
+  async function loadInfo(input: string) {
+    infoController.current?.abort();
+    const current = new AbortController();
+    infoController.current = current;
+    setInfo(null);
+    setInfoError(null);
+    setInfoLoading(true);
+    try {
+      const molInfo = await getMolInfo(input, { signal: current.signal });
+      if (infoController.current !== current) return;
+      setInfo(molInfo);
+    } catch (err) {
+      if (infoController.current !== current || isAbort(err)) return;
+      setInfoError(toPredictError(err));
+    } finally {
+      if (infoController.current === current) setInfoLoading(false);
+    }
+  }
+
   async function onSubmit() {
-    // The ref also guards submissions before React renders the disabled button.
     if (controller.current) return;
     setError(null);
     setResult(null);
@@ -61,6 +102,7 @@ export default function SinglePredictionPage() {
     const current = new AbortController();
     controller.current = current;
     setLoading(true);
+    void loadInfo(input);
     try {
       const prediction = await predict(input, { signal: current.signal });
       if (current.signal.aborted || controller.current !== current) return;
@@ -68,19 +110,8 @@ export default function SinglePredictionPage() {
       setTab("results");
     } catch (err) {
       if (current.signal.aborted || controller.current !== current) return;
-      if (
-        (err instanceof DOMException || err instanceof Error) &&
-        err.name === "AbortError"
-      )
-        return;
-      setError(
-        err instanceof PredictError
-          ? err
-          : new PredictError(
-              "server",
-              "Something went wrong. Please try again.",
-            ),
-      );
+      if (isAbort(err)) return;
+      setError(toPredictError(err));
     } finally {
       if (controller.current === current && !current.signal.aborted) {
         controller.current = null;
@@ -92,10 +123,15 @@ export default function SinglePredictionPage() {
   function onSmilesChange(value: string) {
     controller.current?.abort();
     controller.current = null;
+    infoController.current?.abort();
+    infoController.current = null;
     setLoading(false);
     setSmiles(value);
     setError(null);
     setResult(null);
+    setInfo(null);
+    setInfoLoading(false);
+    setInfoError(null);
   }
 
   const header = HEADERS[tab];
@@ -127,7 +163,7 @@ export default function SinglePredictionPage() {
           type="button"
           role="tab"
           aria-selected={tab === "info"}
-          disabled={!result}
+          disabled={!(info || infoLoading || infoError)}
           onClick={() => setTab("info")}
         >
           Molecular Information
@@ -145,16 +181,16 @@ export default function SinglePredictionPage() {
         />
       )}
 
-      {tab === "results" && result && <PredictionResults result={result} />}
+      {tab === "results" && result && (
+        <PredictionResults result={result} molInfo={info} />
+      )}
 
-      {tab === "info" && result && (
-        <Card className="predict-placeholder">
-          <Pill tone="neutral">Coming Soon</Pill>
-          <p>
-            Molecular structure, identifiers, and computed RDKit descriptors are
-            under development.
-          </p>
-        </Card>
+      {tab === "info" && (
+        <MolecularInformation
+          info={info}
+          loading={infoLoading}
+          error={infoError}
+        />
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import infoIcon from "../../../assets/icon-info.svg";
 import infoMutedIcon from "../../../assets/icon-info-muted.svg";
 import Card from "../../../components/common/Card.tsx";
+import type { MolInfo } from "../../../types/molInfo.ts";
 import type { PredictResponse } from "../../../types/predict.ts";
 import ApprovalPanel from "./ApprovalPanel.tsx";
 import BioactivityPanel from "./BioactivityPanel.tsx";
@@ -15,8 +16,10 @@ const DOMAIN_WARNINGS = {
 
 export default function PredictionResults({
   result,
+  molInfo,
 }: {
   result: PredictResponse;
+  molInfo?: MolInfo | null;
 }) {
   const { applicabilityDomain: domain, nearestTrainTanimoto: tanimoto } =
     result;
@@ -60,6 +63,33 @@ export default function PredictionResults({
           experimentally.
         </p>
       </Card>
+      {molInfo && (
+        <Card className="predict-molprops">
+          <h2>Molecular Properties</h2>
+          <dl>
+            <div>
+              <dt>Molecular weight</dt>
+              <dd>{molInfo.molecularWeight.toFixed(2)} g/mol</dd>
+            </div>
+            <div>
+              <dt>LogP</dt>
+              <dd>{molInfo.logP.toFixed(2)}</dd>
+            </div>
+            <div>
+              <dt>H-bond donors</dt>
+              <dd>{molInfo.hBondDonors}</dd>
+            </div>
+            <div>
+              <dt>H-bond acceptors</dt>
+              <dd>{molInfo.hBondAcceptors}</dd>
+            </div>
+            <div>
+              <dt>Rotatable bonds</dt>
+              <dd>{molInfo.rotatableBonds}</dd>
+            </div>
+          </dl>
+        </Card>
+      )}
     </div>
   );
 }

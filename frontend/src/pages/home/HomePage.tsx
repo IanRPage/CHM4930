@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import MoleculeViewer from "../../components/common/MoleculeViewer.tsx";
-import temozolomideSdf from "../../assets/temozolomide-3d.sdf?url";
+import temozolomideSdf from "../../assets/temozolomide-3d.sdf?raw";
 import arrowRight from "../../assets/icon-arrow-right.svg";
 import batchIcon from "../../assets/icon-batch.svg";
 import boltIcon from "../../assets/icon-bolt.svg";
@@ -92,7 +92,7 @@ export default function HomePage() {
           </p>
         </div>
         <div className="home-graphic">
-          <MoleculeViewer sdfUrl={temozolomideSdf} />
+          <MoleculeViewer sdf={temozolomideSdf} />
         </div>
       </section>
 

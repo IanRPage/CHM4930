@@ -17,7 +17,9 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "express": "^5.3.0"
+    "@rdkit/rdkit": "^2026.9.2",
+    "express": "^5.3.0",
+    "openchemlib": "^9.25.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
