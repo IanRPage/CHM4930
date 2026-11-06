@@ -219,3 +219,26 @@ def test_rejects_invalid_vocabulary():
 def test_rejects_empty_training_vocabulary():
     with pytest.raises(ValueError, match="empty"):
         build_vocabulary([])
+
+
+def test_pretokenized_matches_raw_smiles():
+    """Pre-tokenized and raw SMILES must produce identical embeddings."""
+    smiles = ["CCO", "CCN", "c1ccccc1"]
+    vocab = build_vocabulary(smiles)
+
+    encoder = biLSTMEncoder(vocab=vocab, dropout=0.2)
+    encoder.eval()
+
+    token_ids = [
+        torch.tensor(
+            [vocab[token] for token in tokenize_smiles(smi)],
+            dtype=torch.long,
+        )
+        for smi in smiles
+    ]
+
+    with torch.no_grad():
+        raw = encoder(smiles)
+        prepared = encoder.forward_token_ids(token_ids)
+
+    torch.testing.assert_close(raw, prepared)

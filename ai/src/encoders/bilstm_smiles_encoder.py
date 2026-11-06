@@ -58,7 +58,7 @@ class biLSTMEncoder(nn.Module):
     def __init__(
         self,
         vocab: dict[str, int],
-        embedding_dim: int = 128,
+        embedding_dim: int = 64,
         hidden_dim: int = 128,
         num_layers: int = 2,
         dropout: float = 0.2,
@@ -99,34 +99,32 @@ class biLSTMEncoder(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, smiles: str | Sequence[str]) -> torch.Tensor:
-        # encode SMILES into a batch of molecular embeddings
-        if isinstance(smiles, str):
-            smiles = [smiles]
-        elif not isinstance(smiles, Sequence):
-            raise TypeError("Expected a SMILES string or a sequence of strings")
-
-        if len(smiles) == 0:
-            raise ValueError("SMILES batch cannot be empty")
+    def forward_token_ids(self, sequences: Sequence[torch.Tensor]) -> torch.Tensor:
+        """Encode a batch of pre-tokenized molecular sequences."""
+        if len(sequences) == 0:
+            raise ValueError("Token sequence batch cannot be empty")
 
         device = self.embedding.weight.device
+        prepared = []
 
-        sequences = []
-        for smi in smiles:
-            tokens = tokenize_smiles(smi)
-            token_ids = [self.vocab.get(token, 1) for token in tokens]
-            sequences.append(torch.tensor(token_ids, dtype=torch.long, device=device))
+        for sequence in sequences:
+            if sequence.ndim != 1 or sequence.numel() == 0:
+                raise ValueError("Each token sequence must be a non-empty 1D tensor")
+            if sequence.dtype != torch.long:
+                raise TypeError("Token IDs must have dtype torch.long")
+            if torch.any(sequence < 0) or torch.any(sequence >= len(self.vocab)):
+                raise ValueError("Token ID is outside the vocabulary")
 
-        lengths = [len(sequence) for sequence in sequences]
+            prepared.append(sequence.to(device))
+
+        lengths = [len(sequence) for sequence in prepared]
         padded = pad_sequence(
-            sequences,
+            prepared,
             batch_first=True,
-            padding_value=0,
+            padding_value=self.vocab[PAD_TOKEN],
         )
 
         embedded = self.dropout(self.embedding(padded))
-
-        # to ensure model doesn't treat artificial padding as part of the molecule:
         packed = pack_padded_sequence(
             embedded,
             lengths,
@@ -135,10 +133,29 @@ class biLSTMEncoder(nn.Module):
         )
 
         _, (hidden, _) = self.lstm(packed)
-
-        forward_hidden = hidden[-2]
-        backward_hidden = hidden[-1]
-
-        combined = torch.cat([forward_hidden, backward_hidden], dim=1)
+        combined = torch.cat([hidden[-2], hidden[-1]], dim=1)
 
         return self.dropout(combined)
+
+    def forward(self, smiles: str | Sequence[str]) -> torch.Tensor:
+        """Encode raw SMILES strings into molecular embeddings."""
+        if isinstance(smiles, str):
+            smiles = [smiles]
+        elif not isinstance(smiles, Sequence):
+            raise TypeError("Expected a SMILES string or a sequence of strings")
+
+        if len(smiles) == 0:
+            raise ValueError("SMILES batch cannot be empty")
+
+        sequences = [
+            torch.tensor(
+                [
+                    self.vocab.get(token, self.vocab[UNK_TOKEN])
+                    for token in tokenize_smiles(smi)
+                ],
+                dtype=torch.long,
+            )
+            for smi in smiles
+        ]
+
+        return self.forward_token_ids(sequences)
