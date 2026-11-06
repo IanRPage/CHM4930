@@ -1,7 +1,7 @@
 {
-  "tag": "v1.0.1",
+  "tag": "v1.1.0",
   "mufu": {
-    "default": "mufu_v1.0.0_default"
+    "default": "mufu_20261106_022713_default"
   },
   "rf_bioactivity": {
     "default": "rf_bioactivity_default",
