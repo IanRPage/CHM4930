@@ -1,6 +1,6 @@
 """
 MuFu 5-seed ensemble inference for one molecule, in the response format of
-`backend/docs/predict-api.md`.
+the inference server contract in `backend/docs/api.md`.
 
 pIC50 is the ensemble mean with its combined MC-Dropout interval at `COVERAGE`;
 `p_active` and toxicity average each seed's calibrated probabilities. MC passes are
