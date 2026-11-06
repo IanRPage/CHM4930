@@ -263,6 +263,13 @@ def fit(
         pin_memory=(device.type == "cuda"),
     )
     model.to(device)
+    y_pic50 = datasets["train"].labels["y_pic50"]
+    mask_bio = datasets["train"].masks["mask_bio"]
+    with torch.no_grad():
+        bias = model.regression_head.head[1].bias
+        for j in range(N_BIO):
+            if mask_bio[:, j].any():
+                bias[j] = y_pic50[mask_bio[:, j], j].mean().to(bias)
     task_loss = TaskLoss.from_dataset(datasets["train"], pos_weight=cfg.pos_weight).to(
         device
     )
