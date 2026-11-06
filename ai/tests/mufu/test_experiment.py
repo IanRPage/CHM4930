@@ -104,3 +104,14 @@ def test_fit_predict_saves_checkpoint_metadata_and_loss_history(
             assert re_preds[col] == preds["test"][col]
         else:
             assert (re_preds[col] == preds["test"][col]).all()
+
+    legacy_path = tmp_path / "legacy_seed_3.pt"
+    legacy_ckpt = {
+        **saved,
+        "params": {
+            k: v for k, v in saved["params"].items() if k != "active_from_pic50"
+        },
+    }
+    torch.save(legacy_ckpt, legacy_path)
+    with pytest.raises(ValueError, match="legacy bio_cls logits"):
+        experiment.load_mufu_checkpoint(legacy_path, encoder)

@@ -60,7 +60,7 @@ DEFAULT_CONFIG = TrainConfig(
     pos_weight="raw",
     stopping="metric",
     log_var_lr=None,
-    task_weights=(1.0, 0.5, 0.5),
+    task_weights=(1.0, 0.0, 0.5),
     fp_hidden_dims=(512, 256),
     fp_dropout=0.6,
     calibration="platt",
@@ -77,6 +77,7 @@ def benchmark_params(cfg: TrainConfig, smiles_encoder: Encoder) -> dict:
         "d_model": D_MODEL,
         "modality_dropout_p": MODALITY_DROPOUT_P,
         "active_threshold": PIC50_ACTIVE_THRESHOLD,
+        "active_from_pic50": True,
         "smiles_encoder": f"{name}@{revision}" if revision else name,
         "smiles_freeze": getattr(smiles_encoder, "freeze", None),
     }
@@ -100,6 +101,10 @@ def load_mufu_checkpoint(
 ) -> tuple[MuFu, dict]:
     ckpt = torch.load(path, map_location="cpu", weights_only=True)
     params = ckpt.get("params", {})
+    if not params.get("active_from_pic50"):
+        raise ValueError(
+            f"{path.name}: checkpoint calibration was fitted to legacy bio_cls logits"
+        )
     fp_hidden_dims = tuple(params.get("fp_hidden_dims", (1024, 512)))
     fp_dropout = float(params.get("fp_dropout", 0.2))
     gnn_hidden_dims = tuple(
@@ -211,6 +216,8 @@ def make_fit_predict(
         calib_dataset = datasets.get("val_calib", datasets["val"])
         calibration = None
         if cfg.calibration != "none":
+            pos_weights = dataset_pos_weights(datasets["train"], mode=cfg.pos_weight)
+            pos_weights["bio_cls"] = None
             calibration = fit_calibration(
                 cfg.calibration,
                 predict_logits(
@@ -220,7 +227,7 @@ def make_fit_predict(
                     family_states=result.family_states,
                 ),
                 calib_dataset,
-                pos_weights=dataset_pos_weights(datasets["train"], mode=cfg.pos_weight),
+                pos_weights=pos_weights,
             )
 
         checkpoint_dir.mkdir(parents=True, exist_ok=True)

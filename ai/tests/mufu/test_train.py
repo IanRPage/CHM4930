@@ -16,8 +16,10 @@ from mufu.train import (
     load_non_smiles_state,
     make_optimizer,
     predict,
+    predict_logits,
     train_step,
 )
+from pipeline.bioactivity_loader import PIC50_ACTIVE_THRESHOLD
 
 
 def scripted_losses(total):
@@ -350,3 +352,10 @@ def test_fit_initializes_regression_head_bias_to_training_mean(model, labeled_da
     m = labeled_dataset.masks["mask_bio"]
     expected = torch.stack([y[m[:, j], j].mean() for j in range(y.shape[1])])
     assert torch.allclose(model.regression_head.head[1].bias, expected)
+
+
+def test_predict_logits_derives_active_logits_from_pic50(model, dataset):
+    logits = predict_logits(model, dataset, batch_size=3)
+    assert torch.allclose(
+        logits["active_logits"], logits["pic50"] - PIC50_ACTIVE_THRESHOLD
+    )
