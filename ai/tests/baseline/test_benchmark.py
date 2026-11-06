@@ -522,7 +522,9 @@ def test_frozen_benchmark_matches_recorded_rf_checksum_and_counts(frozen_benchma
     promoted_tag = json.loads(COMBINED_CSV_PATH.with_name("promoted.json").read_text())[
         "tag"
     ]
-    expected_per_seed_split = 158 if promoted_tag.startswith("v1.0.") else 174
+    expected_per_seed_split = (
+        158 if promoted_tag.startswith(("v1.0.", "v1.1.")) else 174
+    )
     assert len(rf) == expected_per_seed_split * len(benchmark.SEEDS) * len(
         benchmark.SPLIT_IDS
     )
