@@ -153,17 +153,17 @@ describe("toPredictResponse", () => {
     expect(res.bioactivity.EGFR.pActive).toEqual({ value: 0.9 });
   });
 
-  it("groups Tox21 into NR/SR and hides CT_TOX", () => {
+  it("groups Tox21 into NR/SR and exposes CT_TOX as clinicalToxicity", () => {
     const raw = rawResponse();
-    raw.toxicity.FDA_APPROVED = 0.8;
+    raw.toxicity.CT_TOX = 0.8;
     const res = toPredictResponse(parseInferenceResponse(raw));
 
     expect(Object.keys(res.toxicity.nuclearReceptor)).toEqual([...NR_TASKS]);
     expect(Object.keys(res.toxicity.stressResponse)).toEqual([...SR_TASKS]);
-    expect(res.fdaApproved).toEqual({ value: 0.8 });
+    expect(res.clinicalToxicity).toEqual({ value: 0.8 });
     expect(res.nearestTrainTanimoto).toBe(0.75);
     expect(res.applicabilityDomain).toBe("in_domain");
-    expect(JSON.stringify(res)).not.toContain("CT_TOX");
+    expect(res).not.toHaveProperty("fdaApproved");
     expect(res.metadata).toEqual({
       modelVersion: "mufu-test",
       mcDropoutPasses: 50,
