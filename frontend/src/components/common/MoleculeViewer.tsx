@@ -7,7 +7,6 @@ import { wheelZoomFactor, ZOOM_LIMITS } from "./zoom.ts";
 interface MoleculeViewerProps {
   sdf: string;
   pan?: boolean;
-  // Zoom limits as multiples of the fitted view, and the zoom it starts at
   zoom?: { start?: number; min: number; max: number };
 }
 
@@ -30,7 +29,6 @@ export default function MoleculeViewer({
     try {
       viewer = $3Dmol.createViewerGrid(
         container,
-        // control_all lets 3Dmol act on drag moves forwarded from outside the canvas
         { rows: 1, cols: 1, control_all: true },
         {
           backgroundColor: "white",
@@ -100,8 +98,6 @@ export default function MoleculeViewer({
       ]);
     };
 
-    // 3Dmol only sees mouse moves over its canvas, so a drag that leaves the tile
-    // stalls and then jumps. Track the whole drag on window instead.
     let stopDrag: (() => void) | null = null;
     function trackDrag(move: (e: MouseEvent) => void) {
       stopDrag?.();
@@ -114,17 +110,12 @@ export default function MoleculeViewer({
       window.addEventListener("mouseup", stopDrag);
     }
 
+    function onPointerDown(ev: PointerEvent) {
+      container!.querySelector("canvas")?.setPointerCapture?.(ev.pointerId);
+    }
+
     function onMouseDown(ev: MouseEvent) {
-      const rotate = ev.button === 0 && !ev.ctrlKey;
-      if (rotate) {
-        // 3Dmol handles rotation itself; give it the moves it can't see
-        const canvas = container!.querySelector("canvas");
-        trackDrag((e) => {
-          if (e.target !== canvas)
-            canvas?.dispatchEvent(new MouseEvent("mousemove", e));
-        });
-        return;
-      }
+      if (ev.button === 0 && !ev.ctrlKey) return;
       if (!pan) return;
       ev.stopPropagation();
       const x0 = ev.clientX;
@@ -142,8 +133,6 @@ export default function MoleculeViewer({
       });
     }
 
-    // 3Dmol zooms by a damped, non-standard wheelDelta and renders on every
-    // event, which skips on fast scrolls. Zoom by the frame's combined factor.
     let factor = 1;
     let frame = 0;
     function onWheel(ev: WheelEvent) {
@@ -158,21 +147,22 @@ export default function MoleculeViewer({
       });
     }
 
+    container.addEventListener("pointerdown", onPointerDown, true);
     container.addEventListener("mousedown", onMouseDown, true);
     container.addEventListener("wheel", onWheel, {
       capture: true,
       passive: false,
     });
     return () => {
+      container.removeEventListener("pointerdown", onPointerDown, true);
       container.removeEventListener("mousedown", onMouseDown, true);
       container.removeEventListener("wheel", onWheel, true);
       cancelAnimationFrame(frame);
       stopDrag?.();
       viewer.clear();
-      // clear() leaves its canvas behind, which would stack up on re-render
       container.replaceChildren();
     };
   }, [sdf, pan, zoom]);
 
-  return <div ref={containerRef} />;
+  return <div ref={containerRef} className="molecule-viewer" />;
 }

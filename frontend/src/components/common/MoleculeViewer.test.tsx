@@ -102,22 +102,16 @@ it("leaves 3Dmol's own mouse handling alone without pan", () => {
   expect(onCanvas).toHaveBeenCalledOnce();
 });
 
-it("keeps rotating while the mouse is outside the tile, until release", () => {
+it("captures the pointer on the canvas so a drag survives leaving the tile", () => {
   mockViewer();
   const { container } = render(<MoleculeViewer sdf="x" />);
   const canvas = document.createElement("canvas");
   container.firstElementChild!.append(canvas);
-  const onMove = vi.fn();
-  canvas.addEventListener("mousemove", onMove);
+  canvas.setPointerCapture = vi.fn();
 
-  fireEvent.mouseDown(canvas, { button: 0 });
-  fireEvent.mouseMove(window, { clientX: 900, clientY: 40 });
-  expect(onMove).toHaveBeenCalledOnce();
-  expect(onMove.mock.calls[0][0].clientX).toBe(900);
+  fireEvent.pointerDown(canvas, { pointerId: 7 });
 
-  fireEvent.mouseUp(window);
-  fireEvent.mouseMove(window, { clientX: 100 });
-  expect(onMove).toHaveBeenCalledOnce();
+  expect(canvas.setPointerCapture).toHaveBeenCalledWith(7);
 });
 
 it("zooms once per frame by the combined wheel factor, without 3Dmol's own handler", () => {
