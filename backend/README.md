@@ -72,11 +72,9 @@ workflow. Otherwise both jobs are skipped. PRs must not also touch `ai/` or
 
 ## Planned API
 
-From the [app screens](https://www.figma.com/design/hQeLEZcHn3QAtqUVicSccX/MuFu-%E2%80%93-App-Screens):
-
-| Endpoint                                                                | Screen                | Notes                                                                                                                                   |
-| ----------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/predict` ([docs](docs/api.md#post-apipredict))               | Single prediction     | Implemented. Per target (EGFR, BACE1): pIC50 + 95% CI, IC50, P(active); 12 Tox21 probs; ClinTox FDA-approval prob; applicability domain |
-| `GET /api/mol-info?smiles=` ([docs](docs/api.md#get-apimol-infosmiles)) | Molecular information | Implemented. Identifiers, descriptors, Lipinski violations, 2D SVG, 3D MolBlock. Computed in the backend with RDKit.js + OpenChemLib    |
-| `POST /api/batch`, `GET /api/batch/:id`, results (paged/filter/CSV)     | Batch                 | 10 MB CSV/SDF/TXT, progress, cancel, ~2 min. Exceeds a single serverless invocation: needs a job store or chunking. Stretch goal        |
-| `GET /api/dataset/summary`, `GET /api/dataset/molecules?q=&page=`       | Dataset explorer      | precompute from `ai/data/baseline/combined.csv`                                                                                         |
+| Endpoint                                                                | Screen                | Notes                                                                                                                                              |
+| ----------------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/predict` ([docs](docs/api.md#post-apipredict))               | Single prediction     | Implemented. Per target (EGFR, BACE1): pIC50 + 95% CI, IC50, P(active); 12 Tox21 probs; ClinTox clinical-trial toxicity prob; applicability domain |
+| `GET /api/mol-info?smiles=` ([docs](docs/api.md#get-apimol-infosmiles)) | Molecular information | Implemented. Identifiers, descriptors, Lipinski violations, 2D SVG, 3D MolBlock. Computed in the backend with RDKit.js + OpenChemLib               |
+| `POST /api/batch`, `GET /api/batch/:id`, results (paged/filter/CSV)     | Batch                 | 10 MB CSV/SDF/TXT, progress, cancel, ~2 min. Exceeds a single serverless invocation: needs a job store or chunking. Stretch goal                   |
+| `GET /api/dataset/summary`, `GET /api/dataset/molecules?q=&page=`       | Dataset explorer      | precompute from `ai/data/baseline/combined.csv`                                                                                                    |
