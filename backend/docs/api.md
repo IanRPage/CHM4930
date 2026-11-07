@@ -29,20 +29,25 @@ Each `Output` is `{ "value": number }` or `{ "value": null, "reason": string }`.
 An `Estimate` adds `lo`/`hi` when `value` isn't `null`. Unavailable outputs are
 never sent as `0` or left out.
 
-| Field                               | Type                                             | Description                                                                                                             |
-| ----------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `smiles`                            | `string`                                         | Input SMILES                                                                                                            |
-| `nearestTrainTanimoto`              | `number`                                         | Nearest-neighbour 2048-bit ECFP4 Tanimoto similarity in [0, 1] to the training set                                      |
-| `applicabilityDomain`               | `"in_domain" \| "borderline" \| "out_of_domain"` | ≥ 0.6, [0.4, 0.6), < 0.4. Cut where benchmark error degrades in `ai/data/baseline/results_by_similarity.csv`            |
-| `bioactivity.<BACE1\|EGFR>.pic50`   | `Estimate`                                       | Point estimate from the eval-mode model. `lo`/`hi` is the conformal MC-Dropout interval at `metadata.ciCoverage`        |
-| `bioactivity.<BACE1\|EGFR>.ic50Nm`  | `Estimate`                                       | $10^{9 - \text{pIC50}}$ nM. `lo`/`hi` come from the pIC50 bounds, swapped                                               |
-| `bioactivity.<BACE1\|EGFR>.pActive` | `Output`                                         | P(pIC50 ≥ 6.0)                                                                                                          |
-| `toxicity.nuclearReceptor.<task>`   | `Output`                                         | Tox21 `NR-AR`, `NR-AR-LBD`, `NR-AhR`, `NR-Aromatase`, `NR-ER`, `NR-ER-LBD`, `NR-PPAR-gamma`                             |
-| `toxicity.stressResponse.<task>`    | `Output`                                         | Tox21 `SR-ARE`, `SR-ATAD5`, `SR-HSE`, `SR-MMP`, `SR-p53`                                                                |
-| `fdaApproved`                       | `Output`                                         | ClinTox `FDA_APPROVED` probability. `CT_TOX` isn't exposed: on the training data it's almost exactly `1 - FDA_APPROVED` |
-| `metadata.modelVersion`             | `string`                                         | Model version                                                                                                           |
-| `metadata.mcDropoutPasses`          | `number`                                         | MC-Dropout passes behind the interval                                                                                   |
-| `metadata.ciCoverage`               | `number`                                         | Interval coverage, e.g. `0.95`                                                                                          |
+| Field                               | Type                                             | Description                                                                                                      |
+| ----------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `smiles`                            | `string`                                         | Input SMILES                                                                                                     |
+| `nearestTrainTanimoto`              | `number`                                         | Nearest-neighbour 2048-bit ECFP4 Tanimoto similarity in [0, 1] to the training set                               |
+| `applicabilityDomain`               | `"in_domain" \| "borderline" \| "out_of_domain"` | ≥ 0.6, [0.4, 0.6), < 0.4. Cut where benchmark error degrades in `ai/data/baseline/results_by_similarity.csv`     |
+| `bioactivity.<BACE1\|EGFR>.pic50`   | `Estimate`                                       | Point estimate from the eval-mode model. `lo`/`hi` is the conformal MC-Dropout interval at `metadata.ciCoverage` |
+| `bioactivity.<BACE1\|EGFR>.ic50Nm`  | `Estimate`                                       | $10^{9 - \text{pIC50}}$ nM. `lo`/`hi` come from the pIC50 bounds, swapped                                        |
+| `bioactivity.<BACE1\|EGFR>.pActive` | `Output`                                         | P(pIC50 ≥ 6.0)                                                                                                   |
+| `toxicity.nuclearReceptor.<task>`   | `Output`                                         | Tox21 `NR-AR`, `NR-AR-LBD`, `NR-AhR`, `NR-Aromatase`, `NR-ER`, `NR-ER-LBD`, `NR-PPAR-gamma`                      |
+| `toxicity.stressResponse.<task>`    | `Output`                                         | Tox21 `SR-ARE`, `SR-ATAD5`, `SR-HSE`, `SR-MMP`, `SR-p53`                                                         |
+| `clinicalToxicity`                  | `Output`                                         | ClinTox `CT_TOX` probability of failing clinical trials for toxicity (lower is better). See note below           |
+| `metadata.modelVersion`             | `string`                                         | Model version                                                                                                    |
+| `metadata.mcDropoutPasses`          | `number`                                         | MC-Dropout passes behind the interval                                                                            |
+| `metadata.ciCoverage`               | `number`                                         | Interval coverage, e.g. `0.95`                                                                                   |
+
+`clinicalToxicity` is exposed instead of `FDA_APPROVED`: `FDA_APPROVED` is 95.6%
+positive, so the model outputs ~0.90–0.95 for almost any compound. `CT_TOX` is
+the actual toxicity label, but it has few positives (80 of 1,428 overall, 9 of
+144 in the default test split), so treat it as low-confidence.
 
 `MuFuClient` (`src/services/mufuClient.ts`) maps inference server failures to
 fixed messages that never include the server URL, API key, or upstream body.
