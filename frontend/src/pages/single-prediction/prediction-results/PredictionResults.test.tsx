@@ -22,8 +22,9 @@ describe("PredictionResults", () => {
       screen.getByRole("heading", { name: "Toxicity risk" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Likelihood of FDA approval" }),
+      screen.getByRole("heading", { name: "Clinical-trial toxicity risk" }),
     ).toBeInTheDocument();
+    expect(screen.getByText(/80 of 1,428 compounds/u)).toBeInTheDocument();
     expect(screen.queryByText("Molecular Properties")).not.toBeInTheDocument();
   });
 
@@ -50,7 +51,7 @@ describe("PredictionResults", () => {
     expect(screen.getByText("6.20")).toBeInTheDocument();
     expect(screen.getByText("630 nM")).toBeInTheDocument();
     expect(screen.getAllByText("10%")).toHaveLength(12);
-    expect(screen.getByText("91%")).toBeInTheDocument();
+    expect(screen.getByText("9%")).toBeInTheDocument();
     expect(
       screen.queryByText("Not returned by the model"),
     ).not.toBeInTheDocument();
