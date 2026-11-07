@@ -2,12 +2,11 @@ import { useEffect, useRef } from "react";
 import * as $3Dmol from "3dmol";
 import "./MoleculeViewer.css";
 import { defaultOrientation } from "./orientation.ts";
-import { ZOOM_LIMITS } from "./zoom.ts";
+import { wheelZoomFactor, ZOOM_LIMITS } from "./zoom.ts";
 
 interface MoleculeViewerProps {
   sdf: string;
   pan?: boolean;
-  // Zoom limits as multiples of the fitted view, and the zoom it starts at
   zoom?: { start?: number; min: number; max: number };
 }
 
@@ -30,7 +29,7 @@ export default function MoleculeViewer({
     try {
       viewer = $3Dmol.createViewerGrid(
         container,
-        { rows: 1, cols: 1 },
+        { rows: 1, cols: 1, control_all: true },
         {
           backgroundColor: "white",
           backgroundAlpha: 0,
@@ -99,17 +98,30 @@ export default function MoleculeViewer({
       ]);
     };
 
-    // 3Dmol only sees mouse moves over its canvas, so a drag that leaves the tile
-    // stalls and then jumps. Track the whole drag on window instead.
-    let stopPan: (() => void) | null = null;
-    function startPan(ev: MouseEvent) {
-      if (ev.button === 0 && !ev.ctrlKey) return; // left drag rotates
+    let stopDrag: (() => void) | null = null;
+    function trackDrag(move: (e: MouseEvent) => void) {
+      stopDrag?.();
+      stopDrag = () => {
+        window.removeEventListener("mousemove", move);
+        window.removeEventListener("mouseup", stopDrag!);
+        stopDrag = null;
+      };
+      window.addEventListener("mousemove", move);
+      window.addEventListener("mouseup", stopDrag);
+    }
+
+    function onPointerDown(ev: PointerEvent) {
+      container!.querySelector("canvas")?.setPointerCapture?.(ev.pointerId);
+    }
+
+    function onMouseDown(ev: MouseEvent) {
+      if (ev.button === 0 && !ev.ctrlKey) return;
+      if (!pan) return;
       ev.stopPropagation();
-      stopPan?.();
       const x0 = ev.clientX;
       const y0 = ev.clientY;
       const view0 = viewer.getView();
-      function move(e: MouseEvent) {
+      trackDrag((e) => {
         const t = viewer.screenOffsetToModel(e.clientX - x0, e.clientY - y0);
         viewer.setView([
           view0[0] + t.x,
@@ -118,27 +130,39 @@ export default function MoleculeViewer({
           ...view0.slice(3),
         ]);
         clampPan();
-      }
-      stopPan = () => {
-        window.removeEventListener("mousemove", move);
-        window.removeEventListener("mouseup", stopPan!);
-        stopPan = null;
-      };
-      window.addEventListener("mousemove", move);
-      window.addEventListener("mouseup", stopPan);
+      });
     }
 
-    if (pan) {
-      container.addEventListener("mousedown", startPan, true);
-      container.addEventListener("wheel", clampPan);
+    let factor = 1;
+    let frame = 0;
+    function onWheel(ev: WheelEvent) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      factor *= wheelZoomFactor(ev);
+      frame ||= requestAnimationFrame(() => {
+        viewer.zoom(factor);
+        if (pan) clampPan();
+        factor = 1;
+        frame = 0;
+      });
     }
+
+    container.addEventListener("pointerdown", onPointerDown, true);
+    container.addEventListener("mousedown", onMouseDown, true);
+    container.addEventListener("wheel", onWheel, {
+      capture: true,
+      passive: false,
+    });
     return () => {
-      container.removeEventListener("mousedown", startPan, true);
-      container.removeEventListener("wheel", clampPan);
-      stopPan?.();
+      container.removeEventListener("pointerdown", onPointerDown, true);
+      container.removeEventListener("mousedown", onMouseDown, true);
+      container.removeEventListener("wheel", onWheel, true);
+      cancelAnimationFrame(frame);
+      stopDrag?.();
       viewer.clear();
+      container.replaceChildren();
     };
   }, [sdf, pan, zoom]);
 
-  return <div ref={containerRef} />;
+  return <div ref={containerRef} className="molecule-viewer" />;
 }
