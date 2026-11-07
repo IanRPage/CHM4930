@@ -30,7 +30,8 @@ export default function MoleculeViewer({
     try {
       viewer = $3Dmol.createViewerGrid(
         container,
-        { rows: 1, cols: 1 },
+        // control_all lets 3Dmol act on drag moves forwarded from outside the canvas
+        { rows: 1, cols: 1, control_all: true },
         {
           backgroundColor: "white",
           backgroundAlpha: 0,
@@ -101,15 +102,35 @@ export default function MoleculeViewer({
 
     // 3Dmol only sees mouse moves over its canvas, so a drag that leaves the tile
     // stalls and then jumps. Track the whole drag on window instead.
-    let stopPan: (() => void) | null = null;
-    function startPan(ev: MouseEvent) {
-      if (ev.button === 0 && !ev.ctrlKey) return; // left drag rotates
+    let stopDrag: (() => void) | null = null;
+    function trackDrag(move: (e: MouseEvent) => void) {
+      stopDrag?.();
+      stopDrag = () => {
+        window.removeEventListener("mousemove", move);
+        window.removeEventListener("mouseup", stopDrag!);
+        stopDrag = null;
+      };
+      window.addEventListener("mousemove", move);
+      window.addEventListener("mouseup", stopDrag);
+    }
+
+    function onMouseDown(ev: MouseEvent) {
+      const rotate = ev.button === 0 && !ev.ctrlKey;
+      if (rotate) {
+        // 3Dmol handles rotation itself; give it the moves it can't see
+        const canvas = container!.querySelector("canvas");
+        trackDrag((e) => {
+          if (e.target !== canvas)
+            canvas?.dispatchEvent(new MouseEvent("mousemove", e));
+        });
+        return;
+      }
+      if (!pan) return;
       ev.stopPropagation();
-      stopPan?.();
       const x0 = ev.clientX;
       const y0 = ev.clientY;
       const view0 = viewer.getView();
-      function move(e: MouseEvent) {
+      trackDrag((e) => {
         const t = viewer.screenOffsetToModel(e.clientX - x0, e.clientY - y0);
         viewer.setView([
           view0[0] + t.x,
@@ -118,25 +139,18 @@ export default function MoleculeViewer({
           ...view0.slice(3),
         ]);
         clampPan();
-      }
-      stopPan = () => {
-        window.removeEventListener("mousemove", move);
-        window.removeEventListener("mouseup", stopPan!);
-        stopPan = null;
-      };
-      window.addEventListener("mousemove", move);
-      window.addEventListener("mouseup", stopPan);
+      });
     }
 
-    if (pan) {
-      container.addEventListener("mousedown", startPan, true);
-      container.addEventListener("wheel", clampPan);
-    }
+    container.addEventListener("mousedown", onMouseDown, true);
+    if (pan) container.addEventListener("wheel", clampPan);
     return () => {
-      container.removeEventListener("mousedown", startPan, true);
+      container.removeEventListener("mousedown", onMouseDown, true);
       container.removeEventListener("wheel", clampPan);
-      stopPan?.();
+      stopDrag?.();
       viewer.clear();
+      // clear() leaves its canvas behind, which would stack up on re-render
+      container.replaceChildren();
     };
   }, [sdf, pan, zoom]);
 
