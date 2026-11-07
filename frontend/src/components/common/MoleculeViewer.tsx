@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import * as $3Dmol from "3dmol";
 import "./MoleculeViewer.css";
 import { defaultOrientation } from "./orientation.ts";
-import { ZOOM_LIMITS } from "./zoom.ts";
+import { wheelZoomFactor, ZOOM_LIMITS } from "./zoom.ts";
 
 interface MoleculeViewerProps {
   sdf: string;
@@ -142,11 +142,31 @@ export default function MoleculeViewer({
       });
     }
 
+    // 3Dmol zooms by a damped, non-standard wheelDelta and renders on every
+    // event, which skips on fast scrolls. Zoom by the frame's combined factor.
+    let factor = 1;
+    let frame = 0;
+    function onWheel(ev: WheelEvent) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      factor *= wheelZoomFactor(ev);
+      frame ||= requestAnimationFrame(() => {
+        viewer.zoom(factor);
+        if (pan) clampPan();
+        factor = 1;
+        frame = 0;
+      });
+    }
+
     container.addEventListener("mousedown", onMouseDown, true);
-    if (pan) container.addEventListener("wheel", clampPan);
+    container.addEventListener("wheel", onWheel, {
+      capture: true,
+      passive: false,
+    });
     return () => {
       container.removeEventListener("mousedown", onMouseDown, true);
-      container.removeEventListener("wheel", clampPan);
+      container.removeEventListener("wheel", onWheel, true);
+      cancelAnimationFrame(frame);
       stopDrag?.();
       viewer.clear();
       // clear() leaves its canvas behind, which would stack up on re-render
