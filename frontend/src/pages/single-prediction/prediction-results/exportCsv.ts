@@ -56,7 +56,10 @@ export function predictionToCsv(result: PredictResponse): string {
     ]);
   }
 
-  columns.push(["FDA approval probability (0-1)", result.fdaApproved.value]);
+  columns.push([
+    "Clinical toxicity probability (0-1)",
+    result.clinicalToxicity.value,
+  ]);
   columns.push(["Model version", result.metadata.modelVersion]);
   columns.push(["MC-Dropout passes", result.metadata.mcDropoutPasses]);
   columns.push(["CI coverage (0-1)", result.metadata.ciCoverage]);
