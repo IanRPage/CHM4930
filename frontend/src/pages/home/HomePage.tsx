@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import MoleculeViewer from "../../components/common/MoleculeViewer.tsx";
-import temozolomideSdf from "../../assets/temozolomide-3d.sdf?url";
+import temozolomideSdf from "../../assets/temozolomide-3d.sdf?raw";
 import arrowRight from "../../assets/icon-arrow-right.svg";
 import batchIcon from "../../assets/icon-batch.svg";
 import boltIcon from "../../assets/icon-bolt.svg";
@@ -11,6 +11,9 @@ import targetIcon from "../../assets/icon-target.svg";
 import logo from "../../assets/mufu-logo-light.svg";
 import Card from "../../components/common/Card.tsx";
 import "./HomePage.css";
+
+// Starts well inside its canvas and can't be zoomed past the canvas edges
+const HERO_ZOOM = { start: 0.85, min: 0.55, max: 1.3 };
 
 type EntryCard = {
   title: string;
@@ -78,7 +81,7 @@ export default function HomePage() {
   return (
     <div className="home">
       <section className="home-hero">
-        <div>
+        <div className="home-hero-text">
           <div className="home-title">
             <img src={logo} alt="" width={84} height={84} />
             <h1>MuFu</h1>
@@ -92,7 +95,7 @@ export default function HomePage() {
           </p>
         </div>
         <div className="home-graphic">
-          <MoleculeViewer sdfUrl={temozolomideSdf} />
+          <MoleculeViewer sdf={temozolomideSdf} zoom={HERO_ZOOM} />
         </div>
       </section>
 

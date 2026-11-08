@@ -23,6 +23,12 @@ def test_infer_reports_canonical_smiles_and_metadata(predictor, ensemble_dir):
     assert response["model_version"] == f"mufu_ensemble@{sha8}"
     assert response["n_samples"] == 4
     assert response["coverage"] == COVERAGE
+    assert response["nearest_train_tanimoto"] == 1.0
+    assert response["applicability_domain"] == "in_domain"
+
+    out_of_domain = predictor.infer("c1ccc2ccccc2c1")
+    assert out_of_domain["nearest_train_tanimoto"] < 0.4
+    assert out_of_domain["applicability_domain"] == "out_of_domain"
 
 
 def test_infer_matches_the_ensemble_prediction(predictor):
@@ -50,9 +56,19 @@ def test_infer_matches_the_ensemble_prediction(predictor):
         (lambda d: (d / "mufu_seed_1.pt").unlink(), FileNotFoundError, "seed_1"),
         (lambda d: (d / "mufu_ensemble.json").unlink(), FileNotFoundError, "ensemble"),
         (
+            lambda d: (d / "mufu_train_fps.npy").unlink(),
+            FileNotFoundError,
+            "mufu_train_fps.npy",
+        ),
+        (
             lambda d: (d / "mufu_seed_2.pt").open("ab").write(b"0"),
             ValueError,
             "refit",
+        ),
+        (
+            lambda d: (d / "mufu_train_fps.npy").open("ab").write(b"0"),
+            ValueError,
+            "train_fps",
         ),
     ],
 )

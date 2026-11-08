@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from pipeline.combined_loader import COMBINED_CSV_PATH
@@ -129,7 +130,7 @@ SPLIT_SUMMARY_COLUMNS = [
     "n_seeds",
     "data_sha256",
 ]
-LOWER_IS_BETTER = frozenset({"rmse"})
+LOWER_IS_BETTER = frozenset({"rmse", "ece", "ece_uncal", "width_90", "width_95"})
 
 
 @dataclass(frozen=True)
@@ -368,7 +369,10 @@ def summarize_seeds(df: pd.DataFrame) -> pd.DataFrame:
     df = df.reindex(columns=COLUMNS)
     grouped = df.groupby(SUMMARY_GROUP_KEYS, dropna=False, as_index=False).agg(
         value=("value", "mean"),
-        std=("value", lambda s: s.std(ddof=1)),
+        std=(
+            "value",
+            lambda s: float("nan") if np.isinf(s).any() else s.std(ddof=1),
+        ),
         ci_low=("ci_low", "mean"),
         ci_high=("ci_high", "mean"),
         n_seeds=("value", "count"),

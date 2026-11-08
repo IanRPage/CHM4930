@@ -13,6 +13,7 @@ import copy
 import hashlib
 import json
 import math
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
@@ -23,7 +24,8 @@ import torch.nn.functional as F
 from torch import nn
 from torch.utils.data import DataLoader
 
-from mufu.contract import N_BIO, PIC50_COLUMNS
+from evaluation import interval_metrics
+from mufu.contract import PIC50_COLUMNS
 from mufu.data.dataset import MuFuDataset, collate, to_device
 from mufu.model import MuFu
 
@@ -137,15 +139,35 @@ def mc_predict(
 @dataclass(frozen=True)
 class ConformalParams:
     coverages: tuple[float, ...]
-    q: np.ndarray  # (N_BIO, len(coverages))
-    sigma_floor: np.ndarray  # (N_BIO,)
+    q: np.ndarray  # (n_targets, len(coverages))
+    sigma_floor: np.ndarray  # (n_targets,)
     n_samples: int
     dropout_rates: tuple[float, ...]
     checkpoint_sha256: str = ""
 
+    def __post_init__(self) -> None:
+        if self.q.ndim != 2 or self.q.shape[1] != len(self.coverages):
+            raise ValueError(
+                f"q: expected 2D array with {len(self.coverages)} coverage columns, "
+                f"got shape {self.q.shape}"
+            )
+        if self.sigma_floor.shape != (self.q.shape[0],):
+            raise ValueError(
+                f"sigma_floor: expected shape {(self.q.shape[0],)}, "
+                f"got {self.sigma_floor.shape}"
+            )
+
     def intervals(
         self, pred: np.ndarray, sigma: np.ndarray
     ) -> dict[float, tuple[np.ndarray, np.ndarray]]:
+        if pred.ndim != 2 or sigma.shape != pred.shape:
+            raise ValueError(
+                f"pred and sigma must be matching 2D arrays, got {pred.shape} and {sigma.shape}"
+            )
+        if pred.shape[1] != self.q.shape[0]:
+            raise ValueError(
+                f"pred has {pred.shape[1]} target(s), but ConformalParams has {self.q.shape[0]}"
+            )
         scale = np.maximum(sigma, self.sigma_floor)
         return {
             cov: (pred - self.q[:, i] * scale, pred + self.q[:, i] * scale)
@@ -187,20 +209,28 @@ def fit_conformal(
     y: np.ndarray,
     mask: np.ndarray,
     *,
-    n_samples: int,
-    dropout_rates: tuple[float, ...],
+    n_samples: int = DEFAULT_T,
+    dropout_rates: tuple[float, ...] = (),
     coverages: tuple[float, ...] = DEFAULT_COVERAGES,
+    columns: Sequence[str] = PIC50_COLUMNS,
 ) -> ConformalParams:
     """
     Fit `q` per target and coverage from |y - pred| / max(sigma, floor) on labeled rows.
     The floor is a low percentile of that target's sigma.
     """
-    q = np.empty((N_BIO, len(coverages)))
-    floor = np.empty(N_BIO)
-    for j in range(N_BIO):
+    n_targets = len(columns)
+    if pred.shape != sigma.shape or pred.shape != y.shape or pred.shape != mask.shape:
+        raise ValueError("pred, sigma, y, and mask must have identical shapes")
+    if pred.ndim != 2 or pred.shape[1] != n_targets:
+        raise ValueError(
+            f"expected 2D arrays with {n_targets} target columns, got {pred.shape}"
+        )
+    q = np.empty((n_targets, len(coverages)))
+    floor = np.empty(n_targets)
+    for j, col in enumerate(columns):
         valid = mask[:, j]
         if not valid.any():
-            raise ValueError(f"{PIC50_COLUMNS[j]}: no labeled rows to calibrate on")
+            raise ValueError(f"{col}: no labeled rows to calibrate on")
         floor[j] = max(
             np.percentile(sigma[valid, j], SIGMA_FLOOR_PERCENTILE), SIGMA_FLOOR_MIN
         )
@@ -307,15 +337,18 @@ def empirical_coverage(
         valid = mask[:, j]
         for cov in coverages:
             pct = round(cov * 100)
-            lo, hi = preds[f"{col}_lo{pct}"][valid], preds[f"{col}_hi{pct}"][valid]
-            inside = (y[valid, j] >= lo) & (y[valid, j] <= hi)
+            stats = interval_metrics(
+                y[valid, j],
+                preds[f"{col}_lo{pct}"][valid],
+                preds[f"{col}_hi{pct}"][valid],
+            )
             rows.append(
                 {
                     "target": col,
                     "nominal": cov,
-                    "empirical": float(inside.mean()),
+                    "empirical": stats["coverage"],
                     "n": int(valid.sum()),
-                    "mean_width": float((hi - lo).mean()),
+                    "mean_width": stats["width"],
                 }
             )
     return pd.DataFrame(rows)

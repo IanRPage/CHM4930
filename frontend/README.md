@@ -19,7 +19,7 @@ frontend/
     │   ├── common/       # Components shared by each page
     │   └── layout/       # Layout (sidebar + <Outlet/>), Sidebar
     ├── pages/            # one folder per route: page, its CSS, sub-components, tests
-    ├── services/         # predict() adapter + PredictError (typed errors)
+    ├── services/         # implementation code of controller calls
     ├── types/            # request/response types, mirror backend models
     └── test/             # setup.ts (jest-dom, RTL cleanup), shared fixtures
 ```
@@ -71,7 +71,7 @@ Follow these when changing anything under `frontend/`.
 - Call the backend with relative `/api/...` URLs. Don't add a base URL env var.
 - Types in `types/` mirror `backend/src/models/`. When the backend contract
   changes, update them in a follow-up frontend PR (PRs touch one area only).
-- `predict()` throws `PredictError` with a `kind` (`invalid-smiles`, `busy`,
+- `predict()` and `getMolInfo()` throw `PredictError` with a `kind` (`invalid-smiles`, `busy`,
   `unavailable`, `timeout`, `server`, `network`, `invalid-response`) and a
   user-facing `message`. If the caller aborts, it rethrows the `AbortError`;
   ignore it.

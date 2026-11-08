@@ -5,7 +5,7 @@ import {
   toPredictResponse,
 } from "../../src/models/inference.ts";
 import { NR_TASKS, SR_TASKS } from "../../src/models/predict.ts";
-import { rawResponse } from "../fixtures.ts";
+import { type Json, rawResponse } from "../fixtures.ts";
 
 describe("parseInferenceResponse", () => {
   it("accepts a valid response", () => {
@@ -23,6 +23,18 @@ describe("parseInferenceResponse", () => {
       p_active: null,
     };
     raw.toxicity["SR-p53"] = null;
+
+    expect(parseInferenceResponse(raw)).toEqual(raw);
+  });
+
+  it.each([
+    [0.6, "in_domain"],
+    [0.4, "borderline"],
+    [0.2, "out_of_domain"],
+  ] as const)("accepts %d as %s", (tanimoto, domain) => {
+    const raw = rawResponse();
+    raw.nearest_train_tanimoto = tanimoto;
+    raw.applicability_domain = domain;
 
     expect(parseInferenceResponse(raw)).toEqual(raw);
   });
@@ -94,6 +106,26 @@ describe("parseInferenceResponse", () => {
       (raw) => (raw.coverage = 1),
       "coverage must be a number in (0, 1)",
     ],
+    [
+      "a missing nearest_train_tanimoto",
+      (raw) => delete (raw as Json).nearest_train_tanimoto,
+      "nearest_train_tanimoto must be a number in [0, 1]",
+    ],
+    [
+      "a negative nearest_train_tanimoto",
+      (raw) => (raw.nearest_train_tanimoto = -0.1),
+      "nearest_train_tanimoto must be a number in [0, 1]",
+    ],
+    [
+      "a nearest_train_tanimoto above 1",
+      (raw) => (raw.nearest_train_tanimoto = 1.1),
+      "nearest_train_tanimoto must be a number in [0, 1]",
+    ],
+    [
+      "an applicability_domain that does not match the similarity",
+      (raw) => (raw.applicability_domain = "out_of_domain"),
+      "applicability_domain must be in_domain for nearest_train_tanimoto 0.75",
+    ],
   ] satisfies [
     string,
     (raw: ReturnType<typeof rawResponse>) => unknown,
@@ -121,15 +153,17 @@ describe("toPredictResponse", () => {
     expect(res.bioactivity.EGFR.pActive).toEqual({ value: 0.9 });
   });
 
-  it("groups Tox21 into NR/SR and hides CT_TOX", () => {
+  it("groups Tox21 into NR/SR and exposes CT_TOX as clinicalToxicity", () => {
     const raw = rawResponse();
-    raw.toxicity.FDA_APPROVED = 0.8;
+    raw.toxicity.CT_TOX = 0.8;
     const res = toPredictResponse(parseInferenceResponse(raw));
 
     expect(Object.keys(res.toxicity.nuclearReceptor)).toEqual([...NR_TASKS]);
     expect(Object.keys(res.toxicity.stressResponse)).toEqual([...SR_TASKS]);
-    expect(res.fdaApproved).toEqual({ value: 0.8 });
-    expect(JSON.stringify(res)).not.toContain("CT_TOX");
+    expect(res.clinicalToxicity).toEqual({ value: 0.8 });
+    expect(res.nearestTrainTanimoto).toBe(0.75);
+    expect(res.applicabilityDomain).toBe("in_domain");
+    expect(res).not.toHaveProperty("fdaApproved");
     expect(res.metadata).toEqual({
       modelVersion: "mufu-test",
       mcDropoutPasses: 50,

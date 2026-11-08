@@ -336,3 +336,17 @@ def test_task_family_checkpointing_and_non_mutating_predict(model, labeled_datas
         assert torch.equal(model.state_dict()[k], v), k
     for col in TOX_COLUMNS:
         assert np.allclose(preds[col], 1.0)
+
+
+def test_fit_initializes_regression_head_bias_to_training_mean(model, labeled_dataset):
+    with torch.no_grad():
+        model.regression_head.head[1].bias.zero_()
+    fit(
+        model,
+        {"train": labeled_dataset, "val": labeled_dataset},
+        TrainConfig(batch_size=4, epochs=0, device="cpu"),
+    )
+    y = labeled_dataset.labels["y_pic50"]
+    m = labeled_dataset.masks["mask_bio"]
+    expected = torch.stack([y[m[:, j], j].mean() for j in range(y.shape[1])])
+    assert torch.allclose(model.regression_head.head[1].bias, expected)

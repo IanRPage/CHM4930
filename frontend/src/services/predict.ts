@@ -1,4 +1,5 @@
 import type {
+  ApplicabilityDomain,
   Estimate,
   Output,
   PredictResponse,
@@ -21,12 +22,22 @@ export interface PredictOptions {
 
 type Json = Record<string, unknown>;
 
-function isRecord(value: unknown): value is Json {
+export function isRecord(value: unknown): value is Json {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isNumber(value: unknown): value is number {
+export function isNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+const APPLICABILITY_DOMAINS: readonly unknown[] = [
+  "in_domain",
+  "borderline",
+  "out_of_domain",
+];
+
+function isApplicabilityDomain(value: unknown): value is ApplicabilityDomain {
+  return APPLICABILITY_DOMAINS.includes(value);
 }
 
 function record(raw: unknown): Json {
@@ -76,6 +87,13 @@ function parseBioactivity(raw: unknown): TargetBioactivity {
 
 export function parsePredictResponse(body: unknown): PredictResponse {
   if (!isRecord(body)) throw new PredictError("invalid-response");
+  const { nearestTrainTanimoto, applicabilityDomain } = body;
+  if (
+    !isNumber(nearestTrainTanimoto) ||
+    !isApplicabilityDomain(applicabilityDomain)
+  ) {
+    throw new PredictError("invalid-response");
+  }
   const bioactivity = record(body.bioactivity);
   const toxicity = record(body.toxicity);
   const nr = record(toxicity.nuclearReceptor);
@@ -83,12 +101,14 @@ export function parsePredictResponse(body: unknown): PredictResponse {
   const metadata = record(body.metadata);
   return {
     smiles: typeof body.smiles === "string" ? body.smiles : null,
+    nearestTrainTanimoto,
+    applicabilityDomain,
     bioactivity: fromKeys(TARGETS, (t) => parseBioactivity(bioactivity[t])),
     toxicity: {
       nuclearReceptor: fromKeys(NR_TASKS, (t) => parseValue(nr[t])),
       stressResponse: fromKeys(SR_TASKS, (t) => parseValue(sr[t])),
     },
-    fdaApproved: parseValue(body.fdaApproved),
+    clinicalToxicity: parseValue(body.clinicalToxicity),
     metadata: {
       modelVersion:
         typeof metadata.modelVersion === "string"
@@ -102,7 +122,7 @@ export function parsePredictResponse(body: unknown): PredictResponse {
   };
 }
 
-async function readJson(res: Response): Promise<unknown> {
+export async function readJson(res: Response): Promise<unknown> {
   try {
     return await res.json();
   } catch (err) {

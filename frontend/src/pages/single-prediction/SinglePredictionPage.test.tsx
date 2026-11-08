@@ -1,14 +1,17 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PredictError } from "../../services/errors.ts";
+import { getMolInfo } from "../../services/molInfo.ts";
 import { predict } from "../../services/predict.ts";
-import { predictResponse } from "../../test/fixtures.ts";
+import { molInfoResponse, predictResponse } from "../../test/fixtures.ts";
 import SinglePredictionPage from "./SinglePredictionPage.tsx";
 
 vi.mock("../../services/predict.ts", () => ({ predict: vi.fn() }));
+vi.mock("../../services/molInfo.ts", () => ({ getMolInfo: vi.fn() }));
 
 const predictMock = vi.mocked(predict);
+const molInfoMock = vi.mocked(getMolInfo);
 
 function pendingPrediction() {
   let resolve!: (result: Awaited<ReturnType<typeof predict>>) => void;
@@ -27,9 +30,6 @@ function expectNoResults() {
     screen.getByRole("tab", { name: "Prediction Results" }),
   ).toBeDisabled();
   expect(
-    screen.getByRole("tab", { name: "Molecular Information" }),
-  ).toBeDisabled();
-  expect(
     screen.queryByRole("heading", { name: "Predicted Properties" }),
   ).not.toBeInTheDocument();
 }
@@ -40,8 +40,13 @@ async function submit(smiles: string) {
   await userEvent.click(screen.getByRole("button", { name: "Predict" }));
 }
 
+beforeEach(() => {
+  molInfoMock.mockResolvedValue(molInfoResponse());
+});
+
 afterEach(() => {
   predictMock.mockReset();
+  molInfoMock.mockReset();
 });
 
 describe("SinglePredictionPage", () => {
@@ -184,6 +189,7 @@ describe("SinglePredictionPage", () => {
 
       await userEvent.clear(input);
       expect(signal.aborted).toBe(true);
+      expect(molInfoMock.mock.calls[0][1]!.signal!.aborted).toBe(true);
       expect(screen.getByRole("status")).toBeEmptyDOMElement();
 
       await userEvent.type(input, "CCN");
@@ -233,7 +239,10 @@ describe("SinglePredictionPage", () => {
     const missing = { value: null, reason: "Not returned by the server" };
     result.toxicity.nuclearReceptor["NR-AR"] = missing;
     result.toxicity.nuclearReceptor["NR-ER"] = missing;
-    result.fdaApproved = { value: null, reason: "Not returned by the model" };
+    result.clinicalToxicity = {
+      value: null,
+      reason: "Not returned by the model",
+    };
     predictMock.mockResolvedValue(result);
     await submit("CCO");
 
@@ -271,7 +280,6 @@ describe("SinglePredictionPage", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Molecular Information" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Coming Soon")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("tab", { name: "Input Molecule" }));
     expect(screen.getByLabelText("Enter SMILES")).toHaveValue("CCO");
@@ -303,12 +311,68 @@ describe("SinglePredictionPage", () => {
     expect(
       screen.getByRole("tab", { name: "Prediction Results" }),
     ).toBeDisabled();
-    expect(
-      screen.getByRole("tab", { name: "Molecular Information" }),
-    ).toBeDisabled();
 
     await userEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(screen.getByLabelText("Enter SMILES")).toHaveValue("");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("starts predict and mol-info together and shows mol-info loading in its tab", async () => {
+    const prediction = pendingPrediction();
+    let resolveInfo!: (info: ReturnType<typeof molInfoResponse>) => void;
+    predictMock.mockReturnValue(prediction.promise);
+    molInfoMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveInfo = resolve;
+      }),
+    );
+    await submit("CCO");
+
+    expect(predictMock).toHaveBeenCalledTimes(1);
+    expect(molInfoMock).toHaveBeenCalledWith("CCO", expect.anything());
+    await userEvent.click(
+      screen.getByRole("tab", { name: "Molecular Information" }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading molecular information…",
+    );
+
+    await act(async () => resolveInfo(molInfoResponse()));
+    await act(async () => prediction.resolve(predictResponse()));
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Prediction Results" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Molecular Properties" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows mol-info when the prediction fails", async () => {
+    predictMock.mockRejectedValue(new PredictError("unavailable"));
+    await submit("CCO");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The model is currently unavailable",
+    );
+    await userEvent.click(
+      screen.getByRole("tab", { name: "Molecular Information" }),
+    );
+    expect(screen.getByText("C9H8O4")).toBeInTheDocument();
+  });
+
+  it("keeps predictions when mol-info fails", async () => {
+    predictMock.mockResolvedValue(predictResponse());
+    molInfoMock.mockRejectedValue(new PredictError("network"));
+    await submit("CCO");
+
+    expect(
+      await screen.findByRole("heading", { name: "Predicted Properties" }),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("tab", { name: "Molecular Information" }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Can't reach the server",
+    );
   });
 });

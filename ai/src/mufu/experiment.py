@@ -23,6 +23,7 @@ from baseline.benchmark import (
 from baseline.results import CodeIdentity, code_identity, file_sha256
 from encoders.fingerprint_encoder import FingerprintEncoder
 from encoders.gnn_encoder import GNNEncoder
+from evaluation import interval_metrics
 from mufu.calibration import CalibrationParams, fit_calibration
 from mufu.contract import D_MODEL, MODALITY_DROPOUT_P, PIC50_COLUMNS, Encoder
 from mufu.data.dataset import MuFuDataset
@@ -134,12 +135,14 @@ def predict_mufu_splits(
     calibration: CalibrationParams | None = None,
     conformal: ConformalParams | None = None,
 ) -> dict[str, dict]:
-    val_preds = predict(
-        model,
-        datasets["val"],
-        batch_size=batch_size,
-        family_states=family_states,
-        calibration=calibration,
+    val_preds = dict(
+        predict(
+            model,
+            datasets["val"],
+            batch_size=batch_size,
+            family_states=family_states,
+            calibration=calibration,
+        )
     )
     test_preds = dict(
         predict(
@@ -155,14 +158,13 @@ def predict_mufu_splits(
         devices = (
             [param.device] if param is not None and param.device.type == "cuda" else []
         )
-        with torch.random.fork_rng(devices=devices):
-            torch.manual_seed(int(seed))
-            intervals = predict_with_intervals(
-                model, datasets["test"], conformal, batch_size=batch_size
-            )
-        for key, val in intervals.items():
-            if key not in test_preds:
-                test_preds[key] = val
+        for split_name, target_preds in (("val", val_preds), ("test", test_preds)):
+            with torch.random.fork_rng(devices=devices):
+                torch.manual_seed(int(seed))
+                intervals = predict_with_intervals(
+                    model, datasets[split_name], conformal, batch_size=batch_size
+                )
+            target_preds.update(intervals)
     return {"val": val_preds, "test": test_preds}
 
 
@@ -206,17 +208,18 @@ def make_fit_predict(
                 flush=True,
             )
 
+        calib_dataset = datasets.get("val_calib", datasets["val"])
         calibration = None
         if cfg.calibration != "none":
             calibration = fit_calibration(
                 cfg.calibration,
                 predict_logits(
                     model,
-                    datasets["val"],
+                    calib_dataset,
                     batch_size=cfg.batch_size,
                     family_states=result.family_states,
                 ),
-                datasets["val"],
+                calib_dataset,
                 pos_weights=dataset_pos_weights(datasets["train"], mode=cfg.pos_weight),
             )
 
@@ -241,7 +244,7 @@ def make_fit_predict(
         )
 
         conformal = fit_mc_dropout(
-            model, datasets["val"], ckpt_path, batch_size=cfg.batch_size
+            model, calib_dataset, ckpt_path, batch_size=cfg.batch_size
         )
 
         logs_dir.mkdir(parents=True, exist_ok=True)
@@ -284,17 +287,14 @@ def coverage_from_predictions_df(
             pct = round(cov * 100)
             lo = pred_df.loc[mask, f"{col}_lo{pct}"].to_numpy(dtype=float)
             hi = pred_df.loc[mask, f"{col}_hi{pct}"].to_numpy(dtype=float)
+            stats = interval_metrics(y, lo, hi)
             rows.append(
                 {
                     "target": target,
                     "nominal": cov,
-                    "empirical": (
-                        float(((y >= lo) & (y <= hi)).mean())
-                        if len(y)
-                        else float("nan")
-                    ),
+                    "empirical": stats["coverage"],
                     "n": len(y),
-                    "mean_width": float((hi - lo).mean()) if len(y) else float("nan"),
+                    "mean_width": stats["width"],
                 }
             )
     return pd.DataFrame(rows)

@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import numpy as np
 import pandas as pd
 import torch
 
@@ -52,11 +53,14 @@ if __name__ == "__main__":
         model, _ = load_mufu_checkpoint(ckpt_path, smiles_encoder, device=device)
         conformal = fit_mc_dropout(
             model,
-            datasets["val"],
+            datasets["val_calib"],
             ckpt_path,
             n_samples=n_samples,
             coverages=coverages,
             batch_size=batch_size,
+        )
+        assert np.isfinite(conformal.q).all(), (
+            f"seed {seed}: non-finite conformal quantiles: {conformal.q}"
         )
         preds = predict_with_intervals(
             model, datasets["test"], conformal, batch_size=batch_size
