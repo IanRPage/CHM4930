@@ -463,7 +463,7 @@ def test_full_table_is_split_before_endpoint_filtering(snapshot_csv, monkeypatch
         "val": 2,
         "test": 2,
     }
-    separate = scaffold_split(endpoint.drop(columns=["scaffold", "split"]))
+    separate = scaffold_split(endpoint.drop(columns=["group", "split"]))
     assert full.loc[16, "split"] == "val"
     assert separate.loc[16, "split"] == "train"
 
