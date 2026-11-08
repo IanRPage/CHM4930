@@ -62,7 +62,7 @@ describe("predict", () => {
     delete body.toxicity.nuclearReceptor["NR-AR"];
     body.toxicity.stressResponse["SR-ARE"] = { value: null };
     body.toxicity.stressResponse.extra = { value: 1 };
-    body.fdaApproved = 0.91;
+    body.clinicalToxicity = 0.91;
     body.metadata = { modelVersion: 3 };
     reply(200, body);
 
@@ -78,7 +78,7 @@ describe("predict", () => {
     expect(result.toxicity.nuclearReceptor["NR-AR"]).toEqual(missing);
     expect(result.toxicity.stressResponse["SR-ARE"]).toEqual(missing);
     expect(result.toxicity.stressResponse).not.toHaveProperty("extra");
-    expect(result.fdaApproved).toEqual(missing);
+    expect(result.clinicalToxicity).toEqual(missing);
     expect(result.metadata).toEqual({
       modelVersion: null,
       mcDropoutPasses: null,
@@ -165,6 +165,14 @@ describe("predict", () => {
   it.each([
     ["non-JSON", "not json"],
     ["non-object", [1, 2]],
+    [
+      "domain-less",
+      {
+        ...response(),
+        nearestTrainTanimoto: undefined,
+        applicabilityDomain: "far",
+      },
+    ],
   ])("rejects a %s success body", async (_name, body) => {
     reply(200, body);
     const err = await predictError(predict("CCO"));

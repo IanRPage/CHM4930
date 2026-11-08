@@ -18,11 +18,17 @@ export const SR_TASKS = [
   "SR-MMP",
   "SR-p53",
 ] as const;
+export const APPLICABILITY_DOMAINS = [
+  "in_domain",
+  "borderline",
+  "out_of_domain",
+] as const;
 export const SMILES_MAX_LENGTH = 1000;
 
 export type Target = (typeof TARGETS)[number];
 export type NrTask = (typeof NR_TASKS)[number];
 export type SrTask = (typeof SR_TASKS)[number];
+export type ApplicabilityDomain = (typeof APPLICABILITY_DOMAINS)[number];
 
 export interface PredictRequest {
   smiles: string;
@@ -52,12 +58,14 @@ export interface TargetBioactivity {
 
 export interface PredictResponse {
   smiles: string;
+  nearestTrainTanimoto: number;
+  applicabilityDomain: ApplicabilityDomain;
   bioactivity: Record<Target, TargetBioactivity>;
   toxicity: {
     nuclearReceptor: Record<NrTask, Output>;
     stressResponse: Record<SrTask, Output>;
   };
-  fdaApproved: Output;
+  clinicalToxicity: Output;
   metadata: {
     modelVersion: string;
     mcDropoutPasses: number;
@@ -69,10 +77,14 @@ export function parsePredictRequest(body: unknown): PredictRequest {
   if (!isRecord(body)) {
     throw httpError(400, "Request body must be a JSON object");
   }
-  if (typeof body.smiles !== "string") {
+  return { smiles: parseSmiles(body.smiles) };
+}
+
+export function parseSmiles(value: unknown): string {
+  if (typeof value !== "string") {
     throw httpError(400, "smiles must be a string");
   }
-  const smiles = body.smiles.trim();
+  const smiles = value.trim();
   if (!smiles) {
     throw httpError(400, "smiles must not be empty");
   }
@@ -85,5 +97,5 @@ export function parsePredictRequest(body: unknown): PredictRequest {
   if (/\s/.test(smiles)) {
     throw httpError(400, "smiles must not contain whitespace");
   }
-  return { smiles };
+  return smiles;
 }

@@ -30,7 +30,10 @@ function csvCell(value: Cell): string {
 }
 
 export function predictionToCsv(result: PredictResponse): string {
-  const columns: Column[] = [["SMILES", result.smiles]];
+  const columns: Column[] = [
+    ["SMILES", result.smiles],
+    ["Nearest training Tanimoto (0-1)", result.nearestTrainTanimoto],
+  ];
 
   // Export both targets, regardless of which toggle is active in the UI.
   for (const target of ["EGFR", "BACE1"] as const) {
@@ -53,7 +56,10 @@ export function predictionToCsv(result: PredictResponse): string {
     ]);
   }
 
-  columns.push(["FDA approval probability (0-1)", result.fdaApproved.value]);
+  columns.push([
+    "Clinical toxicity probability (0-1)",
+    result.clinicalToxicity.value,
+  ]);
   columns.push(["Model version", result.metadata.modelVersion]);
   columns.push(["MC-Dropout passes", result.metadata.mcDropoutPasses]);
   columns.push(["CI coverage (0-1)", result.metadata.ciCoverage]);

@@ -1,6 +1,7 @@
 """
 Evaluation metrics for single-task and masked multi-task predictions: RMSE, R2,
-Spearman and Kendall for regression, ROC-AUC and PR-AUC for classification.
+Spearman, Kendall, and interval coverage/width for regression; ROC-AUC, PR-AUC,
+and ECE for classification.
 """
 
 import numpy as np
@@ -91,3 +92,33 @@ def evaluation_metrics(y_true, y_score, task_type, mask=None):
         }
 
     return _ranking(y_true, y_score)
+
+
+def expected_calibration_error(
+    probs: np.ndarray, labels: np.ndarray, n_bins: int = 10
+) -> float:
+    probs = np.asarray(probs, dtype=float)
+    labels = np.asarray(labels, dtype=float)
+    if len(probs) == 0:
+        return float("nan")
+    bins = np.digitize(probs, np.linspace(0.0, 1.0, n_bins + 1)[1:-1])
+    return float(
+        sum(
+            (bins == b).mean() * abs(probs[bins == b].mean() - labels[bins == b].mean())
+            for b in np.unique(bins)
+        )
+    )
+
+
+def interval_metrics(
+    y_true: np.ndarray, lo: np.ndarray, hi: np.ndarray
+) -> dict[str, float]:
+    y_true = np.asarray(y_true, dtype=float)
+    lo = np.asarray(lo, dtype=float)
+    hi = np.asarray(hi, dtype=float)
+    if len(y_true) == 0:
+        return {"coverage": float("nan"), "width": float("nan")}
+    return {
+        "coverage": float(((y_true >= lo) & (y_true <= hi)).mean()),
+        "width": float((hi - lo).mean()),
+    }

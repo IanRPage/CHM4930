@@ -15,7 +15,19 @@ PIC50 = {
 }
 ALL_PIC50 = PIC50["BACE1"] | PIC50["EGFR"]
 TEST_SEEDS = (0, 1)
-BIO_METRICS = ("rmse", "r2", "spearman", "kendall", "roc_auc", "pr_auc", "prevalence")
+BIO_METRICS = (
+    "rmse",
+    "r2",
+    "spearman",
+    "kendall",
+    "roc_auc",
+    "pr_auc",
+    "prevalence",
+    "coverage_90",
+    "width_90",
+    "coverage_95",
+    "width_95",
+)
 
 
 @pytest.fixture
@@ -30,6 +42,7 @@ def fake_forests(monkeypatch):
         def fit(self, X, y):
             self.X = X.copy()
             self.y = y.copy()
+            self.estimators_ = [self, self]
             return self
 
         def predict(self, X):
@@ -109,7 +122,7 @@ def test_main_records_val_and_test_rows_per_target_and_seed(
 
     run_dir = env_paths / "rf_bioactivity_default"
     scored = benchmark.score_run_predictions(run_dir, combined, include_test=True)
-    assert len(scored) == 28 * len(TEST_SEEDS)
+    assert len(scored) == 44 * len(TEST_SEEDS)
     rows = scored[scored["endpoint"] == f"pIC50_{target}"].set_index(
         ["split", "seed", "metric"]
     )

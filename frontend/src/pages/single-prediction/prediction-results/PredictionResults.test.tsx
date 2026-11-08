@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { predictResponse } from "../../../test/fixtures.ts";
+import { molInfoResponse, predictResponse } from "../../../test/fixtures.ts";
 import { downloadPredictionCsv } from "./exportCsv.ts";
 import PredictionResults from "./PredictionResults.tsx";
 
@@ -22,10 +22,24 @@ describe("PredictionResults", () => {
       screen.getByRole("heading", { name: "Toxicity risk" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Likelihood of FDA approval" }),
+      screen.getByRole("heading", { name: "Clinical-trial toxicity risk" }),
     ).toBeInTheDocument();
-    // SCRUM-98 has not supplied descriptors through the API yet.
+    expect(screen.getByText(/80 of 1,428 compounds/u)).toBeInTheDocument();
     expect(screen.queryByText("Molecular Properties")).not.toBeInTheDocument();
+  });
+
+  it("shows molecular properties once mol-info arrives", () => {
+    render(
+      <PredictionResults
+        result={predictResponse()}
+        molInfo={molInfoResponse()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Molecular Properties" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("180.16 g/mol")).toBeInTheDocument();
   });
 
   it("renders a complete prediction response", () => {
@@ -37,9 +51,21 @@ describe("PredictionResults", () => {
     expect(screen.getByText("6.20")).toBeInTheDocument();
     expect(screen.getByText("630 nM")).toBeInTheDocument();
     expect(screen.getAllByText("10%")).toHaveLength(12);
-    expect(screen.getByText("91%")).toBeInTheDocument();
+    expect(screen.getByText("9%")).toBeInTheDocument();
     expect(
       screen.queryByText("Not returned by the model"),
     ).not.toBeInTheDocument();
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+
+  it("warns when the molecule is outside the training domain", () => {
+    const result = predictResponse();
+    result.applicabilityDomain = "out_of_domain";
+    result.nearestTrainTanimoto = 0.31;
+    render(<PredictionResults result={result} />);
+
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "Tanimoto similarity = 0.31: predictions are extrapolations and may be unreliable.",
+    );
   });
 });

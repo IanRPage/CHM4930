@@ -52,9 +52,9 @@ function csvRow(result: PredictResponse): Record<string, string> {
   const records = parseCsv(csv);
   expect(records).toHaveLength(2);
   const [headers, values] = records;
-  expect(headers).toHaveLength(31);
-  expect(new Set(headers).size).toBe(31);
-  expect(values).toHaveLength(31);
+  expect(headers).toHaveLength(32);
+  expect(new Set(headers).size).toBe(32);
+  expect(values).toHaveLength(32);
   return Object.fromEntries(headers.map((header, i) => [header, values[i]]));
 }
 
@@ -84,6 +84,7 @@ describe("predictionToCsv", () => {
 
     expect(csvRow(result)).toEqual({
       SMILES: "CC(=O)Oc1ccccc1C(=O)O",
+      "Nearest training Tanimoto (0-1)": "0.72",
       "EGFR pIC50": "6.3",
       "EGFR pIC50 CI lower": "6",
       "EGFR pIC50 CI upper": "6.6",
@@ -110,7 +111,7 @@ describe("predictionToCsv", () => {
       "Tox21 SR-HSE probability (0-1)": "0.99",
       "Tox21 SR-MMP probability (0-1)": "1",
       "Tox21 SR-p53 probability (0-1)": "0.123456789",
-      "FDA approval probability (0-1)": "0.91",
+      "Clinical toxicity probability (0-1)": "0.09",
       "Model version": "mufu-test",
       "MC-Dropout passes": "50",
       "CI coverage (0-1)": "0.95",
@@ -123,7 +124,7 @@ describe("predictionToCsv", () => {
       const result = predictResponse();
       result.bioactivity.EGFR.pActive = { value };
       result.bioactivity.BACE1.pActive = { value };
-      result.fdaApproved = { value };
+      result.clinicalToxicity = { value };
       for (const task of NR_TASKS)
         result.toxicity.nuclearReceptor[task] = { value };
       for (const task of SR_TASKS)
@@ -151,7 +152,7 @@ describe("predictionToCsv", () => {
     }
     result.toxicity.nuclearReceptor["NR-AR"] = missing;
     result.toxicity.stressResponse["SR-ARE"] = missing;
-    result.fdaApproved = missing;
+    result.clinicalToxicity = missing;
     result.metadata = {
       modelVersion: null,
       mcDropoutPasses: null,
@@ -170,6 +171,7 @@ describe("predictionToCsv", () => {
       Array(10).fill("0.1"),
     );
     for (const [header, cell] of Object.entries(row)) {
+      if (header === "Nearest training Tanimoto (0-1)") continue;
       if (!availableAssays.some(([assay]) => assay === header))
         expect(cell).toBe("");
     }

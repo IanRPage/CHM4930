@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader
 from evaluation import evaluation_metrics
 from mufu.calibration import CALIBRATION_MODES, CalibrationParams
 from mufu.contract import (
+    ACTIVE_COLUMNS,
     COLUMN_GROUPS,
     N_BIO,
     TASKS,
@@ -262,6 +263,13 @@ def fit(
         pin_memory=(device.type == "cuda"),
     )
     model.to(device)
+    y_pic50 = datasets["train"].labels["y_pic50"]
+    mask_bio = datasets["train"].masks["mask_bio"]
+    with torch.no_grad():
+        bias = model.regression_head.head[1].bias
+        for j in range(N_BIO):
+            if mask_bio[:, j].any():
+                bias[j] = y_pic50[mask_bio[:, j], j].mean().to(bias)
     task_loss = TaskLoss.from_dataset(datasets["train"], pos_weight=cfg.pos_weight).to(
         device
     )
@@ -269,6 +277,7 @@ def fit(
     weighting = UncertaintyWeighting().to(device)
     optimizer = make_optimizer(model, weighting, cfg)
 
+    val_dataset = datasets.get("val_select", datasets["val"])
     families = FAMILY_TASKS if cfg.checkpoint_mode == "task_family" else {"all": TASKS}
     primary = next(iter(families))
     best_signals = dict.fromkeys(families, float("inf"))
@@ -304,7 +313,7 @@ def fit(
         )
 
         outputs, losses = evaluate_val_loss(
-            model, datasets["val"], val_task_loss, cfg.batch_size
+            model, val_dataset, val_task_loss, cfg.batch_size
         )
         val_losses.append(_sum_losses(losses, TASKS))
         for t in TASKS:
@@ -322,7 +331,7 @@ def fit(
             )
 
         if cfg.stopping == "metric":
-            signals = _metric_signals(outputs, datasets["val"])
+            signals = _metric_signals(outputs, val_dataset)
         else:
             scales = epoch1_losses if cfg.stopping == "norm_loss" else None
             signals = {f: _sum_losses(losses, ts, scales) for f, ts in families.items()}
@@ -391,7 +400,15 @@ def predict(
     outputs = predict_logits(
         model, dataset, batch_size=batch_size, family_states=family_states
     )
+    uncal: dict[str, np.ndarray] = {}
     if calibration is not None:
+        for key, columns in (
+            ("active_logits", ACTIVE_COLUMNS),
+            ("tox_logits", TOX_COLUMNS),
+        ):
+            probs = torch.sigmoid(outputs[key]).numpy().astype(float, copy=False)
+            for j, col in enumerate(columns):
+                uncal[f"{col}_uncal"] = probs[:, j]
         outputs = calibration.apply(outputs)
     for key in ("active_logits", "tox_logits"):
         outputs[key] = torch.sigmoid(outputs[key])
@@ -402,4 +419,5 @@ def predict(
             for key, columns in COLUMN_GROUPS
             for j, col in enumerate(columns)
         },
+        **uncal,
     }

@@ -13,6 +13,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 
+from evaluation import expected_calibration_error
 from mufu.contract import ACTIVE_COLUMNS, N_BIO, N_TOX, TOX_COLUMNS
 from mufu.data.dataset import MuFuDataset
 from pipeline.toxicity_loader import DATASETS
@@ -193,20 +194,6 @@ def fit_calibration(
                 )
         params[f"{head}_scale"], params[f"{head}_shift"] = scales, shifts
     return CalibrationParams(**params)
-
-
-def expected_calibration_error(
-    probs: np.ndarray, labels: np.ndarray, n_bins: int = 10
-) -> float:
-    if len(probs) == 0:
-        return float("nan")
-    bins = np.digitize(probs, np.linspace(0.0, 1.0, n_bins + 1)[1:-1])
-    return float(
-        sum(
-            (bins == b).mean() * abs(probs[bins == b].mean() - labels[bins == b].mean())
-            for b in np.unique(bins)
-        )
-    )
 
 
 def evaluate_calibration(

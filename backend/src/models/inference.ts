@@ -2,6 +2,7 @@ import {
   NR_TASKS,
   SR_TASKS,
   TARGETS,
+  type ApplicabilityDomain,
   type Output,
   type Unavailable,
   type PredictResponse,
@@ -30,11 +31,21 @@ export interface InferenceResponse {
   model_version: string;
   n_samples: number;
   coverage: number;
+  nearest_train_tanimoto: number;
+  applicability_domain: ApplicabilityDomain;
   bioactivity: Record<Target, InferenceBioactivity>;
   toxicity: Record<ToxTask, number | null>;
 }
 
 const NOT_RETURNED = "Not returned by the model";
+const IN_DOMAIN_THRESHOLD = 0.6;
+const BORDERLINE_THRESHOLD = 0.4;
+
+function applicabilityDomain(similarity: number): ApplicabilityDomain {
+  if (similarity >= IN_DOMAIN_THRESHOLD) return "in_domain";
+  if (similarity >= BORDERLINE_THRESHOLD) return "borderline";
+  return "out_of_domain";
+}
 
 function fail(path: string, expected: string): never {
   throw new Error(`Invalid inference response: ${path} must be ${expected}`);
@@ -100,12 +111,28 @@ export function parseInferenceResponse(body: unknown): InferenceResponse {
   if (typeof coverage !== "number" || !(coverage > 0 && coverage < 1)) {
     fail("coverage", "a number in (0, 1)");
   }
+  const nearest_train_tanimoto = root.nearest_train_tanimoto;
+  if (
+    typeof nearest_train_tanimoto !== "number" ||
+    !(nearest_train_tanimoto >= 0 && nearest_train_tanimoto <= 1)
+  ) {
+    fail("nearest_train_tanimoto", "a number in [0, 1]");
+  }
+  const expectedDomain = applicabilityDomain(nearest_train_tanimoto);
+  if (root.applicability_domain !== expectedDomain) {
+    fail(
+      "applicability_domain",
+      `${expectedDomain} for nearest_train_tanimoto ${nearest_train_tanimoto}`,
+    );
+  }
 
   return {
     smiles: nonEmptyString(root.smiles, "smiles"),
     model_version: nonEmptyString(root.model_version, "model_version"),
     n_samples,
     coverage,
+    nearest_train_tanimoto,
+    applicability_domain: expectedDomain,
     bioactivity: fromKeys(TARGETS, (target) =>
       parseBioactivity(bioactivity[target], `bioactivity.${target}`),
     ),
@@ -150,6 +177,8 @@ function toBioactivity(raw: InferenceBioactivity): TargetBioactivity {
 export function toPredictResponse(raw: InferenceResponse): PredictResponse {
   return {
     smiles: raw.smiles,
+    nearestTrainTanimoto: raw.nearest_train_tanimoto,
+    applicabilityDomain: raw.applicability_domain,
     bioactivity: fromKeys(TARGETS, (target) =>
       toBioactivity(raw.bioactivity[target]),
     ),
@@ -157,7 +186,7 @@ export function toPredictResponse(raw: InferenceResponse): PredictResponse {
       nuclearReceptor: fromKeys(NR_TASKS, (task) => output(raw.toxicity[task])),
       stressResponse: fromKeys(SR_TASKS, (task) => output(raw.toxicity[task])),
     },
-    fdaApproved: output(raw.toxicity.FDA_APPROVED),
+    clinicalToxicity: output(raw.toxicity.CT_TOX),
     metadata: {
       modelVersion: raw.model_version,
       mcDropoutPasses: raw.n_samples,
