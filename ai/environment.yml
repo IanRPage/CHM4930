@@ -21,6 +21,7 @@ dependencies:
   - httpx=0.28.1
   - pip=26.2.1
   - pip:
+      - umap-learn==0.5.12
       - torch_geometric==2.8.0.post1
       - deepchem==2.8.0
       - transformers==5.17.0

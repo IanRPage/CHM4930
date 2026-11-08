@@ -20,6 +20,7 @@ import sklearn
 import torch
 import torch_geometric
 import transformers
+import umap
 import uvicorn
 
 print(f"numpy           {np.__version__}")
@@ -27,6 +28,7 @@ print(f"pandas          {pd.__version__}")
 print(f"matplotlib      {matplotlib.__version__}")
 print(f"seaborn         {sns.__version__}")
 print(f"scikit-learn    {sklearn.__version__}")
+print(f"umap-learn      {umap.__version__}")
 print(f"rdkit           {rdkit.__version__}")
 print(f"torch           {torch.__version__}")
 print(f"torch_geometric {torch_geometric.__version__}")
