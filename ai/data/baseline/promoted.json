@@ -1,7 +1,12 @@
 {
   "tag": "v1.1.0",
   "mufu": {
-    "default": "mufu_20261106_022713_default"
+    "default": "mufu_20261106_022713_default",
+    "scaffold-0": "mufu_20261108_154612_scaffold-0",
+    "scaffold-1": "mufu_20261108_154616_scaffold-1",
+    "scaffold-2": "mufu_20261108_154622_scaffold-2",
+    "scaffold-3": "mufu_20261108_154627_scaffold-3",
+    "scaffold-4": "mufu_20261108_154632_scaffold-4"
   },
   "rf_bioactivity": {
     "default": "rf_bioactivity_default",

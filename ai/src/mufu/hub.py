@@ -32,6 +32,7 @@ from baseline.results import (
     file_sha256,
     runs_path,
     summarize_seeds,
+    summarize_splits,
     verify_code_identity,
 )
 from mufu.ensemble import (
@@ -272,6 +273,9 @@ def model_card(
         raise ValueError(
             "ensemble metrics aren't from this ensemble file; rerun fit_ensemble.py"
         )
+    all_splits = results[
+        (results["split"] == "test") & (results["data_sha256"] == version.data_sha256)
+    ]
     results = results[results["split_id"] == DEFAULT_SPLIT_ID]
     if version.run_id and "run_id" in results.columns:
         run = results[
@@ -296,6 +300,35 @@ def model_card(
             & (results["data_sha256"] == version.data_sha256)
         ]
     )
+
+    mufu_splits = summarize_splits(all_splits[all_splits["model"] == name])
+    rf_splits = summarize_splits(all_splits[all_splits["model"].str.startswith("rf_")])
+    n_splits = int(mufu_splits["n_splits"].max()) if not mufu_splits.empty else 0
+    split_section = ""
+    if n_splits > 1:
+        split_rows = [
+            f"## Across {n_splits} scaffold splits",
+            "",
+            (
+                "`default` is a harder-than-typical split, so the numbers above are "
+                "pessimistic. Mean ± std across splits (std is split-to-split, not "
+                "seed-to-seed):"
+            ),
+            "",
+            "| Task | Metric | Single model | RF baseline |",
+            "| --- | --- | --- | --- |",
+        ]
+        for dataset, endpoint, metric, label in CARD_METRICS:
+            m = _test_value(mufu_splits, dataset, endpoint, metric)
+            r = _test_value(rf_splits, dataset, endpoint, metric)
+            if m is None:
+                continue
+            rf_cell = "—" if r is None else f"{r['value']:.3f} ± {r['split_std']:.3f}"
+            split_rows.append(
+                f"| {label} | {METRIC_LABELS[metric]} "
+                f"| {m['value']:.3f} ± {m['split_std']:.3f} | {rf_cell} |"
+            )
+        split_section = "\n".join(split_rows) + "\n\n"
 
     eval_results = []
     table = [
@@ -361,7 +394,7 @@ The files only work as a set: each `_mc_dropout.json` is fitted to its checkpoin
 
 Single-model numbers are over the {n_seeds} seeds; RF is a random forest on ECFP4.
 
-## Usage
+{split_section}## Usage
 
 With [the code]({CODE_URL}) and `ai/src` on the path (MolFormer is downloaded from
 `{SMILES_ENCODER}` on first use):
