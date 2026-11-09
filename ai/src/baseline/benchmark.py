@@ -980,22 +980,22 @@ def rebuild_tracked_results(
     mufu_default_id = promoted.get("mufu", {}).get(DEFAULT_SPLIT_ID)
     if mufu_default_id:
         mufu_dir = runs_dir / mufu_default_id
-        default_df = get_split(DEFAULT_SPLIT_ID)
-        paired_parts = [
-            compare.compare_run_against_baselines(
-                mufu_dir,
-                default_df,
-                split=split,
-                promoted_path=promoted_path,
-                runs_dir=runs_dir,
-                include_promoted_mufu=False,
-                n_boot=n_boot,
-                save=False,
-            )
-            for split in ("val", "test")
-        ]
-        if any(not p.empty for p in paired_parts):
-            paired_df = pd.concat(paired_parts, ignore_index=True)
+    paired_parts = [
+        compare.compare_run_against_baselines(
+            runs_dir / mufu_id,
+            get_split(split_id),
+            split=split,
+            promoted_path=promoted_path,
+            runs_dir=runs_dir,
+            include_promoted_mufu=False,
+            n_boot=n_boot,
+            save=False,
+        )
+        for split_id, mufu_id in sorted(promoted.get("mufu", {}).items())
+        for split in ("val", "test")
+    ]
+    if any(not p.empty for p in paired_parts):
+        paired_df = pd.concat(paired_parts, ignore_index=True)
 
     sim_out_path = similarity_path or results_path.with_name(
         "results_by_similarity.csv"
