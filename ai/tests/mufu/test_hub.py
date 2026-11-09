@@ -138,6 +138,7 @@ def test_model_card_selects_by_run_id_even_when_commits_match():
     results = pd.DataFrame(
         results_rows("m", 0.8, run_id="m_run_winner", commit=COMMIT)
         + results_rows("m", 0.1, run_id="m_run_other", commit=COMMIT)
+        + results_rows("m", 0.6, run_id="m_s0", commit=COMMIT, split_id="scaffold-0")
         + results_rows("rf_bioactivity", 0.5, run_id="rf_bio_default", commit="rf")
         + results_rows(
             "rf_bioactivity",
@@ -156,6 +157,7 @@ def test_model_card_selects_by_run_id_even_when_commits_match():
     assert {r.metric_value for r in card.data.eval_results} == {0.9}
     assert len(card.data.eval_results) == len(hub.CARD_METRICS)
     assert "| 0.900 | 0.810 ± 0.010 | 0.510 |" in card.text
+    assert "## Across 2 scaffold splits" in card.text
 
     with pytest.raises(ValueError, match="rerun fit_ensemble"):
         hub.model_card(
