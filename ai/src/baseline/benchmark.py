@@ -1009,7 +1009,9 @@ def rebuild_tracked_results(
     write_results(all_rows, results_path)
     if paired_df is not None and mufu_dir is not None:
         paired_df.to_csv(pair_out_path, index=False, lineterminator="\n")
-        val_paired_df = paired_df[paired_df["split"] == "val"]
+        val_paired_df = paired_df[
+            (paired_df["split"] == "val") & (paired_df["split_id"] == DEFAULT_SPLIT_ID)
+        ]
         val_paired_df.to_csv(
             mufu_dir / "val_paired.csv", index=False, lineterminator="\n"
         )
