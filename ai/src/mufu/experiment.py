@@ -136,6 +136,8 @@ def predict_mufu_splits(
     conformal: ConformalParams | None = None,
     mask: torch.Tensor | None = None,
 ) -> dict[str, dict]:
+    if mask is not None and conformal is not None:
+        raise ValueError("mask cannot be combined with conformal intervals")
     val_preds = dict(
         predict(
             model,
