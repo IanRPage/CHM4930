@@ -47,4 +47,7 @@ class LateFusion(nn.Module):
                 [projected[m] * mask[:, i : i + 1] for i, m in enumerate(MODALITIES)],
                 dim=1,
             )
+        if mask is not None and getattr(self, "rescale", False):
+            scale = len(MODALITIES) / mask.float().sum(dim=1, keepdim=True)
+            fused = fused * scale
         return self.block(fused)

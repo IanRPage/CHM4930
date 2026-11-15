@@ -134,6 +134,7 @@ def predict_mufu_splits(
     family_states: Mapping[str, Mapping[str, torch.Tensor]] | None = None,
     calibration: CalibrationParams | None = None,
     conformal: ConformalParams | None = None,
+    mask: torch.Tensor | None = None,
 ) -> dict[str, dict]:
     val_preds = dict(
         predict(
@@ -142,6 +143,7 @@ def predict_mufu_splits(
             batch_size=batch_size,
             family_states=family_states,
             calibration=calibration,
+            mask=mask,
         )
     )
     test_preds = dict(
@@ -151,6 +153,7 @@ def predict_mufu_splits(
             batch_size=batch_size,
             family_states=family_states,
             calibration=calibration,
+            mask=mask,
         )
     )
     if conformal is not None:
