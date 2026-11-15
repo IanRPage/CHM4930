@@ -104,6 +104,40 @@ The first request on a new instance loads RDKit.js and warms up the conformer
 generator, which takes a few seconds. Later requests take milliseconds for
 drug-sized molecules and about a second near the 100-heavy-atom cap.
 
+## `POST /api/batch`
+
+MuFu's predictions for a chunk of up to 10 molecules. The browser splits a
+larger screen into chunks and sends them one at a time.
+
+```json
+{ "smiles": ["CC(=O)Oc1ccccc1C(=O)O", "CCO"] }
+```
+
+| Field     | Type                          | Description                                                  |
+| --------- | ----------------------------- | ------------------------------------------------------------ |
+| `results` | `(PredictResponse \| null)[]` | One entry per input row, in order. `null` for an invalid row |
+| `errors`  | `BatchRowError[]`             | One entry per invalid row                                    |
+
+`BatchRowError` is `{ "index": number, "smiles": string, "reason": string }`:
+the row's position in the request, the input as sent, and the validation
+message (same rules as **SMILES input**).
+
+- Each SMILES is validated on its own. An invalid row goes in `errors` and
+  doesn't fail the request.
+- The same SMILES more than once in a chunk (after trimming) is predicted once
+  and the result is copied to every position.
+- Rows are predicted sequentially, one inference request each. If the client
+  disconnects, the remaining rows are skipped.
+- Upstream failures fail the whole chunk with the same mapping as
+  [`POST /api/predict`](#post-apipredict). A `Retry-After` header from the
+  inference server on a 429 or 503 is forwarded on the 503.
+
+| Status | `error`                               | When                                |
+| ------ | ------------------------------------- | ----------------------------------- |
+| 400    | `smiles must be an array`             | `smiles` is missing or not an array |
+| 400    | `smiles must not be empty`            | `smiles` is `[]`                    |
+| 400    | `smiles must have at most 10 entries` | More than 10 rows                   |
+
 ## Inference server contract
 
 Internal: what the backend expects from the `ai/` inference server, and what
