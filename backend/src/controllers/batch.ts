@@ -11,7 +11,9 @@ export async function predictBatch(req: Request, res: Response) {
   const uniqueSmiles = [...new Set(valid.values())];
 
   const controller = new AbortController();
-  req.on("close", () => controller.abort());
+  res.on("close", () => {
+    if (!res.writableFinished) controller.abort();
+  });
 
   const client = new MuFuClient({
     url: env.mufuApiUrl,
