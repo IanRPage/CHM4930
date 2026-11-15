@@ -39,9 +39,11 @@ function timedOut() {
   return upstreamError(504, TIMED_OUT, "request timed out");
 }
 
-function statusError(status: number) {
+function statusError(status: number, retryAfter?: string) {
   if (status === 422) return httpError(400, INVALID_SMILES);
-  if (status === 429 || status === 503) return httpError(503, BUSY);
+  if (status === 429 || status === 503) {
+    return httpError(503, BUSY, retryAfter);
+  }
   if (status === 502 || status === 504 || status === 530) {
     return upstreamError(503, UNAVAILABLE, `gateway status ${status}`);
   }
@@ -103,8 +105,9 @@ export class MuFuClient {
     }
 
     if (!res.ok) {
+      const retryAfter = res.headers.get("Retry-After") ?? undefined;
       await res.body?.cancel().catch(() => {});
-      throw statusError(res.status);
+      throw statusError(res.status, retryAfter);
     }
 
     let body: unknown;
@@ -128,5 +131,17 @@ export class MuFuClient {
       const reason = err instanceof Error ? err.message : "invalid response";
       throw upstreamError(502, BAD_RESPONSE, reason);
     }
+  }
+
+  async predictBatch(
+    smilesList: string[],
+    signal?: AbortSignal,
+  ): Promise<PredictResponse[]> {
+    const results: PredictResponse[] = [];
+    for (const smiles of smilesList) {
+      if (signal?.aborted) throw httpError(499, "Client closed request");
+      results.push(await this.predict(smiles));
+    }
+    return results;
   }
 }
