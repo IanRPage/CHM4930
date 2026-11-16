@@ -56,4 +56,14 @@ describe("parseBatchPredictRequest", () => {
     ]);
     expect(parsed.inputLength).toBe(5);
   });
+
+  it("handles rows with broken toString without throwing", () => {
+    const parsed = parseBatchPredictRequest({
+      smiles: ["CCO", { toString: null }],
+    });
+
+    expect(parsed.valid).toEqual(new Map([[0, "CCO"]]));
+    expect(parsed.errors).toHaveLength(1);
+    expect(parsed.errors[0]).toMatchObject({ index: 1, smiles: "[invalid]" });
+  });
 });

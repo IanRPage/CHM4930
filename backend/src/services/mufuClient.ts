@@ -9,6 +9,8 @@ import { isRecord } from "../models/util.ts";
 // One request runs many MC-Dropout passes on the inference server plus a tunnel
 // round trip, and must finish inside the Vercel function duration
 export const MUFU_TIMEOUT_MS = 30_000;
+// A batch must finish before the Vercel function duration (40 s)
+export const BATCH_TIMEOUT_MS = 35_000;
 
 const INVALID_SMILES = "Invalid SMILES";
 const BUSY = "Model server is busy, try again shortly";
@@ -137,9 +139,11 @@ export class MuFuClient {
     smilesList: string[],
     signal?: AbortSignal,
   ): Promise<PredictResponse[]> {
+    const deadline = Date.now() + BATCH_TIMEOUT_MS;
     const results: PredictResponse[] = [];
     for (const smiles of smilesList) {
       if (signal?.aborted) throw httpError(499, "Client closed request");
+      if (Date.now() >= deadline) throw timedOut();
       results.push(await this.predict(smiles));
     }
     return results;

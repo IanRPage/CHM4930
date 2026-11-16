@@ -260,6 +260,16 @@ describe("MuFuClient.predictBatch", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("throws 504 when the batch exceeds the time budget", async () => {
+    vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValueOnce(36_000);
+
+    mockFetch();
+
+    const err = await rejection(client().predictBatch(["CCO"]));
+
+    expect(err).toMatchObject({ status: 504 });
+  });
+
   it("propagates an upstream error and forwards Retry-After", async () => {
     const fetchMock = mockFetch()
       .mockResolvedValueOnce(jsonResponse(rawResponse()))

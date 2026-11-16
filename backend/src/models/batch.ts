@@ -46,7 +46,12 @@ export function parseBatchPredictRequest(body: unknown): ParsedBatchRequest {
     } catch (err) {
       const reason = err instanceof Error ? err.message : "Invalid SMILES";
       const row = rows[i];
-      const raw = typeof row === "string" ? row : String(row);
+      let raw: string;
+      try {
+        raw = typeof row === "string" ? row : String(row);
+      } catch {
+        raw = "[invalid]";
+      }
       errors.push({ index: i, smiles: raw, reason });
     }
   }
