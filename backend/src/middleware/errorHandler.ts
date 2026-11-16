@@ -4,6 +4,7 @@ interface HttpError {
   status: number;
   expose: boolean;
   message: string;
+  retryAfter?: string;
 }
 
 function isExposedHttpError(err: unknown): err is HttpError {
@@ -28,6 +29,7 @@ export function errorHandler(
   }
 
   if (isExposedHttpError(err)) {
+    if (err.retryAfter) res.set("Retry-After", err.retryAfter);
     res.status(err.status).json({ error: err.message });
     return;
   }

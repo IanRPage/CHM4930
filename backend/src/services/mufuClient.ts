@@ -9,6 +9,8 @@ import { isRecord } from "../models/util.ts";
 // One request runs many MC-Dropout passes on the inference server plus a tunnel
 // round trip, and must finish inside the Vercel function duration
 export const MUFU_TIMEOUT_MS = 30_000;
+// A batch must finish before the Vercel function duration (40 s)
+export const BATCH_TIMEOUT_MS = 35_000;
 
 const INVALID_SMILES = "Invalid SMILES";
 const BUSY = "Model server is busy, try again shortly";
@@ -39,9 +41,11 @@ function timedOut() {
   return upstreamError(504, TIMED_OUT, "request timed out");
 }
 
-function statusError(status: number) {
+function statusError(status: number, retryAfter?: string) {
   if (status === 422) return httpError(400, INVALID_SMILES);
-  if (status === 429 || status === 503) return httpError(503, BUSY);
+  if (status === 429 || status === 503) {
+    return httpError(503, BUSY, retryAfter);
+  }
   if (status === 502 || status === 504 || status === 530) {
     return upstreamError(503, UNAVAILABLE, `gateway status ${status}`);
   }
@@ -103,8 +107,9 @@ export class MuFuClient {
     }
 
     if (!res.ok) {
+      const retryAfter = res.headers.get("Retry-After") ?? undefined;
       await res.body?.cancel().catch(() => {});
-      throw statusError(res.status);
+      throw statusError(res.status, retryAfter);
     }
 
     let body: unknown;
@@ -128,5 +133,19 @@ export class MuFuClient {
       const reason = err instanceof Error ? err.message : "invalid response";
       throw upstreamError(502, BAD_RESPONSE, reason);
     }
+  }
+
+  async predictBatch(
+    smilesList: string[],
+    signal?: AbortSignal,
+  ): Promise<PredictResponse[]> {
+    const deadline = Date.now() + BATCH_TIMEOUT_MS;
+    const results: PredictResponse[] = [];
+    for (const smiles of smilesList) {
+      if (signal?.aborted) throw httpError(499, "Client closed request");
+      if (Date.now() >= deadline) throw timedOut();
+      results.push(await this.predict(smiles));
+    }
+    return results;
   }
 }
