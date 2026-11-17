@@ -45,24 +45,28 @@ def retry_after(wait_s: float) -> str:
 
 class BodyLimit:
     """
-    Fails the body read with a 413 past `max_bytes`, including chunked bodies with no
-    Content-Length.
+    Fails the body read with a 413 past `max_bytes` (or the path's entry in
+    `route_limits`), including chunked bodies with no Content-Length.
     """
 
-    def __init__(self, app, max_bytes: int) -> None:
+    def __init__(
+        self, app, max_bytes: int, route_limits: dict[str, int] | None = None
+    ) -> None:
         self.app = app
         self.max_bytes = max_bytes
+        self.route_limits = route_limits or {}
 
     async def __call__(self, scope, receive, send) -> None:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
+        limit = self.route_limits.get(scope["path"], self.max_bytes)
         received = 0
 
         async def limited_receive():
             nonlocal received
             message = await receive()
             received += len(message.get("body", b""))
-            if received > self.max_bytes:
+            if received > limit:
                 # FastAPI re-raises HTTPException from body parsing (others become 400)
                 raise HTTPException(413, "body_too_large")
             return message
