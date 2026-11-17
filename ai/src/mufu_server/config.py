@@ -25,6 +25,9 @@ class Settings:
     rate_limit_per_minute: int = 30
     max_smiles_length: int = 1000
     max_body_bytes: int = 4096
+    max_batch_size: int = 32
+    max_batch_body_bytes: int = 65536
+    busy_timeout_s: float = 10.0
     request_timeout_s: float = 30.0
 
     def __post_init__(self) -> None:
@@ -32,6 +35,8 @@ class Settings:
             raise ValueError("MUFU_PORT must be between 1 and 65535")
         if not (math.isfinite(self.request_timeout_s) and self.request_timeout_s > 0):
             raise ValueError("MUFU_REQUEST_TIMEOUT_S must be a positive number")
+        if not (math.isfinite(self.busy_timeout_s) and self.busy_timeout_s > 0):
+            raise ValueError("MUFU_BUSY_TIMEOUT_S must be a positive number")
         if self.hf_repo and not self.model_version:
             raise ValueError("MUFU_HF_REPO needs MUFU_MODEL_VERSION set to a tag")
         if not self.api_key and self.api_keys_file is None:
@@ -53,6 +58,8 @@ class Settings:
             "device": ("MUFU_DEVICE", str),
             "rate_limit_per_minute": ("MUFU_RATE_LIMIT_PER_MINUTE", int),
             "request_timeout_s": ("MUFU_REQUEST_TIMEOUT_S", float),
+            "max_batch_size": ("MUFU_MAX_BATCH_SIZE", int),
+            "busy_timeout_s": ("MUFU_BUSY_TIMEOUT_S", float),
         }
         return cls(
             checkpoint_dir=Path(checkpoint_dir),
