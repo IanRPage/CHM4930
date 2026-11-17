@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  parseBatchInferenceResponse,
   parseInferenceResponse,
   toPredictResponse,
 } from "../../src/models/inference.ts";
@@ -153,17 +154,17 @@ describe("toPredictResponse", () => {
     expect(res.bioactivity.EGFR.pActive).toEqual({ value: 0.9 });
   });
 
-  it("groups Tox21 into NR/SR and hides CT_TOX", () => {
+  it("groups Tox21 into NR/SR and exposes CT_TOX as clinicalToxicity", () => {
     const raw = rawResponse();
-    raw.toxicity.FDA_APPROVED = 0.8;
+    raw.toxicity.CT_TOX = 0.8;
     const res = toPredictResponse(parseInferenceResponse(raw));
 
     expect(Object.keys(res.toxicity.nuclearReceptor)).toEqual([...NR_TASKS]);
     expect(Object.keys(res.toxicity.stressResponse)).toEqual([...SR_TASKS]);
-    expect(res.fdaApproved).toEqual({ value: 0.8 });
+    expect(res.clinicalToxicity).toEqual({ value: 0.8 });
     expect(res.nearestTrainTanimoto).toBe(0.75);
     expect(res.applicabilityDomain).toBe("in_domain");
-    expect(JSON.stringify(res)).not.toContain("CT_TOX");
+    expect(res).not.toHaveProperty("fdaApproved");
     expect(res.metadata).toEqual({
       modelVersion: "mufu-test",
       mcDropoutPasses: 50,
@@ -189,5 +190,36 @@ describe("toPredictResponse", () => {
       pActive: { value: 0.3 },
     });
     expect(res.toxicity.nuclearReceptor["NR-AhR"]).toEqual(unavailable);
+  });
+});
+
+describe("parseBatchInferenceResponse", () => {
+  it("accepts valid batch results with nulls", () => {
+    const raw = rawResponse();
+    expect(parseBatchInferenceResponse({ results: [raw, null] }, 2)).toEqual([
+      raw,
+      null,
+    ]);
+  });
+
+  it.each([
+    ["a non-object body", null, 1, "body must be an object"],
+    [
+      "results not an array",
+      { results: "not-array" },
+      1,
+      "results must be an array",
+    ],
+    [
+      "length mismatch",
+      { results: [] },
+      1,
+      "results must be an array of length 1",
+    ],
+    ["invalid element", { results: [{}] }, 1, "bioactivity must be an object"],
+  ])("rejects %s", (_name, body, len, message) => {
+    expect(() => parseBatchInferenceResponse(body, len)).toThrow(
+      `Invalid inference response: ${message}`,
+    );
   });
 });

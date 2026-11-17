@@ -150,3 +150,12 @@ def test_check_response_allows_null_outputs(predictor):
     response["bioactivity"]["EGFR"]["p_active"] = None
     response["toxicity"]["CT_TOX"] = None
     check_response(response)
+
+
+def test_infer_batch_skips_failures_and_aligns_with_input(predictor):
+    results = predictor.infer_batch(["CCO", "not-a-smiles", "CCN"])
+    assert results[1] is None
+    single = predictor.infer("CCO")
+    assert results[0]["smiles"] == single["smiles"]
+    assert results[0]["nearest_train_tanimoto"] == single["nearest_train_tanimoto"]
+    assert results[2]["smiles"] == "CCN"

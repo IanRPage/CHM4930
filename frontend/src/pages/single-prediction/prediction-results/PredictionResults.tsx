@@ -3,7 +3,7 @@ import infoMutedIcon from "../../../assets/icon-info-muted.svg";
 import Card from "../../../components/common/Card.tsx";
 import type { MolInfo } from "../../../types/molInfo.ts";
 import type { PredictResponse } from "../../../types/predict.ts";
-import ApprovalPanel from "./ApprovalPanel.tsx";
+import ClinicalToxicityPanel from "./ClinicalToxicityPanel.tsx";
 import BioactivityPanel from "./BioactivityPanel.tsx";
 import { downloadPredictionCsv } from "./exportCsv.ts";
 import "./PredictionResults.css";
@@ -56,7 +56,7 @@ export default function PredictionResults({
         )}
         <BioactivityPanel result={result} />
         <ToxicityPanel result={result} />
-        <ApprovalPanel output={result.fdaApproved} />
+        <ClinicalToxicityPanel output={result.clinicalToxicity} />
         <p className="predict-note">
           <img src={infoMutedIcon} alt="" />
           Predictions are model estimates and should be validated

@@ -24,7 +24,7 @@ export function predictResponse(): PredictResponse {
       nuclearReceptor: Object.fromEntries(NR_TASKS.map((t) => [t, tox])),
       stressResponse: Object.fromEntries(SR_TASKS.map((t) => [t, tox])),
     } as PredictResponse["toxicity"],
-    fdaApproved: { value: 0.91 },
+    clinicalToxicity: { value: 0.09 },
     metadata: {
       modelVersion: "mufu-test",
       mcDropoutPasses: 50,

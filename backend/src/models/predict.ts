@@ -65,7 +65,7 @@ export interface PredictResponse {
     nuclearReceptor: Record<NrTask, Output>;
     stressResponse: Record<SrTask, Output>;
   };
-  fdaApproved: Output;
+  clinicalToxicity: Output;
   metadata: {
     modelVersion: string;
     mcDropoutPasses: number;

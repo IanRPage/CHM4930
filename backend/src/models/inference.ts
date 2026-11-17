@@ -142,6 +142,22 @@ export function parseInferenceResponse(body: unknown): InferenceResponse {
   };
 }
 
+export function parseBatchInferenceResponse(
+  body: unknown,
+  expectedLength: number,
+): (InferenceResponse | null)[] {
+  const root = record(body, "body");
+  if (!Array.isArray(root.results)) {
+    fail("results", "an array");
+  }
+  if (root.results.length !== expectedLength) {
+    fail("results", `an array of length ${expectedLength}`);
+  }
+  return root.results.map((item) =>
+    item === null ? null : parseInferenceResponse(item),
+  );
+}
+
 function unavailable(): Unavailable {
   return { value: null, reason: NOT_RETURNED };
 }
@@ -186,7 +202,7 @@ export function toPredictResponse(raw: InferenceResponse): PredictResponse {
       nuclearReceptor: fromKeys(NR_TASKS, (task) => output(raw.toxicity[task])),
       stressResponse: fromKeys(SR_TASKS, (task) => output(raw.toxicity[task])),
     },
-    fdaApproved: output(raw.toxicity.FDA_APPROVED),
+    clinicalToxicity: output(raw.toxicity.CT_TOX),
     metadata: {
       modelVersion: raw.model_version,
       mcDropoutPasses: raw.n_samples,
