@@ -7,7 +7,7 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 40,
-      "includeFiles": "backend/node_modules/{@rdkit/rdkit/dist/RDKit_minimal.wasm,openchemlib/dist/resources.json}"
+      "includeFiles": "backend/{data/dataset-explorer.json,node_modules/@rdkit/rdkit/dist/RDKit_minimal.wasm,node_modules/openchemlib/dist/resources.json}"
     }
   },
   "rewrites": [
