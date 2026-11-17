@@ -138,6 +138,7 @@ export async function batchPredict(
     return;
   }
 
+  if (signal.aborted) return;
   onComplete(
     smiles.map((s, i) => ({ row: i + 1, smiles: s, ...outcomes.get(s)! })),
   );

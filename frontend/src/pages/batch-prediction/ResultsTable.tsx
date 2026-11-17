@@ -39,11 +39,20 @@ interface TipState {
 const tileLabel = (task: string, o: Output) =>
   `${task}: ${o.value === null ? "unavailable" : percent(o.value)}`;
 
-function Num({ output, digits }: { output: Output; digits: number }) {
+const ic50 = (v: number) =>
+  v.toLocaleString("en-US", { maximumFractionDigits: v < 100 ? 2 : 0 });
+
+function Num({
+  output,
+  format = (v) => v.toFixed(2),
+}: {
+  output: Output;
+  format?: (v: number) => string;
+}) {
   return output.value === null ? (
     <span title={output.reason}>—</span>
   ) : (
-    <>{output.value.toFixed(digits)}</>
+    <>{format(output.value)}</>
   );
 }
 
@@ -89,18 +98,19 @@ const Row = memo(function Row({
       <td>{result.row}</td>
       {smiles}
       <td>
-        <Num output={bio.pic50} digits={2} />
+        <Num output={bio.pic50} />
       </td>
       <td>{half === null ? "—" : `±${half.toFixed(2)}`}</td>
       <td>
-        <Num output={bio.ic50Nm} digits={0} />
+        <Num output={bio.ic50Nm} format={ic50} />
       </td>
       <td>
-        <Num output={bio.pActive} digits={2} />
+        <Num output={bio.pActive} />
       </td>
       {tiles.map(([task, output]) => (
         <td key={task} className="batch-tile-cell">
           <span
+            role="img"
             tabIndex={0}
             aria-label={tileLabel(task, output)}
             className={`batch-tile batch-risk-${

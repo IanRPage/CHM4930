@@ -7,6 +7,11 @@ describe("parseSmiles", () => {
     expect(parseSmiles(csv, "m.csv")).toEqual(["CC(=O)O", "CCO"]);
   });
 
+  it("handles quoted CSV fields with commas and quotes", () => {
+    const csv = 'name,smiles\n"1,2-dichloroethane",ClCCCl\n"say ""hi""",CCO\n';
+    expect(parseSmiles(csv, "m.csv")).toEqual(["ClCCCl", "CCO"]);
+  });
+
   it("keeps the first CSV row when there is no header", () => {
     expect(parseSmiles("CCO\nCCC\n", "m.csv")).toEqual(["CCO", "CCC"]);
   });

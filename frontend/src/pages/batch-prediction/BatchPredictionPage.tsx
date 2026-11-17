@@ -35,13 +35,19 @@ export default function BatchPredictionPage() {
   useEffect(() => () => controller.current?.abort(), []);
 
   async function run(file: File) {
+    controller.current?.abort();
+    const abort = new AbortController();
+    controller.current = abort;
     let rows: string[];
     try {
       rows = parseSmiles(await file.text(), file.name);
     } catch {
-      setState({ phase: "upload", error: "Couldn't read the file." });
+      if (!abort.signal.aborted) {
+        setState({ phase: "upload", error: "Couldn't read the file." });
+      }
       return;
     }
+    if (abort.signal.aborted) return;
     if (rows.length === 0 || rows.length > MAX_ROWS) {
       setState({
         phase: "upload",
@@ -55,8 +61,6 @@ export default function BatchPredictionPage() {
 
     const unique = new Set(rows).size;
     const started = Date.now();
-    const abort = new AbortController();
-    controller.current = abort;
     setState({
       phase: "processing",
       file,

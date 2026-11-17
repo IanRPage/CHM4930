@@ -43,6 +43,13 @@ describe("ResultsTable", () => {
     expect(screen.getByText("Invalid: Invalid")).toBeInTheDocument();
   });
 
+  it("keeps small ic50 values readable", () => {
+    const small = result(1, "CCO");
+    small.prediction!.bioactivity.BACE1.ic50Nm = { value: 0.4, lo: 0.1, hi: 1 };
+    render(<ResultsTable results={[small]} target="BACE1" search="" />);
+    expect(screen.getByText("0.4")).toBeInTheDocument();
+  });
+
   it("filters by SMILES search", () => {
     renderTable({ search: "nn" });
     expect(screen.getByText("1–1 of 1")).toBeInTheDocument();

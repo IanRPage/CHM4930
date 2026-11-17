@@ -109,6 +109,15 @@ describe("batchPredict", () => {
     expect(cb.onComplete).not.toHaveBeenCalled();
   });
 
+  it("does not complete when the last progress callback cancels", async () => {
+    echo();
+    const controller = new AbortController();
+    const cb = callbacks();
+    cb.onProgress.mockImplementation(() => controller.abort());
+    await batchPredict(["CCO"], cb, controller.signal);
+    expect(cb.onComplete).not.toHaveBeenCalled();
+  });
+
   it("stops quietly when aborted", async () => {
     const controller = new AbortController();
     fetchMock.mockImplementation(async (_url, init) => {

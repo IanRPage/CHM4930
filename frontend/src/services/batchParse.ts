@@ -17,6 +17,35 @@ export function validateFile(file: File): string | null {
 
 const SMILES_HEADER = /^(canonical_?)?smiles?$/i;
 
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  const endCell = () => {
+    row.push(cell.trim());
+    cell = "";
+  };
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c !== '"') cell += c;
+      else if (text[i + 1] === '"') cell += text[i++];
+      else quoted = false;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") endCell();
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      endCell();
+      rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  endCell();
+  rows.push(row);
+  return rows.filter((r) => r.some(Boolean));
+}
+
 // SDF: first non-blank line of each $$$$ block. CSV: the "smiles" column if
 // the header has one, else the first. TXT: first token of each line.
 export function parseSmiles(text: string, fileName: string): string[] {
@@ -28,9 +57,11 @@ export function parseSmiles(text: string, fileName: string): string[] {
       .map((block) => block.match(/\S[^\r\n]*/)?.[0].trim() ?? "")
       .filter(Boolean);
   }
-  const lines = clean.split(/\r?\n/).filter((l) => l.trim());
-  if (ext !== ".csv") return lines.map((l) => l.trim().split(/\s+/)[0]);
-  const rows = lines.map((l) => l.split(",").map((c) => c.trim()));
+  if (ext !== ".csv") {
+    const lines = clean.split(/\r?\n/).filter((l) => l.trim());
+    return lines.map((l) => l.trim().split(/\s+/)[0]);
+  }
+  const rows = parseCsv(clean);
   const col = rows[0]?.findIndex((c) => SMILES_HEADER.test(c)) ?? -1;
   return rows.slice(col < 0 ? 0 : 1).flatMap((r) => r[Math.max(col, 0)] || []);
 }
