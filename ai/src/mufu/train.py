@@ -156,7 +156,13 @@ def train_step(
 
 
 @torch.no_grad()
-def _forward_dataset(model: MuFu, dataset: MuFuDataset, batch_size: int) -> MuFuOutputs:
+def _forward_dataset(
+    model: MuFu,
+    dataset: MuFuDataset,
+    batch_size: int,
+    *,
+    mask: torch.Tensor | None = None,
+) -> MuFuOutputs:
     model.eval()
     device = next(model.parameters()).device
     loader = DataLoader(
@@ -166,7 +172,10 @@ def _forward_dataset(model: MuFu, dataset: MuFuDataset, batch_size: int) -> MuFu
         collate_fn=collate,
         pin_memory=(device.type == "cuda"),
     )
-    batches = [model(to_device(batch, device, non_blocking=True)) for batch in loader]
+    batches = [
+        model(to_device(batch, device, non_blocking=True), mask=mask)
+        for batch in loader
+    ]
     return {
         key: torch.cat([b[key].cpu() for b in batches], dim=0)
         for key, _ in COLUMN_GROUPS
@@ -374,18 +383,19 @@ def predict_logits(
     *,
     batch_size: int = 64,
     family_states: Mapping[str, Mapping[str, torch.Tensor]] | None = None,
+    mask: torch.Tensor | None = None,
 ) -> MuFuOutputs:
     if len(dataset) == 0:
         raise ValueError("predict needs a non-empty dataset")
-    outputs = _forward_dataset(model, dataset, batch_size)
+    outputs = _forward_dataset(model, dataset, batch_size, mask=mask)
     if family_states:
         tox_model = copy.deepcopy(
             model, memo={id(model.smiles_encoder): model.smiles_encoder}
         )
         load_non_smiles_state(tox_model, family_states["tox"])
-        outputs["tox_logits"] = _forward_dataset(tox_model, dataset, batch_size)[
-            "tox_logits"
-        ]
+        outputs["tox_logits"] = _forward_dataset(
+            tox_model, dataset, batch_size, mask=mask
+        )["tox_logits"]
     return outputs
 
 
@@ -396,9 +406,10 @@ def predict(
     batch_size: int = 64,
     family_states: Mapping[str, Mapping[str, torch.Tensor]] | None = None,
     calibration: CalibrationParams | None = None,
+    mask: torch.Tensor | None = None,
 ) -> dict[str, list[str] | np.ndarray]:
     outputs = predict_logits(
-        model, dataset, batch_size=batch_size, family_states=family_states
+        model, dataset, batch_size=batch_size, family_states=family_states, mask=mask
     )
     uncal: dict[str, np.ndarray] = {}
     if calibration is not None:

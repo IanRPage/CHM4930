@@ -48,11 +48,19 @@ class MuFu(nn.Module):
         self.classification_head = BioactivityClassificationHead()
         self.toxicity_head = ToxicityHead()
 
-    def forward(self, inputs: MuFuInputs) -> MuFuOutputs:
-        return self.forward_embedded(self.smiles_encoder(inputs["smiles"]), inputs)
+    def forward(
+        self, inputs: MuFuInputs, *, mask: torch.Tensor | None = None
+    ) -> MuFuOutputs:
+        return self.forward_embedded(
+            self.smiles_encoder(inputs["smiles"]), inputs, mask=mask
+        )
 
     def forward_embedded(
-        self, smiles_embedding: torch.Tensor, inputs: MuFuInputs
+        self,
+        smiles_embedding: torch.Tensor,
+        inputs: MuFuInputs,
+        *,
+        mask: torch.Tensor | None = None,
     ) -> MuFuOutputs:
         """
         Run everything after the SMILES encoder, given its precomputed output.
@@ -64,12 +72,12 @@ class MuFu(nn.Module):
         }
         projected = self.projection(embeddings)
 
-        # Mask projected modalities only during training.
-        mask = None
-        if self.training:
+        if mask is None and self.training:
             batch_size = len(inputs["smiles"])
             device = projected["smiles"].device
             mask = sample_modality_mask(batch_size, device=device)
+        elif mask is not None and mask.dim() == 1:
+            mask = mask.unsqueeze(0).expand(len(inputs["smiles"]), -1)
 
         latent = self.fusion(projected, mask)
         return {
