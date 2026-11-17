@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  parseBatchInferenceResponse,
   parseInferenceResponse,
   toPredictResponse,
 } from "../../src/models/inference.ts";
@@ -189,5 +190,36 @@ describe("toPredictResponse", () => {
       pActive: { value: 0.3 },
     });
     expect(res.toxicity.nuclearReceptor["NR-AhR"]).toEqual(unavailable);
+  });
+});
+
+describe("parseBatchInferenceResponse", () => {
+  it("accepts valid batch results with nulls", () => {
+    const raw = rawResponse();
+    expect(parseBatchInferenceResponse({ results: [raw, null] }, 2)).toEqual([
+      raw,
+      null,
+    ]);
+  });
+
+  it.each([
+    ["a non-object body", null, 1, "body must be an object"],
+    [
+      "results not an array",
+      { results: "not-array" },
+      1,
+      "results must be an array",
+    ],
+    [
+      "length mismatch",
+      { results: [] },
+      1,
+      "results must be an array of length 1",
+    ],
+    ["invalid element", { results: [{}] }, 1, "bioactivity must be an object"],
+  ])("rejects %s", (_name, body, len, message) => {
+    expect(() => parseBatchInferenceResponse(body, len)).toThrow(
+      `Invalid inference response: ${message}`,
+    );
   });
 });
