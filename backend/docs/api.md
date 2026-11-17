@@ -147,6 +147,7 @@ Item fields are defined in [DatasetMolecule](../src/models/dataset.ts).
 
 URL-encode `q`. Invalid, repeated, or unknown parameters return `400` with
 `{ "error": string }`.
+
 ## `POST /api/batch`
 
 MuFu's predictions for a chunk of up to 10 molecules. The browser splits a
