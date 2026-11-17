@@ -30,6 +30,15 @@ class StubPredictor:
     def infer(self, smiles):
         return self._infer(smiles)
 
+    def infer_batch(self, smiles_list):
+        results = []
+        for smiles in smiles_list:
+            try:
+                results.append(self.infer(smiles))
+            except InvalidSmiles:
+                results.append(None)
+        return results
+
 
 @contextmanager
 def serve(predictor=None, *, load=None, wait=True, on_load_error=None, **settings):
@@ -179,7 +188,9 @@ def test_busy_and_timeout_are_503():
         release.wait(5)
         return {"smiles": smiles}
 
-    with serve(StubPredictor(blocking), request_timeout_s=0.2) as client:
+    with serve(
+        StubPredictor(blocking), request_timeout_s=0.2, busy_timeout_s=0.05
+    ) as client:
         with ThreadPoolExecutor(1) as pool:
             first = pool.submit(
                 client.post, "/predict", json={"smiles": "CCO"}, headers=AUTH
@@ -237,3 +248,92 @@ def test_load_failure_is_reported():
     with serve(load=failing_load, on_load_error=errors.append) as client:
         assert client.get("/health").json()["status"] == "loading"
     assert len(errors) == 1 and isinstance(errors[0], FileNotFoundError)
+
+
+def test_batch_predict_returns_per_molecule_results():
+    with serve() as client:
+        response = client.post(
+            "/predict/batch", json={"smiles": ["CCO", "CCN"]}, headers=AUTH
+        )
+    assert response.status_code == 200
+    assert response.json() == {
+        "results": [{"smiles": "CCO"}, {"smiles": "CCN"}],
+        "errors": [],
+    }
+
+
+def test_batch_reports_invalid_molecules_by_index():
+    def infer(smiles):
+        if smiles == "BAD":
+            raise InvalidSmiles(smiles)
+        return {"smiles": smiles}
+
+    with serve(StubPredictor(infer)) as client:
+        response = client.post(
+            "/predict/batch",
+            json={"smiles": ["CCO", "", "CC O", "BAD", "CCN"]},
+            headers=AUTH,
+        )
+    data = response.json()
+    assert response.status_code == 200
+    assert data["results"] == [{"smiles": "CCO"}, None, None, None, {"smiles": "CCN"}]
+    assert [(e["index"], e["smiles"]) for e in data["errors"]] == [
+        (1, ""),
+        (2, "CC O"),
+        (3, "BAD"),
+    ]
+
+
+@pytest.mark.parametrize("smiles", [[], ["CCO", "CCN", "CCC"]])
+def test_batch_size_is_limited(smiles):
+    with serve(max_batch_size=2) as client:
+        response = client.post("/predict/batch", json={"smiles": smiles}, headers=AUTH)
+    assert response.status_code == 422
+    assert response.json() == {"error": "invalid_request"}
+
+
+def test_batch_has_its_own_body_limit():
+    headers = {**AUTH, "Content-Type": "application/json"}
+    with serve(max_body_bytes=64, max_batch_body_bytes=512) as client:
+        single = client.post(
+            "/predict", content=b'{"smiles": "' + b"C" * 100 + b'"}', headers=headers
+        )
+        batch = client.post(
+            "/predict/batch",
+            content=b'{"smiles": ["' + b"C" * 100 + b'"]}',
+            headers=headers,
+        )
+        too_big = client.post(
+            "/predict/batch",
+            content=b'{"smiles": ["' + b"C" * 600 + b'"]}',
+            headers=headers,
+        )
+    assert (single.status_code, batch.status_code, too_big.status_code) == (
+        413,
+        200,
+        413,
+    )
+
+
+def test_second_request_waits_for_the_busy_lock():
+    started, release = threading.Event(), threading.Event()
+
+    def slow(smiles):
+        started.set()
+        release.wait(5)
+        return {"smiles": smiles}
+
+    with (
+        serve(StubPredictor(slow), busy_timeout_s=5.0) as client,
+        ThreadPoolExecutor(2) as pool,
+    ):
+        first = pool.submit(
+            client.post, "/predict", json={"smiles": "CCO"}, headers=AUTH
+        )
+        assert started.wait(5)
+        second = pool.submit(
+            client.post, "/predict", json={"smiles": "CCN"}, headers=AUTH
+        )
+        threading.Timer(0.3, release.set).start()
+        responses = [first.result(10), second.result(10)]
+    assert [r.status_code for r in responses] == [200, 200]
