@@ -30,8 +30,17 @@ export async function predictBatch(req: Request, res: Response) {
 
   const results = new Array<PredictResponse | null>(inputLength).fill(null);
   for (const [index, smiles] of valid) {
-    results[index] = predictionMap.get(smiles)!;
+    const prediction = predictionMap.get(smiles) ?? null;
+    results[index] = prediction;
+    if (prediction === null) {
+      errors.push({
+        index,
+        smiles,
+        reason: "Invalid SMILES",
+      });
+    }
   }
+  errors.sort((a, b) => a.index - b.index);
 
   res.json({ results, errors });
 }

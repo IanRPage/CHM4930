@@ -67,6 +67,24 @@ describe("POST /api/batch", () => {
     expect(predictBatch).not.toHaveBeenCalled();
   });
 
+  it("records an error when a SMILES fails inference", async () => {
+    predictBatch.mockResolvedValue([null]);
+
+    const res = await post({ smiles: ["INVALID"] });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      results: [null],
+      errors: [
+        {
+          index: 0,
+          smiles: "INVALID",
+          reason: "Invalid SMILES",
+        },
+      ],
+    });
+  });
+
   it("returns upstream errors", async () => {
     predictBatch.mockRejectedValue(httpError(504, "Model server timed out"));
 
