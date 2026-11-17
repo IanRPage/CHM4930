@@ -59,13 +59,16 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
     limiters = {
         name: SlidingWindowLimiter(settings.rate_limit_per_minute) for name in keys
     }
-    # one inference at a time; Predictor serializes them anyway
-    busy = threading.Lock()
+    # one inference at a time; Predictor serializes them anyway. Waiting on it uses no
+    # threads, so waiters can't starve the executor that runs the inference
+    busy = asyncio.Lock()
 
     async def acquire_busy() -> bool:
-        return await asyncio.get_running_loop().run_in_executor(
-            None, lambda: busy.acquire(timeout=settings.busy_timeout_s)
-        )
+        try:
+            await asyncio.wait_for(busy.acquire(), settings.busy_timeout_s)
+        except TimeoutError:
+            return False
+        return True
 
     def load_in_background(app: FastAPI) -> None:
         try:
@@ -150,15 +153,10 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
         if not await acquire_busy():
             return error(503, "busy")
 
-        # released when inference finishes, even after a timeout
-        def run():
-            try:
-                return predictor.infer(smiles)
-            finally:
-                busy.release()
-
         start = time.perf_counter()
-        job = asyncio.get_running_loop().run_in_executor(None, run)
+        job = asyncio.get_running_loop().run_in_executor(None, predictor.infer, smiles)
+        # released when inference finishes, even after a timeout
+        job.add_done_callback(lambda _: busy.release())
         try:
             result = await asyncio.wait_for(
                 asyncio.shield(job), settings.request_timeout_s
@@ -206,14 +204,11 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
             if not await acquire_busy():
                 return error(503, "busy")
 
-            def run():
-                try:
-                    return predictor.infer_batch(valid_smiles)
-                finally:
-                    busy.release()
-
             start = time.perf_counter()
-            job = asyncio.get_running_loop().run_in_executor(None, run)
+            job = asyncio.get_running_loop().run_in_executor(
+                None, predictor.infer_batch, valid_smiles
+            )
+            job.add_done_callback(lambda _: busy.release())
             try:
                 batch = await asyncio.wait_for(
                     asyncio.shield(job), settings.request_timeout_s
