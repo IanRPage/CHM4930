@@ -232,19 +232,42 @@ describe("MuFuClient.predict", () => {
 });
 
 describe("MuFuClient.predictBatch", () => {
-  it("predicts each SMILES sequentially in order", async () => {
-    const fetchMock = mockFetch().mockImplementation(() =>
-      Promise.resolve(jsonResponse(rawResponse())),
+  it("posts the SMILES list to /predict/batch and maps the response", async () => {
+    const raw = rawResponse();
+    const fetchMock = mockFetch().mockResolvedValue(
+      jsonResponse({
+        results: [raw, null],
+        errors: [{ index: 1, smiles: "BAD", reason: "invalid_smiles" }],
+      }),
     );
 
-    const results = await client().predictBatch(["CCO", "CCC", "CCN"]);
+    const results = await new MuFuClient({
+      url: `${BASE_URL}/`,
+      apiKey: API_KEY,
+    }).predictBatch(["CCO", "BAD"]);
 
-    expect(results).toHaveLength(3);
-    expect(
-      fetchMock.mock.calls.map(
-        ([, init]) => JSON.parse(init?.body as string) as unknown,
-      ),
-    ).toEqual([{ smiles: "CCO" }, { smiles: "CCC" }, { smiles: "CCN" }]);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe(`${BASE_URL}/predict/batch`);
+    expect(init).toMatchObject({
+      method: "POST",
+      redirect: "error",
+      headers: { "Content-Type": "application/json", "X-API-Key": API_KEY },
+      body: JSON.stringify({ smiles: ["CCO", "BAD"] }),
+    });
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+    expect(results).toEqual([
+      toPredictResponse(parseInferenceResponse(raw)),
+      null,
+    ]);
+  });
+
+  it("returns an empty array without calling fetch when smilesList is empty", async () => {
+    const fetchMock = mockFetch();
+
+    const results = await client().predictBatch([]);
+
+    expect(results).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("stops with 499 when the signal is aborted", async () => {
@@ -260,26 +283,14 @@ describe("MuFuClient.predictBatch", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("throws 504 when the batch exceeds the time budget", async () => {
-    vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValueOnce(36_000);
-
-    mockFetch();
-
-    const err = await rejection(client().predictBatch(["CCO"]));
-
-    expect(err).toMatchObject({ status: 504 });
-  });
-
   it("propagates an upstream error and forwards Retry-After", async () => {
-    const fetchMock = mockFetch()
-      .mockResolvedValueOnce(jsonResponse(rawResponse()))
-      .mockResolvedValueOnce(
-        new Response(null, { status: 429, headers: { "Retry-After": "5" } }),
-      );
+    const fetchMock = mockFetch().mockResolvedValue(
+      new Response(null, { status: 429, headers: { "Retry-After": "5" } }),
+    );
 
     const err = await rejection(client().predictBatch(["CCO", "CCC", "CCN"]));
 
     expect(err).toMatchObject({ status: 503, message: BUSY, retryAfter: "5" });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

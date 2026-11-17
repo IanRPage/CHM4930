@@ -170,8 +170,8 @@ message (same rules as **SMILES input**).
   doesn't fail the request.
 - The same SMILES more than once in a chunk (after trimming) is predicted once
   and the result is copied to every position.
-- Rows are predicted sequentially, one inference request each. If the client
-  disconnects, the remaining rows are skipped.
+- Unique valid SMILES are sent to the inference server in a single batch request.
+  If the client disconnects, the request is aborted.
 - Upstream failures fail the whole chunk with the same mapping as
   [`POST /api/predict`](#post-apipredict). A `Retry-After` header from the
   inference server on a 429 or 503 is forwarded on the 503.
@@ -213,6 +213,19 @@ Internal: what the backend expects from the `ai/` inference server, and what
     "FDA_APPROVED": 0.91,
     "CT_TOX": 0.08
   }
+}
+```
+
+`POST /predict/batch` with `{ "smiles": string[] }`.
+
+Returns:
+
+```jsonc
+{
+  "results": [
+    /* InferenceResponse or null per molecule in order */
+  ],
+  "errors": [{ "index": 1, "smiles": "invalid", "reason": "invalid_smiles" }]
 }
 ```
 
