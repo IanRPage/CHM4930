@@ -1,5 +1,5 @@
 """
-HTTP server around `Predictor.infer`.
+HTTP server around `Predictor.infer` and `Predictor.infer_batch`.
 
 Every path except `/health` needs a key in the `X-API-Key` header: `MUFU_API_KEY`
 (named "default" in the log) or one from `MUFU_API_KEYS_FILE` (see `keys.py`). Each

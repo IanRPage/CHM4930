@@ -1,10 +1,12 @@
 """
-MuFu 5-seed ensemble inference for one molecule, in the response format of
-the inference server contract in `backend/docs/api.md`.
+MuFu 5-seed ensemble inference for one molecule or a batch, in the response format
+of the inference server contract in `backend/docs/api.md`.
 
 pIC50 is the ensemble mean with its combined MC-Dropout interval at `COVERAGE`;
 `p_active` and toxicity average each seed's calibrated probabilities. MC passes are
-seeded, so the same SMILES always gets the same response.
+seeded, so the same SMILES in the same batch always gets the same response. The draws
+depend on batch composition, so a molecule's interval can differ slightly between
+`infer` and `infer_batch` or between batches; both are valid samples.
 """
 
 import math
@@ -23,7 +25,6 @@ from featurize.fingerprint import max_tanimoto
 from mufu.contract import (
     ACTIVE_COLUMNS,
     BIO_TARGETS,
-    FINGERPRINT_BITS,
     PIC50_COLUMNS,
     TOX_COLUMNS,
 )
@@ -39,7 +40,6 @@ from mufu.ensemble import (
 )
 from mufu.hub import TAG_PATTERN, download_version, load_tagged_version
 from mufu_server.config import COVERAGE, Settings
-from pipeline.preprocess import featurize_many
 
 MC_SEED = 0
 IN_DOMAIN_THRESHOLD = 0.6
@@ -99,20 +99,18 @@ class Predictor:
         frame = pd.DataFrame({"smiles": smiles_list})
         for column in (*PIC50_COLUMNS, *ACTIVE_COLUMNS, *TOX_COLUMNS):
             frame[column] = float("nan")
-
-        _, failed = featurize_many(frame["smiles"], FINGERPRINT_BITS)
-        failed = set(failed)
-        if len(failed) == n:
-            return [None] * n
+        # the dataset keeps `in_*` columns for the rows it didn't drop
+        frame["in_row"] = range(n)
         dataset = MuFuDataset(frame)
+        if len(dataset) == 0:
+            return [None] * n
 
         with self._lock, torch.random.fork_rng(devices=[]):
             torch.manual_seed(MC_SEED)
             preds = predict_with_ensemble_intervals(self.members, dataset, self.params)
 
-        survived = [i for i in range(n) if i not in failed]
         results: list[dict | None] = [None] * n
-        for row, i in enumerate(survived):
+        for row, i in enumerate(dataset.sources["in_row"]):
             results[i] = self._build_response(
                 preds, row, dataset.smiles[row], dataset.fingerprints[row]
             )
