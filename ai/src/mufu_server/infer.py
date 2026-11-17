@@ -20,7 +20,13 @@ from baseline.benchmark import SEEDS
 from baseline.results import file_sha256
 from encoders.smiles_encoder import SmilesEncoder
 from featurize.fingerprint import max_tanimoto
-from mufu.contract import ACTIVE_COLUMNS, BIO_TARGETS, PIC50_COLUMNS, TOX_COLUMNS
+from mufu.contract import (
+    ACTIVE_COLUMNS,
+    BIO_TARGETS,
+    FINGERPRINT_BITS,
+    PIC50_COLUMNS,
+    TOX_COLUMNS,
+)
 from mufu.data.dataset import MuFuDataset
 from mufu.ensemble import (
     EnsembleParams,
@@ -33,6 +39,7 @@ from mufu.ensemble import (
 )
 from mufu.hub import TAG_PATTERN, download_version, load_tagged_version
 from mufu_server.config import COVERAGE, Settings
+from pipeline.preprocess import featurize_many
 
 MC_SEED = 0
 IN_DOMAIN_THRESHOLD = 0.6
@@ -80,13 +87,45 @@ class Predictor:
             torch.manual_seed(MC_SEED)
             preds = predict_with_ensemble_intervals(self.members, dataset, self.params)
 
+        return self._build_response(
+            preds, 0, dataset.smiles[0], dataset.fingerprints[0]
+        )
+
+    def infer_batch(self, smiles_list: list[str]) -> list[dict | None]:
+        """
+        One response per input, in order; `None` where RDKit couldn't featurize.
+        """
+        n = len(smiles_list)
+        frame = pd.DataFrame({"smiles": smiles_list})
+        for column in (*PIC50_COLUMNS, *ACTIVE_COLUMNS, *TOX_COLUMNS):
+            frame[column] = float("nan")
+
+        _, failed = featurize_many(frame["smiles"], FINGERPRINT_BITS)
+        failed = set(failed)
+        if len(failed) == n:
+            return [None] * n
+        dataset = MuFuDataset(frame)
+
+        with self._lock, torch.random.fork_rng(devices=[]):
+            torch.manual_seed(MC_SEED)
+            preds = predict_with_ensemble_intervals(self.members, dataset, self.params)
+
+        survived = [i for i in range(n) if i not in failed]
+        results: list[dict | None] = [None] * n
+        for row, i in enumerate(survived):
+            results[i] = self._build_response(
+                preds, row, dataset.smiles[row], dataset.fingerprints[row]
+            )
+        return results
+
+    def _build_response(self, preds: dict, row: int, smiles: str, fingerprint) -> dict:
         pct = round(COVERAGE * 100)
         bioactivity = {}
         for target, pic50_col, active_col in zip(
             BIO_TARGETS, PIC50_COLUMNS, ACTIVE_COLUMNS
         ):
             value, lo, hi = (
-                _finite(preds[col][0])
+                _finite(preds[col][row])
                 for col in (pic50_col, f"{pic50_col}_lo{pct}", f"{pic50_col}_hi{pct}")
             )
             if None in (value, lo, hi):
@@ -95,20 +134,20 @@ class Predictor:
                 "pic50": value,
                 "pic50_lo": lo,
                 "pic50_hi": hi,
-                "p_active": _finite(preds[active_col][0]),
+                "p_active": _finite(preds[active_col][row]),
             }
 
-        tanimoto = max_tanimoto(dataset.fingerprints[0], self.params.train_fps)
+        tanimoto = max_tanimoto(fingerprint, self.params.train_fps)
 
         response = {
-            "smiles": dataset.smiles[0],
+            "smiles": smiles,
             "model_version": self.model_version,
             "n_samples": self.params.conformal.n_samples,
             "coverage": COVERAGE,
             "nearest_train_tanimoto": tanimoto,
             "applicability_domain": applicability_domain(tanimoto),
             "bioactivity": bioactivity,
-            "toxicity": {col: _finite(preds[col][0]) for col in TOX_COLUMNS},
+            "toxicity": {col: _finite(preds[col][row]) for col in TOX_COLUMNS},
         }
         check_response(response)
         return response
