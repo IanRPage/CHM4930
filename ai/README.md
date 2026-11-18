@@ -95,6 +95,63 @@ provenance in `results_runs.csv`, plotted in
    update `promoted.json`. Use `major` for breaking contract changes, `minor` for a
    retrained model, and `patch` for metadata/sidecar updates. Commit `data/baseline/`.
 
+### Evaluating MuFu + RF stacking
+
+Run the read-only comparison on the promoted default split from `ai/`.
+
+```sh
+PYTHONPATH=src python -m baseline.stacking --split-id default
+PYTHONPATH=src python -m baseline.stacking --split-id default --ensemble
+```
+
+The second command averages the five calibrated MuFu members, scores that fixed
+ensemble once, and fits one ensemble blend per endpoint for each RF seed.
+The two comparisons, weights, and serving recommendation are in the
+[SCRUM-102 report](docs/SCRUM-102-stacking.md).
+
+The command reads each run's `run.json` and `predictions/{val,test}_seed_{0..4}.csv`
+from `runs/<run_id>/`. It checks the dataset and scaffold split hashes and matches
+the predictions by SMILES. Pass `--runs-dir` to use saved artifacts in another
+directory, or select another scaffold split with `--split-id`.
+
+For each endpoint and seed pair, the blend is `w * MuFu + (1 - w) * RF`. Regression
+uses the bounded validation RMSE minimum. Classification uses calibrated MuFu
+probabilities and positive-class RF probabilities and maximizes validation ROC-AUC
+on a grid from 0 to 1 in steps of 0.01. Ties favor a weight closest to 0.5.
+All three models use the same rows with finite labels and both predictions. An
+endpoint without paired validation rows or with undefined validation ROC-AUC gets
+no fitted weight. Test summaries show the mean, sample standard deviation, and
+number of evaluable seed pairs for BACE1 and EGFR pIC50, Tox21 macro ROC-AUC, and
+ClinTox ROC-AUC for `CT_TOX`, `FDA_APPROVED`, and their macro average.
+
+MuFu reused validation for early stopping and classification calibration. Fitting
+blend weights on those same compounds can give an optimistic validation estimate.
+Test scores are calculated after the weights are fitted and serve as the held-out
+comparison.
+
+On a fresh checkout, fetch the default predictions and metadata from the published
+tag with these commands. The download is limited to the files needed for stacking.
+
+```sh
+bundle=outputs/stacking-v1.1.1
+runs=outputs/stacking-runs-v1.1.1
+hf download CHM4930/mufu --revision v1.1.1 --local-dir "$bundle" \
+  --include 'run.json' --include 'predictions/*_seed_*.csv' \
+  --include 'baselines/rf_bioactivity_default/run.json' \
+  --include 'baselines/rf_bioactivity_default/predictions/*_seed_*.csv' \
+  --include 'baselines/rf_toxicity_default/run.json' \
+  --include 'baselines/rf_toxicity_default/predictions/*_seed_*.csv'
+mkdir -p "$runs/mufu_20261106_022713_default"
+cp -R "$bundle/run.json" "$bundle/predictions" "$runs/mufu_20261106_022713_default/"
+cp -R "$bundle/baselines/rf_bioactivity_default" "$bundle/baselines/rf_toxicity_default" "$runs/"
+PYTHONPATH=src python -m baseline.stacking --split-id default --runs-dir "$runs"
+```
+
+The tag also contains RF predictions and metadata for `scaffold-0` through
+`scaffold-4` under `baselines/<rf_run_id>/`. For those splits, copy the matching
+MuFu metadata and per-seed predictions from the original runs. The run IDs for
+each split are recorded in [`promoted.json`](data/baseline/promoted.json).
+
 ## Results
 
 Test set ("Default" = 5-seed mean with 95% bootstrap CI; "6 splits" = mean ± std across
