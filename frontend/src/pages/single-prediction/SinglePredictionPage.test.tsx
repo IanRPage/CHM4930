@@ -239,7 +239,10 @@ describe("SinglePredictionPage", () => {
     const missing = { value: null, reason: "Not returned by the server" };
     result.toxicity.nuclearReceptor["NR-AR"] = missing;
     result.toxicity.nuclearReceptor["NR-ER"] = missing;
-    result.fdaApproved = { value: null, reason: "Not returned by the model" };
+    result.clinicalToxicity = {
+      value: null,
+      reason: "Not returned by the model",
+    };
     predictMock.mockResolvedValue(result);
     await submit("CCO");
 

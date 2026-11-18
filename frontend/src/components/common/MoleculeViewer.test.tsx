@@ -101,3 +101,48 @@ it("leaves 3Dmol's own mouse handling alone without pan", () => {
 
   expect(onCanvas).toHaveBeenCalledOnce();
 });
+
+it("captures the pointer on the canvas so a drag survives leaving the tile", () => {
+  mockViewer();
+  const { container } = render(<MoleculeViewer sdf="x" />);
+  const canvas = document.createElement("canvas");
+  container.firstElementChild!.append(canvas);
+  canvas.setPointerCapture = vi.fn();
+
+  fireEvent.pointerDown(canvas, { pointerId: 7 });
+
+  expect(canvas.setPointerCapture).toHaveBeenCalledWith(7);
+});
+
+it("zooms once per frame by the combined wheel factor, without 3Dmol's own handler", () => {
+  const viewer = mockViewer();
+  let frame: FrameRequestCallback = () => {};
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+    frame = cb;
+    return 1;
+  });
+  const { container } = render(<MoleculeViewer sdf="x" />);
+  const canvas = document.createElement("canvas");
+  container.firstElementChild!.append(canvas);
+  const onCanvas = vi.fn();
+  canvas.addEventListener("wheel", onCanvas);
+
+  fireEvent.wheel(canvas, { deltaY: -100 });
+  fireEvent.wheel(canvas, { deltaY: -100 });
+  expect(viewer.zoom).not.toHaveBeenCalled();
+  frame(0);
+
+  expect(viewer.zoom).toHaveBeenCalledOnce();
+  expect(viewer.zoom.mock.calls[0][0]).toBeCloseTo(Math.exp(0.4));
+  expect(onCanvas).not.toHaveBeenCalled();
+});
+
+it("removes the old canvas when the molecule changes", () => {
+  mockViewer();
+  const { container, rerender } = render(<MoleculeViewer sdf="a" />);
+  container.firstElementChild!.append(document.createElement("canvas"));
+
+  rerender(<MoleculeViewer sdf="b" />);
+
+  expect(container.querySelector("canvas")).toBeNull();
+});

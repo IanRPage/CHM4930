@@ -108,7 +108,7 @@ export function parsePredictResponse(body: unknown): PredictResponse {
       nuclearReceptor: fromKeys(NR_TASKS, (t) => parseValue(nr[t])),
       stressResponse: fromKeys(SR_TASKS, (t) => parseValue(sr[t])),
     },
-    fdaApproved: parseValue(body.fdaApproved),
+    clinicalToxicity: parseValue(body.clinicalToxicity),
     metadata: {
       modelVersion:
         typeof metadata.modelVersion === "string"
