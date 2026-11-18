@@ -96,6 +96,14 @@ STAGES = {
         [0],
     ),
     "2-joint-search": (joint_search, [0]),
+    "3-finalists": (
+        [
+            joint_search[1],  # embedding 128, hidden 128, layers 2
+            joint_search[2],  # embedding 64, hidden 64, layers 2
+            joint_search[10],  # embedding 64, hidden 256, layers 1
+        ],
+        [0, 1, 2],
+    ),
 }
 
 
