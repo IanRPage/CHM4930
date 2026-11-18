@@ -208,8 +208,24 @@ def _ensemble_predictions(frame, pairs):
     return mean
 
 
-def _score_test(test_df, mufu, rf, weights, *, ensemble=False):
+def _common_test_frame(test_df, test_pairs, fits, ensemble_mean):
+    """Use one labeled cohort per endpoint for the fixed score and every seed."""
     paired_df = test_df.copy()
+    for endpoint in RUN_ENDPOINTS["mufu"]:
+        mask = np.isfinite(test_df[endpoint].to_numpy(dtype=float))
+        for seed, (mu, rf) in test_pairs.items():
+            if not np.isfinite(fits[seed][endpoint]["mufu_weight"]):
+                # A five-seed comparison needs this endpoint in every pair.
+                mask[:] = False
+                break
+            mask &= np.isfinite(mu[endpoint]) & np.isfinite(rf[endpoint])
+        if ensemble_mean is not None and endpoint in ensemble_mean:
+            mask &= np.isfinite(ensemble_mean[endpoint])
+        paired_df.loc[~mask, endpoint] = np.nan
+    return paired_df
+
+
+def _score_test(paired_df, mufu, rf, weights, *, ensemble=False):
     predictions = {name: {} for name in ("MuFu", "RF", "Blend")}
     paired_counts = dict.fromkeys(weights, 0)
     for endpoint, fit in weights.items():
@@ -217,13 +233,11 @@ def _score_test(test_df, mufu, rf, weights, *, ensemble=False):
         if np.isnan(weight):
             continue
         mu, forest = mufu[endpoint], rf[endpoint]
-        mask = _paired_rows(test_df[endpoint].to_numpy(dtype=float), mu, forest)
-        # The benchmark masks missing labels for this endpoint in all three models.
-        paired_df.loc[~mask, endpoint] = np.nan
+        mask = paired_df[endpoint].notna().to_numpy()
         paired_counts[endpoint] = int(mask.sum())
         predictions["MuFu"][endpoint] = mu
         predictions["RF"][endpoint] = forest
-        blended = np.full(len(test_df), np.nan)
+        blended = np.full(len(paired_df), np.nan)
         blended[mask] = _blend(mu[mask], forest[mask], weight)
         predictions["Blend"][endpoint] = blended
 
@@ -264,18 +278,8 @@ def evaluate_stacking(
         for seed, (mu, rf) in val_pairs.items()
     }
     test_pairs = {s: _load_pair(run_dirs, test_df, "test", s) for s in bm.SEEDS}
-    if ensemble:
-        test_mean = _ensemble_predictions(test_df, test_pairs)
-        fixed_df = test_df.copy()
-        for endpoint, values in test_mean.items():
-            fixed_df.loc[~np.isfinite(values), endpoint] = np.nan
-        metric_rows.extend(
-            {**row, "split_id": split_id, "split": "test", "seed": None}
-            for row in _metric_rows(fixed_df, test_mean, "MuFu ensemble")
-        )
     for seed, (test_mufu, test_rf) in test_pairs.items():
         val_mufu, val_rf = val_pairs[seed]
-        weights = fits[seed]
         for model, val, test in (
             ("MuFu", val_mufu, test_mufu),
             ("RF", val_rf, test_rf),
@@ -285,8 +289,17 @@ def evaluate_stacking(
                 raise ValueError(
                     f"{model} seed {seed}: validation/test endpoint mismatch {sorted(mismatched)}"
                 )
+    test_mean = _ensemble_predictions(test_df, test_pairs) if ensemble else None
+    paired_df = _common_test_frame(test_df, test_pairs, fits, test_mean)
+    if ensemble:
+        metric_rows.extend(
+            {**row, "split_id": split_id, "split": "test", "seed": None}
+            for row in _metric_rows(paired_df, test_mean, "MuFu ensemble")
+        )
+    for seed, (test_mufu, test_rf) in test_pairs.items():
+        weights = fits[seed]
         rows, test_counts = _score_test(
-            test_df,
+            paired_df,
             test_mean if ensemble else test_mufu,
             test_rf,
             weights,

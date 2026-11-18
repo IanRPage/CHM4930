@@ -115,7 +115,7 @@ def test_validation_weights_and_paired_test_summary(artifacts):
     np.testing.assert_allclose(bace["mufu_weight"], [0, 0.25, 0.5, 0.75, 1])
     assert bace["val_labeled"].tolist() == [4] * 5
     assert bace["val_paired"].tolist() == [3] * 5
-    assert bace["test_paired"].tolist() == [3, 4, 4, 4, 4]
+    assert bace["test_paired"].tolist() == [3] * 5
     assert set(fits.loc["NR-AR", "mufu_weight"]) == {1.0}
     assert set(fits.loc["CT_TOX", "mufu_weight"]) == {0.5}
     assert set(fits.loc["FDA_APPROVED", "status"]) == {"single-class validation labels"}
@@ -223,7 +223,8 @@ def test_fixed_ensemble_and_validation_fit_for_each_rf_seed(artifacts):
     assert fixed["mean"] == 0
     assert fixed["n_evaluations"] == 1
     assert np.isnan(fixed["std"])
-    assert scores.loc[("MuFu ensemble", "macro_tox21", "roc_auc"), "mean"] == 0.5
+    # RF has no finite positive NR-AR-LBD scores. Both macros use NR-AR alone.
+    assert scores.loc[("MuFu ensemble", "macro_tox21", "roc_auc"), "mean"] == 0
 
     expected_weights = np.array([0, 1 / 3, 1 / 2, 3 / 5, 2 / 3])
     np.testing.assert_allclose(
@@ -242,3 +243,46 @@ def test_ensemble_rejects_inconsistent_member_endpoints(artifacts):
     pd.read_csv(path).drop(columns="NR-AR").to_csv(path, index=False)
     with pytest.raises(ValueError, match="MuFu seed 4: ensemble endpoint mismatch"):
         stacking.evaluate_stacking(data_path=data_path, ensemble=True)
+
+
+@pytest.mark.parametrize("ensemble", [False, True])
+def test_different_rf_gaps_use_identical_test_compounds(artifacts, ensemble):
+    data_path, run_dirs = artifacts
+    # Seed 0 already lacks CNO. Seed 1 lacks O. Large errors on either
+    # compound must disappear from every score, including the fixed ensemble.
+    path = run_dirs["rf_bioactivity"] / "predictions" / "test_seed_1.csv"
+    frame = pd.read_csv(path)
+    frame.loc[frame.smiles == "O", "pIC50_BACE1"] = np.nan
+    frame.to_csv(path, index=False)
+    for seed in bm.SEEDS:
+        path = run_dirs["mufu"] / "predictions" / f"test_seed_{seed}.csv"
+        frame = pd.read_csv(path)
+        frame.loc[frame.smiles.isin(["O", "CNO"]), "pIC50_BACE1"] += 50
+        frame.to_csv(path, index=False)
+
+    # Different RF seeds lack different positives. Each could score CT_TOX
+    # alone, but their common test cohort contains only negatives.
+    for seed, smiles in [(0, "CO"), (1, "CNO")]:
+        path = run_dirs["rf_toxicity"] / "predictions" / f"test_seed_{seed}.csv"
+        frame = pd.read_csv(path)
+        frame.loc[frame.smiles == smiles, "CT_TOX"] = np.nan
+        frame.to_csv(path, index=False)
+
+    summary, fits = stacking.evaluate_stacking(data_path=data_path, ensemble=ensemble)
+    bace = fits[fits.endpoint == "pIC50_BACE1"]
+    assert bace.test_paired.tolist() == [2] * 5
+    assert fits.loc[fits.endpoint == "CT_TOX", "test_paired"].tolist() == [2] * 5
+    rmse = summary.query("endpoint == 'pIC50_BACE1' and metric == 'rmse'").set_index(
+        "model"
+    )
+    base = "MuFu ensemble" if ensemble else "MuFu"
+    blend = "Ensemble + RF" if ensemble else "Blend"
+    assert rmse.loc[base, "mean"] == 1
+    assert rmse.loc[blend, "mean"] == pytest.approx(
+        abs(1 - 2 * bace.mufu_weight).mean()
+    )
+    assert (
+        summary.loc[summary.endpoint.isin(["CT_TOX", "macro_clintox"]), "mean"]
+        .isna()
+        .all()
+    )
