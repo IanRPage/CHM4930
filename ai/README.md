@@ -138,6 +138,10 @@ Each run lives in `runs/<run_id>/` (`run.json`, `checkpoints/`, `predictions/`, 
 The ensemble averages Platt-calibrated outputs across seeds; pIC50 intervals combine
 MC-Dropout and between-seed spread ([`docs/MC-Dropout.md`](docs/MC-Dropout.md)).
 
+From `ai/`, run `PYTHONPATH=src python -m baseline.stacking --runs-dir runs` to compare MuFu + RF.
+For recovered artifacts, replace `runs` with their run directory (e.g. `outputs/stacking-runs-v1.1.1`).
+Add `--ensemble` to compare the five-member MuFu ensemble with its RF blends.
+
 **Encoder sweeps:** `experiments/{ECFP4,gnn,SMILES}_encoder_sweep.py <stage>` tunes each
 encoder on BACE-1 (`default` split) under `outputs/encoders/<encoder>/sweep/`.
 
