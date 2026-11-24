@@ -175,6 +175,8 @@ describe("DatasetExplorerPage", () => {
       screen.getByRole("tab", { name: "Sample Molecules" }),
     );
     await screen.findByRole("article", { name: "mol_first" });
+    await userEvent.click(screen.getByRole("button", { name: "Load more" }));
+    await screen.findByRole("article", { name: "mol_second" });
     fireEvent.change(screen.getByRole("searchbox"), {
       target: { value: "[NH4+]" },
     });
@@ -192,6 +194,10 @@ describe("DatasetExplorerPage", () => {
         expect.any(AbortSignal),
       ),
     );
+    await screen.findByRole("article", { name: "mol_first" });
+    expect(
+      screen.queryByRole("article", { name: "mol_second" }),
+    ).not.toBeInTheDocument();
   });
 
   it("aborts old searches and ignores late results, while rendering an explicit empty state", async () => {

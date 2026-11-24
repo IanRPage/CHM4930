@@ -63,6 +63,42 @@ describe("dataset API", () => {
     );
   });
 
+  it("rejects empty source groups before rendering", async () => {
+    const summary = Object.fromEntries(
+      ["all", "bace1", "egfr", "tox21", "clintox"].map((source) => [
+        source,
+        {},
+      ]),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ summary }) }),
+    );
+    await expect(getDatasetSummary()).rejects.toThrow(
+      "summary response is invalid",
+    );
+  });
+
+  it.each([
+    ["counts", {}],
+    ["elements", { C: {} }],
+    ["molecularWeight", { histograms: [] }],
+    ["bioactivity", {}],
+    ["tox21", { "NR-AR": {} }],
+    ["clintox", {}],
+    ["heavyAtomCounts", {}],
+  ] as const)("rejects incomplete %s fields", async (field, value) => {
+    const body = datasetSummaryResponse();
+    (body.summary.all as unknown as Record<string, unknown>)[field] = value;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => body }),
+    );
+    await expect(getDatasetSummary()).rejects.toThrow(
+      "summary response is invalid",
+    );
+  });
+
   it("rejects a malformed pagination response", async () => {
     const body = datasetMoleculesResponse();
     (body as unknown as Record<string, unknown>).total = "2";

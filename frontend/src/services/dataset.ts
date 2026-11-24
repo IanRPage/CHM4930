@@ -4,14 +4,94 @@ import type {
   DatasetSummaryResponse,
 } from "../types/dataset.ts";
 import { isNumber, isRecord } from "./predict.ts";
+import { TARGETS } from "../types/predict.ts";
 
-// Validate response envelopes; nested fields follow the shared backend types.
-const summaryResponse = (body: unknown) =>
-  isRecord(body) &&
-  isRecord(body.summary) &&
-  ["all", "bace1", "egfr", "tox21", "clintox"].every((source) =>
-    isRecord((body.summary as Record<string, unknown>)[source]),
+const numbers = (value: unknown, keys: string[]) =>
+  isRecord(value) && keys.every((key) => isNumber(value[key]));
+const nullableNumber = (value: unknown) => value === null || isNumber(value);
+
+function distribution(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.histograms) &&
+    value.histograms.length > 0 &&
+    value.histograms.every(
+      (histogram: unknown) =>
+        isRecord(histogram) &&
+        isNumber(histogram.binWidth) &&
+        histogram.binWidth > 0 &&
+        Array.isArray(histogram.counts) &&
+        histogram.counts.length > 0 &&
+        histogram.counts.every(isNumber) &&
+        Array.isArray(histogram.edges) &&
+        histogram.edges.length === histogram.counts.length + 1 &&
+        histogram.edges.every(
+          (edge: unknown, index: number, edges: unknown[]) =>
+            isNumber(edge) &&
+            (index === 0 || edge > (edges[index - 1] as number)),
+        ),
+    )
   );
+}
+
+// Validate only fields read by the summary views before entering the ready state.
+function summaryGroup(group: unknown): boolean {
+  if (!isRecord(group)) return false;
+  const { bioactivity, elements, tox21, clintox, heavyAtomCounts } = group;
+  return (
+    numbers(group.counts, [
+      "total",
+      "withBioactivityLabels",
+      "withToxicityLabels",
+    ]) &&
+    distribution(group.molecularWeight) &&
+    isRecord(elements) &&
+    Object.values(elements).every((element) =>
+      numbers(element, [
+        "moleculesContaining",
+        "percentageOfMolecules",
+        "averageAtomsPerMolecule",
+      ]),
+    ) &&
+    isRecord(bioactivity) &&
+    TARGETS.every((target) => {
+      const entry = bioactivity[target];
+      return (
+        isRecord(entry) &&
+        numbers(entry, ["labeled", "active", "inactive"]) &&
+        distribution(entry) &&
+        isRecord(entry.statistics) &&
+        nullableNumber(entry.statistics.median)
+      );
+    }) &&
+    isRecord(tox21) &&
+    Object.values(tox21).every(
+      (assay) =>
+        isRecord(assay) &&
+        nullableNumber(assay.positiveRate) &&
+        (assay.family === "NR" || assay.family === "SR"),
+    ) &&
+    isRecord(clintox) &&
+    ["FDA_APPROVED", "CT_TOX"].every((key) => {
+      const label = clintox[key];
+      return (
+        numbers(label, ["positive", "negative", "labeled"]) &&
+        isRecord(label) &&
+        nullableNumber(label.positiveRate)
+      );
+    }) &&
+    isRecord(heavyAtomCounts) &&
+    nullableNumber(heavyAtomCounts.mean)
+  );
+}
+
+function summaryResponse(body: unknown): boolean {
+  if (!isRecord(body) || !isRecord(body.summary)) return false;
+  const summary = body.summary;
+  return ["all", "bace1", "egfr", "tox21", "clintox"].every((source) =>
+    summaryGroup(summary[source]),
+  );
+}
 const moleculesResponse = (body: unknown) =>
   isRecord(body) &&
   Array.isArray(body.items) &&
