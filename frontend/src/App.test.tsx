@@ -49,7 +49,7 @@ describe("App", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Batch Prediction" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Coming Soon")).toBeInTheDocument();
+    expect(screen.getByText("Drag and drop a file here")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Batch Prediction" })).toHaveClass(
       "active",
     );
@@ -74,9 +74,9 @@ describe("App", () => {
 
   it("routes the home entry cards and marks unfinished ones as coming soon", async () => {
     renderAt("/");
-    expect(screen.getAllByText("Coming soon")).toHaveLength(2);
+    expect(screen.getAllByText("Coming soon")).toHaveLength(1);
     expect(within(screen.getByRole("main")).getAllByRole("link")).toHaveLength(
-      1,
+      2,
     );
     await userEvent.click(screen.getByRole("link", { name: "Get Started" }));
     expect(

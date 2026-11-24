@@ -1,0 +1,15 @@
+export const TOX_TOOLTIPS: Record<string, string> = {
+  "NR-AR": "Androgen receptor activity",
+  "NR-AR-LBD": "Androgen receptor ligand-binding domain",
+  "NR-AhR": "Aryl hydrocarbon receptor activity",
+  "NR-Aromatase": "Aromatase enzyme inhibition",
+  "NR-ER": "Estrogen receptor activity",
+  "NR-ER-LBD": "Estrogen receptor ligand-binding domain",
+  "NR-PPAR-gamma": "Peroxisome proliferator-activated receptor gamma",
+  "SR-ARE": "Antioxidant response element signaling",
+  "SR-ATAD5": "DNA damage (genotoxicity) response",
+  "SR-HSE": "Heat shock factor response",
+  "SR-MMP": "Mitochondrial membrane potential disruption",
+  "SR-p53": "p53 tumor suppressor activation",
+  CT_TOX: "Clinical trial toxicity (ClinTox)",
+};

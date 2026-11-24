@@ -5,7 +5,7 @@ import type {
 } from "../../../types/predict.ts";
 import { NR_TASKS, SR_TASKS } from "../../../types/predict.ts";
 
-type Cell = string | number | null;
+export type Cell = string | number | null;
 type Column = readonly [header: string, value: Cell];
 
 function addEstimate(
@@ -20,7 +20,7 @@ function addEstimate(
 
 // Quote CSV special characters and prevent spreadsheets from executing formulas
 // when a SMILES value starts with =, +, -, or @ (including after whitespace).
-function csvCell(value: Cell): string {
+export function csvCell(value: Cell): string {
   if (value === null) return "";
   let text = String(value);
   if (typeof value === "string" && /^\s*[=+@-]/u.test(text)) {
@@ -72,14 +72,13 @@ export function predictionToCsv(result: PredictResponse): string {
   );
 }
 
-export function downloadPredictionCsv(result: PredictResponse): void {
-  const csv = predictionToCsv(result);
+export function downloadCsv(csv: string, filename: string): void {
   // UTF-8 BOM helps spreadsheet applications recognize non-ASCII units.
   const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "mufu-prediction.csv";
+  link.download = filename;
   link.hidden = true;
   document.body.appendChild(link);
   try {
@@ -88,4 +87,8 @@ export function downloadPredictionCsv(result: PredictResponse): void {
     link.remove();
     URL.revokeObjectURL(url);
   }
+}
+
+export function downloadPredictionCsv(result: PredictResponse): void {
+  downloadCsv(predictionToCsv(result), "mufu-prediction.csv");
 }

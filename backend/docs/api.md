@@ -104,6 +104,84 @@ The first request on a new instance loads RDKit.js and warms up the conformer
 generator, which takes a few seconds. Later requests take milliseconds for
 drug-sized molecules and about a second near the 100-heavy-atom cap.
 
+## `GET /api/dataset/summary`
+
+Returns `{ summary }` from the bundled JSON, grouped by `all`, `bace1`, `egfr`,
+`tox21`, and `clintox`. Source groups can overlap.
+
+| Group field                                           | Contents                                                                      |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `counts`                                              | Total molecules and counts with bioactivity/toxicity labels                   |
+| `bioactivity`                                         | BACE1/EGFR active, inactive, and missing counts; pIC50 statistics/histograms  |
+| `tox21`, `clintox`                                    | Label counts and positive rates; Tox21 also includes NR/SR family             |
+| `elements`                                            | Per-element molecule percentages, total atoms, and average atoms per molecule |
+| `atomCounts`, `heavyAtomCounts`, `wildcardAtomCounts` | Atom-count statistics                                                         |
+| `moleculesWithWildcardAtoms`, `molecularWeight`       | Wildcard molecule count and MW statistics/histograms                          |
+
+Statistics contain `count`, `min`, `max`, `mean`, `median`, `p25`, and `p75`.
+Histograms contain `binWidth`, `edges`, and `counts`, with shared `[left, right)`
+bins across sources. Missing measurements are excluded from distributions/rates.
+
+## `GET /api/dataset/molecules?q=&activity=&risk=&page=`
+
+Returns molecule records in ID order, applying all filters with AND before
+pagination. Each page contains up to 24 items.
+
+| Parameter  | Default | Values                                                            |
+| ---------- | ------- | ----------------------------------------------------------------- |
+| `q`        | Empty   | Literal, case-sensitive ID or SMILES substring; empty matches all |
+| `activity` | `all`   | `all`, `active`, `inactive`, `unknown`                            |
+| `risk`     | `all`   | `all`, `positive`, `negative`, `unknown`                          |
+| `page`     | `1`     | Positive safe integer                                             |
+
+- **Activity:** active if any observed target has pIC50 >= 6.0; inactive if
+  measured with no active target; unknown if neither target is measured.
+- **Risk:** positive if any Tox21/`CT_TOX` label is 1; negative if measured with
+  no positives; unknown if unmeasured. Excludes `FDA_APPROVED` and describes
+  observed labels, not predicted safety. `riskLabelsObserved` gives coverage out of 13.
+
+Response: `{ items, page, pageSize, total, totalPages, hasMore }`. `total` counts
+all matches; `totalPages` is `ceil(total / 24)`. Empty or out-of-range pages
+return `200`, `items: []`, and `hasMore: false`; no matches means `totalPages: 0`.
+Item fields are defined in [DatasetMolecule](../src/models/dataset.ts).
+
+URL-encode `q`. Invalid, repeated, or unknown parameters return `400` with
+`{ "error": string }`.
+
+## `POST /api/batch`
+
+MuFu's predictions for a chunk of up to 10 molecules. The browser splits a
+larger screen into chunks and sends them one at a time.
+
+```json
+{ "smiles": ["CC(=O)Oc1ccccc1C(=O)O", "CCO"] }
+```
+
+| Field     | Type                          | Description                                                  |
+| --------- | ----------------------------- | ------------------------------------------------------------ |
+| `results` | `(PredictResponse \| null)[]` | One entry per input row, in order. `null` for an invalid row |
+| `errors`  | `BatchRowError[]`             | One entry per invalid row                                    |
+
+`BatchRowError` is `{ "index": number, "smiles": string, "reason": string }`:
+the row's position in the request, the input as sent, and the validation
+message (same rules as **SMILES input**).
+
+- Each SMILES is validated on its own. An invalid row goes in `errors` and
+  doesn't fail the request.
+- The same SMILES more than once in a chunk (after trimming) is predicted once
+  and the result is copied to every position.
+- Unique valid SMILES are sent to the inference server in a single batch request.
+  If the client disconnects, the request is aborted.
+- Upstream failures fail the whole chunk with the same mapping as
+  [`POST /api/predict`](#post-apipredict). A `Retry-After` header from the
+  inference server on a 429 or 503 is forwarded on the 503.
+
+| Status | `error`                               | When                                |
+| ------ | ------------------------------------- | ----------------------------------- |
+| 400    | `smiles must be an array`             | `smiles` is missing or not an array |
+| 400    | `smiles must not be empty`            | `smiles` is `[]`                    |
+| 400    | `smiles must have at most 10 entries` | More than 10 rows                   |
+
 ## Inference server contract
 
 Internal: what the backend expects from the `ai/` inference server, and what
@@ -135,6 +213,19 @@ Internal: what the backend expects from the `ai/` inference server, and what
     "FDA_APPROVED": 0.91,
     "CT_TOX": 0.08
   }
+}
+```
+
+`POST /predict/batch` with `{ "smiles": string[] }`.
+
+Returns:
+
+```jsonc
+{
+  "results": [
+    /* InferenceResponse or null per molecule in order */
+  ],
+  "errors": [{ "index": 1, "smiles": "invalid", "reason": "invalid_smiles" }]
 }
 ```
 

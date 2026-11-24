@@ -5,16 +5,7 @@ import Pill from "../../../components/common/Pill.tsx";
 import type { Output, PredictResponse } from "../../../types/predict.ts";
 import { NR_TASKS, SR_TASKS } from "../../../types/predict.ts";
 import "./ToxicityPanel.css";
-import { percent } from "./format.ts";
-
-const MODERATE_RISK = 0.3;
-const HIGH_RISK = 0.5;
-
-function riskLevel(p: number) {
-  if (p >= HIGH_RISK) return "high";
-  if (p >= MODERATE_RISK) return "moderate";
-  return "low";
-}
+import { HIGH_RISK, percent, riskLevel } from "./format.ts";
 
 function RiskRow({ task, output }: { task: string; output: Output }) {
   if (output.value === null) {

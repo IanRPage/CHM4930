@@ -1,5 +1,6 @@
 import { httpError } from "../errors.ts";
 import {
+  parseBatchInferenceResponse,
   parseInferenceResponse,
   toPredictResponse,
 } from "../models/inference.ts";
@@ -39,9 +40,11 @@ function timedOut() {
   return upstreamError(504, TIMED_OUT, "request timed out");
 }
 
-function statusError(status: number) {
+function statusError(status: number, retryAfter?: string) {
   if (status === 422) return httpError(400, INVALID_SMILES);
-  if (status === 429 || status === 503) return httpError(503, BUSY);
+  if (status === 429 || status === 503) {
+    return httpError(503, BUSY, retryAfter);
+  }
   if (status === 502 || status === 504 || status === 530) {
     return upstreamError(503, UNAVAILABLE, `gateway status ${status}`);
   }
@@ -83,34 +86,45 @@ export class MuFuClient {
     }
   }
 
-  async predict(smiles: string): Promise<PredictResponse> {
+  private async post(
+    path: string,
+    body: unknown,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    if (signal?.aborted) throw httpError(499, "Client closed request");
+
+    const timeout = AbortSignal.timeout(this.timeoutMs);
+    const fetchSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+
     let res: Response;
     try {
-      res = await fetch(`${this.url}/predict`, {
+      res = await fetch(`${this.url}${path}`, {
         method: "POST",
         redirect: "error",
         headers: {
           "Content-Type": "application/json",
           "X-API-Key": this.apiKey,
         },
-        body: JSON.stringify({ smiles }),
-        signal: AbortSignal.timeout(this.timeoutMs),
+        body: JSON.stringify(body),
+        signal: fetchSignal,
       });
     } catch (err) {
+      if (signal?.aborted) throw httpError(499, "Client closed request");
       throw isTimeout(err)
         ? timedOut()
         : upstreamError(503, UNAVAILABLE, `request failed (${errorName(err)})`);
     }
 
     if (!res.ok) {
+      const retryAfter = res.headers.get("Retry-After") ?? undefined;
       await res.body?.cancel().catch(() => {});
-      throw statusError(res.status);
+      throw statusError(res.status, retryAfter);
     }
 
-    let body: unknown;
     try {
-      body = await res.json();
+      return await res.json();
     } catch (err) {
+      if (signal?.aborted) throw httpError(499, "Client closed request");
       if (isTimeout(err)) throw timedOut();
       if (err instanceof SyntaxError) {
         throw upstreamError(502, BAD_RESPONSE, "response body is not JSON");
@@ -121,9 +135,34 @@ export class MuFuClient {
         `response body failed (${errorName(err)})`,
       );
     }
+  }
 
+  async predict(smiles: string): Promise<PredictResponse> {
+    const body = await this.post("/predict", { smiles });
     try {
       return toPredictResponse(parseInferenceResponse(body));
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "invalid response";
+      throw upstreamError(502, BAD_RESPONSE, reason);
+    }
+  }
+
+  async predictBatch(
+    smilesList: string[],
+    signal?: AbortSignal,
+  ): Promise<(PredictResponse | null)[]> {
+    if (smilesList.length === 0) {
+      return [];
+    }
+    const body = await this.post(
+      "/predict/batch",
+      { smiles: smilesList },
+      signal,
+    );
+    try {
+      return parseBatchInferenceResponse(body, smilesList.length).map((raw) =>
+        raw ? toPredictResponse(raw) : null,
+      );
     } catch (err) {
       const reason = err instanceof Error ? err.message : "invalid response";
       throw upstreamError(502, BAD_RESPONSE, reason);

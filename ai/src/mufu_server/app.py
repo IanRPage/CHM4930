@@ -1,5 +1,5 @@
 """
-HTTP server around `Predictor.infer`.
+HTTP server around `Predictor.infer` and `Predictor.infer_batch`.
 
 Every path except `/health` needs a key in the `X-API-Key` header: `MUFU_API_KEY`
 (named "default" in the log) or one from `MUFU_API_KEYS_FILE` (see `keys.py`). Each
@@ -33,6 +33,10 @@ class PredictRequest(BaseModel):
     smiles: str
 
 
+class BatchPredictRequest(BaseModel):
+    smiles: list[str]
+
+
 def error(status: int, message: str, **headers: str) -> JSONResponse:
     return JSONResponse({"error": message}, status_code=status, headers=headers)
 
@@ -55,8 +59,16 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
     limiters = {
         name: SlidingWindowLimiter(settings.rate_limit_per_minute) for name in keys
     }
-    # one inference at a time; Predictor serializes them anyway
-    busy = threading.Lock()
+    # one inference at a time; Predictor serializes them anyway. Waiting on it uses no
+    # threads, so waiters can't starve the executor that runs the inference
+    busy = asyncio.Lock()
+
+    async def acquire_busy() -> bool:
+        try:
+            await asyncio.wait_for(busy.acquire(), settings.busy_timeout_s)
+        except TimeoutError:
+            return False
+        return True
 
     def load_in_background(app: FastAPI) -> None:
         try:
@@ -83,7 +95,11 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
     app.state.load_error = None
     app.state.loaded = threading.Event()
 
-    app.add_middleware(BodyLimit, max_bytes=settings.max_body_bytes)
+    app.add_middleware(
+        BodyLimit,
+        max_bytes=settings.max_body_bytes,
+        route_limits={"/predict/batch": settings.max_batch_body_bytes},
+    )
 
     @app.middleware("http")
     async def gate(request: Request, call_next):
@@ -134,18 +150,13 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
             or any(c.isspace() for c in smiles)
         ):
             return error(422, "invalid_smiles")
-        if not busy.acquire(blocking=False):
+        if not await acquire_busy():
             return error(503, "busy")
 
-        # released when inference finishes, even after a timeout
-        def run():
-            try:
-                return predictor.infer(smiles)
-            finally:
-                busy.release()
-
         start = time.perf_counter()
-        job = asyncio.get_running_loop().run_in_executor(None, run)
+        job = asyncio.get_running_loop().run_in_executor(None, predictor.infer, smiles)
+        # released when inference finishes, even after a timeout
+        job.add_done_callback(lambda _: busy.release())
         try:
             result = await asyncio.wait_for(
                 asyncio.shield(job), settings.request_timeout_s
@@ -164,5 +175,72 @@ def create_app(settings: Settings, load=load_predictor, on_load_error=None):
             (time.perf_counter() - start) * 1000,
         )
         return result
+
+    @app.post("/predict/batch")
+    async def predict_batch(body: BatchPredictRequest, request: Request):
+        predictor = app.state.predictor
+        if predictor is None:
+            return error(503, "loading")
+        if not body.smiles or len(body.smiles) > settings.max_batch_size:
+            return error(422, "invalid_request")
+
+        errors = []
+        valid_indices = []
+        for i, smiles in enumerate(body.smiles):
+            if (
+                not smiles
+                or len(smiles) > settings.max_smiles_length
+                or any(c.isspace() for c in smiles)
+            ):
+                errors.append(
+                    {"index": i, "smiles": smiles, "reason": "invalid_smiles"}
+                )
+            else:
+                valid_indices.append(i)
+
+        results: list[dict | None] = [None] * len(body.smiles)
+        if valid_indices:
+            valid_smiles = [body.smiles[i] for i in valid_indices]
+            if not await acquire_busy():
+                return error(503, "busy")
+
+            start = time.perf_counter()
+            job = asyncio.get_running_loop().run_in_executor(
+                None, predictor.infer_batch, valid_smiles
+            )
+            job.add_done_callback(lambda _: busy.release())
+            try:
+                batch = await asyncio.wait_for(
+                    asyncio.shield(job), settings.request_timeout_s
+                )
+            except TimeoutError:
+                log.warning(
+                    "batch inference timed out after %.0fs", settings.request_timeout_s
+                )
+                return error(503, "timeout")
+            except Exception:
+                log.exception("batch inference failed")
+                return error(500, "internal_error")
+
+            for i, result in zip(valid_indices, batch):
+                if result is None:
+                    errors.append(
+                        {
+                            "index": i,
+                            "smiles": body.smiles[i],
+                            "reason": "invalid_smiles",
+                        }
+                    )
+                else:
+                    results[i] = result
+            log.info(
+                "predict/batch ok for %s (%d molecules) in %.0f ms",
+                request.state.caller,
+                len(valid_smiles),
+                (time.perf_counter() - start) * 1000,
+            )
+
+        errors.sort(key=lambda e: e["index"])
+        return {"results": results, "errors": errors}
 
     return app

@@ -44,6 +44,7 @@ const ENTRY_CARDS: EntryCard[] = [
     tint: "var(--tint-violet)",
     accent: "var(--violet-600)",
     action: "Upload File",
+    to: "/batch",
   },
   {
     title: "Explore Dataset",
