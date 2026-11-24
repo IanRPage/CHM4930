@@ -41,7 +41,7 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
-  it("navigates with the sidebar, including Coming Soon routes", async () => {
+  it("navigates with the sidebar, including the dataset explorer", async () => {
     renderAt("/");
     await userEvent.click(
       screen.getByRole("link", { name: "Batch Prediction" }),
@@ -60,7 +60,10 @@ describe("App", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Dataset Explorer" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Coming Soon")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(screen.getByRole("link", { name: "Dataset Explorer" })).toHaveClass(
       "active",
     );

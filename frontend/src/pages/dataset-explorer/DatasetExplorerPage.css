@@ -1,0 +1,552 @@
+.main:has(> .explorer) {
+  min-width: 0;
+}
+.explorer {
+  --explorer-orange: #f97316;
+  --explorer-amber-text: #b45309;
+  max-width: 1104px;
+  margin: 0 auto;
+  padding: 9px 16px 32px;
+  color: var(--slate-900);
+  font-size: 14px;
+}
+.explorer-tabs {
+  display: flex;
+  margin: 24px 0 20px;
+  border-bottom: 1px solid var(--slate-200);
+  overflow-x: auto;
+}
+.explorer-tabs button {
+  flex-shrink: 0;
+  padding: 14px 20px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--slate-500);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.explorer-tabs button[aria-selected="true"] {
+  color: var(--blue-600);
+  border-bottom-color: var(--blue-500);
+}
+.explorer button:focus-visible,
+.explorer select:focus-visible,
+.explorer input:focus-visible,
+.explorer [role="tabpanel"]:focus-visible {
+  outline: 2px solid var(--blue-600);
+  outline-offset: 2px;
+}
+.explorer-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+}
+.explorer-stat-cards {
+  margin-bottom: 24px;
+}
+.explorer-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 20px;
+}
+.explorer-stat strong {
+  font-size: 34px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.explorer-stat span {
+  color: var(--slate-500);
+}
+.explorer-stat-blue strong {
+  color: var(--blue-700);
+}
+.explorer-stat-red strong {
+  color: var(--red-700);
+}
+.explorer-stat-amber strong {
+  color: var(--explorer-amber-text);
+}
+.explorer-chart-card {
+  min-width: 0;
+  padding: 22px;
+}
+.explorer-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.explorer-card-head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.explorer-card-aside,
+.explorer-note,
+.explorer-source {
+  color: var(--slate-500);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.explorer-note {
+  margin: 12px 0 0;
+}
+.explorer-source-footer {
+  margin-top: 18px;
+  text-align: right;
+}
+.explorer-source-note {
+  margin: -4px 0 14px;
+}
+.explorer-chart {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.explorer-chart text {
+  fill: var(--slate-500);
+  font-size: 13px;
+}
+.explorer-chart-compact text {
+  font-size: 18px;
+}
+.explorer-chart .explorer-axis-label {
+  fill: var(--slate-700);
+  font-weight: 600;
+}
+.explorer-gridline {
+  stroke: var(--slate-100);
+  stroke-width: 1;
+}
+.explorer-threshold {
+  stroke: var(--slate-900);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+.explorer-bar:hover {
+  opacity: 0.75;
+}
+.explorer-chart-scroll {
+  overflow-x: auto;
+}
+.explorer-legend {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 8px 0;
+  font-size: 10px;
+  color: var(--slate-600);
+}
+.explorer-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.explorer-legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+.explorer-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: -6px 0 16px;
+}
+.explorer-controls label,
+.explorer-control-static,
+.explorer-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--slate-300);
+  border-radius: 7px;
+  background: var(--white);
+  color: var(--slate-500);
+  font-size: 12px;
+}
+.explorer-controls select,
+.explorer-sort select {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--slate-900);
+  cursor: pointer;
+}
+.explorer-control-static strong {
+  font-weight: 600;
+  color: var(--slate-900);
+}
+.explorer-controls .explorer-source {
+  margin-left: auto;
+}
+.explorer-property-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.explorer-property-grid > .card {
+  display: flex;
+  flex-direction: column;
+}
+.explorer-property-grid .explorer-note {
+  margin-top: auto;
+  padding-top: 12px;
+}
+.explorer-binary-rows {
+  display: grid;
+  gap: 35px;
+  margin: 34px 0 28px;
+}
+.explorer-binary-row {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.explorer-binary-row small {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--slate-500);
+}
+.explorer-fraction {
+  position: relative;
+  min-height: 35px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--slate-200);
+}
+.explorer-fraction-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+}
+.explorer-fraction-text {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 35px;
+  padding: 0 10px;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--slate-900);
+  font-variant-numeric: tabular-nums;
+}
+.explorer-no-labels {
+  display: block;
+  padding: 10px;
+  font-size: 11px;
+  color: var(--slate-600);
+}
+.explorer-clintox-rows .explorer-binary-row {
+  grid-template-columns: minmax(110px, 1fr) minmax(0, 1.5fr);
+}
+.explorer-assays {
+  display: grid;
+  gap: 5px;
+  margin: 4px 0 8px;
+}
+.explorer-assay {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 62px 58px;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+}
+.explorer-assay > span:first-child {
+  text-align: right;
+}
+.explorer-assay strong {
+  font-size: 10px;
+}
+.explorer-assay-track {
+  height: 9px;
+  background: var(--slate-100);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.explorer-assay-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+.explorer-assay-count {
+  font-size: 9px;
+  color: var(--slate-500);
+  text-align: right;
+}
+.explorer-elements-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+  gap: 24px;
+}
+.explorer-average-rows {
+  display: grid;
+  gap: 17px;
+  margin: 22px 0;
+}
+.explorer-average-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+.explorer-element-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  border-radius: 8px;
+  background: var(--slate-50);
+  font-size: 11px;
+  font-weight: 700;
+}
+.explorer-average-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--slate-700);
+}
+.explorer-average-track {
+  height: 9px;
+  margin-top: 6px;
+  background: var(--slate-200);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.explorer-average-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+.explorer-summary-stats {
+  border-top: 1px solid var(--slate-200);
+  padding-top: 14px;
+  margin: 0;
+  color: var(--slate-700);
+}
+.explorer-summary-stats > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+.explorer-summary-stats dd {
+  margin: 0;
+  font-weight: 700;
+}
+.explorer-search-controls input {
+  box-sizing: border-box;
+  width: 340px;
+  max-width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--slate-300);
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12px;
+  background: var(--white);
+  color: var(--slate-800);
+}
+.explorer-search-controls input::placeholder {
+  color: var(--slate-400);
+}
+.explorer-filter-note {
+  margin: -5px 0 12px;
+}
+.explorer-results-status {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+  min-height: 18px;
+  font-size: 11px;
+  color: var(--slate-500);
+}
+.explorer-molecule-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.explorer-molecule-card {
+  padding: 0;
+  overflow: hidden;
+}
+.explorer-molecule-structure {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 135px;
+  background: var(--slate-50);
+  border-bottom: 1px solid var(--slate-200);
+}
+.explorer-molecule-structure img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.explorer-molecule-structure > span {
+  padding: 12px;
+  color: var(--slate-500);
+  font-size: 11px;
+}
+.explorer-molecule-body {
+  padding: 12px;
+}
+.explorer-molecule-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.explorer-molecule-heading h2 {
+  flex: 1;
+  min-width: 60px;
+  margin: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.explorer-molecule-heading .pill {
+  font-size: 9px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+.explorer-molecule-heading .pill-good {
+  background: var(--green-100);
+}
+.explorer-smiles {
+  margin: 8px 0;
+  font: 10px var(--font-mono);
+  color: var(--slate-500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.explorer-molecule-values {
+  margin: 0;
+  font-size: 12px;
+  color: var(--slate-700);
+}
+.explorer-molecule-values > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+.explorer-molecule-values dd {
+  margin: 0;
+  font-weight: 700;
+}
+.explorer-molecule-source {
+  margin: 8px 0 0;
+  font-size: 10px;
+  color: var(--slate-500);
+}
+.explorer-load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+}
+.explorer-load-more button,
+.explorer-feedback button {
+  border: 1px solid var(--slate-200);
+  border-radius: 8px;
+  background: var(--slate-100);
+  padding: 10px 32px;
+  color: var(--slate-700);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.explorer button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.explorer-feedback {
+  padding: 24px 0;
+  color: var(--slate-600);
+}
+@media (max-width: 1150px) {
+  .explorer {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .explorer-overview-grid {
+    gap: 16px;
+  }
+  .explorer-chart-card {
+    padding: 16px;
+  }
+  .explorer-assay {
+    grid-template-columns: 90px minmax(0, 1fr) 55px;
+  }
+  .explorer-assay-count {
+    grid-column: 2 / -1;
+  }
+  .explorer-molecule-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  .explorer-property-grid,
+  .explorer-elements-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .explorer-overview-grid:not(.explorer-stat-cards) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .explorer-molecule-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .explorer-stat {
+    padding: 16px 8px;
+    text-align: center;
+  }
+  .explorer-stat strong {
+    font-size: 26px;
+  }
+  .explorer-stat span {
+    font-size: 11px;
+  }
+}
+@media (max-width: 600px) {
+  .explorer-stat-cards,
+  .explorer-molecule-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .explorer-tabs button {
+    padding: 12px;
+  }
+  .explorer-controls .explorer-source {
+    margin-left: 0;
+  }
+  .explorer-assay {
+    grid-template-columns: 84px minmax(0, 1fr) 54px;
+  }
+  .explorer-binary-row,
+  .explorer-clintox-rows .explorer-binary-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
