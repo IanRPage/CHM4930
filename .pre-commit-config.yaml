@@ -8,6 +8,9 @@ repos:
     rev: 0.9.1
     hooks:
       - id: nbstripout
+        args:
+          - --keep-output
+          - --extra-keys=metadata.kernelspec metadata.language_info
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.5
