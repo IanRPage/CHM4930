@@ -41,7 +41,7 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
-  it("navigates with the sidebar, including Coming Soon routes", async () => {
+  it("navigates with the sidebar, including the dataset explorer", async () => {
     renderAt("/");
     await userEvent.click(
       screen.getByRole("link", { name: "Batch Prediction" }),
@@ -60,7 +60,10 @@ describe("App", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "Dataset Explorer" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Coming Soon")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(screen.getByRole("link", { name: "Dataset Explorer" })).toHaveClass(
       "active",
     );
@@ -72,17 +75,20 @@ describe("App", () => {
     expect(screen.getByRole("link", { name: "About" })).toHaveClass("active");
   });
 
-  it("routes the home entry cards and marks unfinished ones as coming soon", async () => {
+  it.each([
+    ["Get Started", "Single Molecule Prediction"],
+    ["Explore", "Dataset Explorer"],
+  ])("routes the home entry card %s", async (action, heading) => {
     renderAt("/");
-    expect(screen.getAllByText("Coming soon")).toHaveLength(1);
+    expect(screen.queryByText("Coming soon")).not.toBeInTheDocument();
     expect(within(screen.getByRole("main")).getAllByRole("link")).toHaveLength(
-      2,
+      3,
     );
-    await userEvent.click(screen.getByRole("link", { name: "Get Started" }));
+    await userEvent.click(screen.getByRole("link", { name: action }));
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: "Single Molecule Prediction",
+        name: heading,
       }),
     ).toBeInTheDocument();
   });

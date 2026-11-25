@@ -54,6 +54,7 @@ const ENTRY_CARDS: EntryCard[] = [
     tint: "var(--tint-green)",
     accent: "var(--emerald-500)",
     action: "Explore",
+    to: "/explorer",
   },
 ];
 
