@@ -56,135 +56,53 @@ DEFAULT = {
 
 
 SEARCH_BASE = DEFAULT | {
-    "NUM_LAYERS": 2,
-    "EMBEDDING_DIM": 64,
-    "HIDDEN_DIM": 128,
-    "DROPOUT": 0.2,
-    "WEIGHT_DECAY": 1e-4,
-    "LR": 1e-3,
-    "EPOCHS": 15,
-    "PATIENCE": 5,
+    "EPOCHS": 40,
+    "PATIENCE": 8,
 }
 
+# each tuple: embedding_dim, hidden_dim, layers, dropout,
+#             learning_rate, batch_size
+JOINT_CONFIGS = [
+    (64, 128, 2, 0.2, 1e-3, 64),  # best candidate from previous sweep
+    (128, 128, 2, 0.2, 1e-3, 64),
+    (64, 64, 2, 0.2, 1e-3, 64),
+    (64, 256, 2, 0.3, 3e-4, 64),
+    (128, 256, 2, 0.3, 3e-4, 64),
+    (128, 128, 1, 0.1, 1e-3, 64),
+    (64, 128, 1, 0.2, 3e-4, 32),
+    (128, 128, 2, 0.3, 3e-4, 32),
+    (64, 128, 2, 0.1, 3e-3, 64),
+    (128, 128, 2, 0.2, 3e-4, 128),
+    (64, 256, 1, 0.2, 1e-3, 128),
+    (128, 64, 2, 0.3, 1e-3, 32),
+]
 
-def vary_parameter(key, values, base=SEARCH_BASE):
-    # create configurations varying one hyperparameter at a time
-    return [base | {key: value} for value in values]
-
+joint_search = [
+    SEARCH_BASE
+    | {
+        "EMBEDDING_DIM": embedding,
+        "HIDDEN_DIM": hidden,
+        "NUM_LAYERS": layers,
+        "DROPOUT": dropout,
+        "LR": lr,
+        "BATCH_SIZE": batch,
+    }
+    for embedding, hidden, layers, dropout, lr, batch in JOINT_CONFIGS
+]
 
 STAGES = {
-    # check that the complete training pipeline runs
-    "1-initial-test": (
-        [DEFAULT | {"EPOCHS": 3, "PATIENCE": 2}],
+    "1-smoke": (
+        [SEARCH_BASE | {"EPOCHS": 2, "PATIENCE": 2}],
         [0],
     ),
-    # compare shallow and deeper recurrent architectures
-    "2-depth": (
+    "2-joint-search": (joint_search, [0]),
+    "3-finalists": (
         [
-            cfg | {"EPOCHS": 15, "PATIENCE": 5}
-            for cfg in vary_parameter("NUM_LAYERS", [1, 2])
+            joint_search[1],  # embedding 128, hidden 128, layers 2
+            joint_search[2],  # embedding 64, hidden 64, layers 2
+            joint_search[10],  # embedding 64, hidden 256, layers 1
         ],
-        [0],
-    ),
-    # compare token embedding dimensions
-    "3-embedding": (
-        vary_parameter("EMBEDDING_DIM", [64, 128, 256]),
-        [0],
-    ),
-    # compare recurrent hidden state dimensions
-    "4-hidden": (
-        vary_parameter("HIDDEN_DIM", [64, 128, 256]),
-        [0],
-    ),
-    # investigate dropout regularization
-    "5-regularization": (
-        [
-            SEARCH_BASE | {"DROPOUT": 0.1},
-            SEARCH_BASE | {"DROPOUT": 0.4},
-            SEARCH_BASE | {"WEIGHT_DECAY": 0.0},
-            SEARCH_BASE | {"WEIGHT_DECAY": 1e-3},
-        ],
-        [0],
-    ),
-    # compare learning rates
-    "6-learning-rate": (
-        vary_parameter("LR", [3e-4, 1e-3, 3e-3]),
-        [0],
-    ),
-    # compare mini-batch sizes
-    "7-batch-size": (
-        vary_parameter("BATCH_SIZE", [32, 128]),
-        [0],
-    ),
-    "8-finalists": (
-        [
-            SEARCH_BASE
-            | {
-                "EMBEDDING_DIM": 64,
-                "HIDDEN_DIM": 128,
-                "NUM_LAYERS": 2,
-                "DROPOUT": 0.2,
-                "WEIGHT_DECAY": 0.0,
-                "LR": 1e-3,
-                "BATCH_SIZE": 64,
-                "EPOCHS": 30,
-                "PATIENCE": 7,
-            },
-            SEARCH_BASE
-            | {
-                "EMBEDDING_DIM": 64,
-                "HIDDEN_DIM": 64,
-                "NUM_LAYERS": 2,
-                "DROPOUT": 0.2,
-                "WEIGHT_DECAY": 0.0,
-                "LR": 1e-3,
-                "BATCH_SIZE": 64,
-                "EPOCHS": 30,
-                "PATIENCE": 7,
-            },
-            SEARCH_BASE
-            | {
-                "EMBEDDING_DIM": 64,
-                "HIDDEN_DIM": 128,
-                "NUM_LAYERS": 2,
-                "DROPOUT": 0.2,
-                "WEIGHT_DECAY": 1e-4,
-                "LR": 1e-3,
-                "BATCH_SIZE": 64,
-                "EPOCHS": 30,
-                "PATIENCE": 7,
-            },
-        ],
-        [0],
-    ),
-    "9-seed-verification": (
-        [
-            SEARCH_BASE
-            | {
-                "EMBEDDING_DIM": 64,
-                "HIDDEN_DIM": 128,
-                "NUM_LAYERS": 2,
-                "DROPOUT": 0.2,
-                "WEIGHT_DECAY": 0.0,
-                "LR": 1e-3,
-                "BATCH_SIZE": 64,
-                "EPOCHS": 40,
-                "PATIENCE": 10,
-            },
-            SEARCH_BASE
-            | {
-                "EMBEDDING_DIM": 64,
-                "HIDDEN_DIM": 128,
-                "NUM_LAYERS": 2,
-                "DROPOUT": 0.2,
-                "WEIGHT_DECAY": 1e-4,
-                "LR": 1e-3,
-                "BATCH_SIZE": 64,
-                "EPOCHS": 40,
-                "PATIENCE": 10,
-            },
-        ],
-        [1, 2],
+        [0, 1, 2],
     ),
 }
 
