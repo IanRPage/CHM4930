@@ -29,7 +29,7 @@ jobs:
       - name: Install pre-commit
         run: pip install pre-commit
 
-      - name: Run hooks (ruff, gitleaks, actionlint)
+      - name: Run hooks (nbstripout, ruff, gitleaks, actionlint)
         run: |
           SKIP=prettier,gitleaks pre-commit run --all-files --show-diff-on-failure
           pre-commit run gitleaks-history --all-files --hook-stage manual

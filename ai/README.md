@@ -32,10 +32,11 @@ From `ai/`:
 ```
 conda env create -f environment.yml
 conda activate CHM4930
-nbstripout --install
 python -m ipykernel install --sys-prefix --name=CHM4930 --display-name="Python (CHM4930)"
 python scripts/check_env.py
 ```
+
+If you previously ran `nbstripout --install`, run `nbstripout --uninstall` once. The pre-commit hook handles notebooks now.
 
 ## Data
 
